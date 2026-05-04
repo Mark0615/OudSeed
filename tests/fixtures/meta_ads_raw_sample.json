@@ -1,0 +1,32 @@
+[
+  {
+    "date_start": "2026-05-03",
+    "date_stop": "2026-05-03",
+    "account_id": "1234567890",
+    "account_name": "Demo Meta Ads Account",
+    "campaign_id": "campaign_001",
+    "campaign_name": "Spring Campaign",
+    "adset_id": "adset_001",
+    "adset_name": "Prospecting",
+    "ad_id": "ad_001",
+    "ad_name": "Video Ad",
+    "impressions": "1000",
+    "clicks": "50",
+    "inline_link_clicks": "40",
+    "spend": "250.5",
+    "currency": "TWD",
+    "actions": [
+      {
+        "action_type": "purchase",
+        "value": "5"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "purchase",
+        "value": "1500"
+      }
+    ],
+    "unknown_future_field": "preserved in raw table upstream"
+  }
+]
