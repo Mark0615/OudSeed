@@ -1,0 +1,62 @@
+# config/clients.example.yaml
+#
+# Copy this file to config/clients.yaml for local development.
+# Never commit config/clients.yaml because it may contain real ad account IDs.
+
+workspace_id: mark_internal
+
+defaults:
+  timezone: Asia/Taipei
+  sync_days_back: 7
+  attribution_setting: platform_default
+  timezone_setting: platform_account_default
+  conversion_action_type: purchase
+
+bigquery:
+  project_id: oudseed
+  dataset: ads_pipeline
+
+clients:
+  - client_id: demo_client_001
+    client_name: Demo Client
+    enabled: true
+
+    platforms:
+      meta_ads:
+        enabled: true
+        accounts:
+          - ad_account_id: "act_000000000000000"
+            account_name: "Demo Meta Ads Account"
+            report_level: "ad"
+            attribution_setting: "platform_default"
+            timezone_setting: "platform_account_default"
+            conversion_action_type: "purchase"
+
+      google_ads:
+        enabled: false
+        accounts:
+          - customer_id: "0000000000"
+            account_name: "Demo Google Ads Account"
+            login_customer_id: null
+            report_level: "ad"
+            attribution_setting: "platform_default"
+            timezone_setting: "platform_account_default"
+
+      line_ads:
+        enabled: false
+        accounts:
+          - account_id: "A00000000000"
+            account_name: "Demo LINE Ads Account"
+            report_level: "ad"
+            attribution_setting: "platform_default"
+            timezone_setting: "platform_account_default"
+
+    destinations:
+      bigquery:
+        enabled: true
+        project_id: oudseed
+        dataset: ads_pipeline
+
+      google_sheets:
+        enabled: false
+        spreadsheet_id: "demo_spreadsheet_id"

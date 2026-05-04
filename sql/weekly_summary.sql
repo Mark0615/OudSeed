@@ -1,0 +1,2 @@
+-- Weekly performance summary placeholder.
+-- AI weekly report SQL is planned for a future phase.
