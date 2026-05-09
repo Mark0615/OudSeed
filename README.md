@@ -137,6 +137,9 @@ Recommended starter dashboard:
 - Scorecard: `spend`
 - Scorecard: `link_clicks`
 - Scorecard: `cpc`
+- Scorecard: `add_to_cart`
+- Scorecard: `purchase`
+- Scorecard: `cost_per_purchase`
 - Time series: `date` by `spend`
 - Time series: `date` by `link_clicks`
 - Table: `campaign_name`, `spend`, `link_clicks`, `ctr`, `cpc`
@@ -153,6 +156,23 @@ Available reporting views:
 | `vw_looker_sync_status` | Sync monitoring and error review |
 
 Use `link_clicks` as the primary click metric for Meta reporting. It maps to Meta `inline_link_clicks`, which matches the current validation baseline.
+
+Meta action metrics are also exposed when the Meta API returns them:
+
+```text
+add_to_cart
+purchase
+purchase_value
+cost_per_add_to_cart
+cost_per_purchase
+outbound_clicks
+page_engagement
+post_engagement
+post_reactions
+post_comments
+post_saves
+post_shares
+```
 
 ## Reporting Summaries
 

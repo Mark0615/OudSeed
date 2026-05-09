@@ -51,6 +51,8 @@ def test_fetch_daily_report_calls_insights_endpoint() -> None:
     assert url == "https://graph.facebook.com/v24.0/act_000000000000000/insights"
     assert params["fields"] == ",".join(DEFAULT_META_INSIGHTS_FIELDS)
     assert "inline_link_clicks" in params["fields"]
+    assert "cost_per_action_type" in params["fields"]
+    assert "outbound_clicks" in params["fields"]
     assert "currency" not in params["fields"]
     assert params["level"] == "ad"
     assert params["time_increment"] == 1

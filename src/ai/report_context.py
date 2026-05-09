@@ -108,6 +108,18 @@ def build_report_context(
         spend,
         conversions,
         conversion_value,
+        add_to_cart,
+        purchase,
+        purchase_value,
+        cost_per_add_to_cart,
+        cost_per_purchase,
+        outbound_clicks,
+        page_engagement,
+        post_engagement,
+        post_reactions,
+        post_comments,
+        post_saves,
+        post_shares,
         ctr,
         cpc,
         cpm,
@@ -128,7 +140,17 @@ def build_report_context(
       SUM(link_clicks) OVER() AS total_link_clicks,
       SUM(spend) OVER() AS total_spend,
       SUM(conversions) OVER() AS total_conversions,
-      SUM(conversion_value) OVER() AS total_conversion_value
+      SUM(conversion_value) OVER() AS total_conversion_value,
+      SUM(add_to_cart) OVER() AS total_add_to_cart,
+      SUM(purchase) OVER() AS total_purchase,
+      SUM(purchase_value) OVER() AS total_purchase_value,
+      SUM(outbound_clicks) OVER() AS total_outbound_clicks,
+      SUM(page_engagement) OVER() AS total_page_engagement,
+      SUM(post_engagement) OVER() AS total_post_engagement,
+      SUM(post_reactions) OVER() AS total_post_reactions,
+      SUM(post_comments) OVER() AS total_post_comments,
+      SUM(post_saves) OVER() AS total_post_saves,
+      SUM(post_shares) OVER() AS total_post_shares
     FROM scoped
     ORDER BY spend DESC
     LIMIT @limit
@@ -164,6 +186,18 @@ def _normalize_campaign(row: dict[str, Any]) -> dict[str, Any]:
         "spend": _to_number(row.get("spend")),
         "conversions": _to_number(row.get("conversions")),
         "conversion_value": _to_number(row.get("conversion_value")),
+        "add_to_cart": _to_number(row.get("add_to_cart")),
+        "purchase": _to_number(row.get("purchase")),
+        "purchase_value": _to_number(row.get("purchase_value")),
+        "cost_per_add_to_cart": _to_number(row.get("cost_per_add_to_cart")),
+        "cost_per_purchase": _to_number(row.get("cost_per_purchase")),
+        "outbound_clicks": _to_number(row.get("outbound_clicks")),
+        "page_engagement": _to_number(row.get("page_engagement")),
+        "post_engagement": _to_number(row.get("post_engagement")),
+        "post_reactions": _to_number(row.get("post_reactions")),
+        "post_comments": _to_number(row.get("post_comments")),
+        "post_saves": _to_number(row.get("post_saves")),
+        "post_shares": _to_number(row.get("post_shares")),
         "ctr": _to_number(row.get("ctr")),
         "cpc": _to_number(row.get("cpc")),
         "cpm": _to_number(row.get("cpm")),
@@ -188,6 +222,16 @@ def _extract_totals(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "spend": 0,
                 "conversions": 0,
                 "conversion_value": 0,
+                "add_to_cart": 0,
+                "purchase": 0,
+                "purchase_value": 0,
+                "outbound_clicks": 0,
+                "page_engagement": 0,
+                "post_engagement": 0,
+                "post_reactions": 0,
+                "post_comments": 0,
+                "post_saves": 0,
+                "post_shares": 0,
             }
         )
 
@@ -198,6 +242,16 @@ def _extract_totals(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "spend": _or_zero(_to_number(row.get("total_spend"))),
         "conversions": _or_zero(_to_number(row.get("total_conversions"))),
         "conversion_value": _or_zero(_to_number(row.get("total_conversion_value"))),
+        "add_to_cart": _or_zero(_to_number(row.get("total_add_to_cart"))),
+        "purchase": _or_zero(_to_number(row.get("total_purchase"))),
+        "purchase_value": _or_zero(_to_number(row.get("total_purchase_value"))),
+        "outbound_clicks": _or_zero(_to_number(row.get("total_outbound_clicks"))),
+        "page_engagement": _or_zero(_to_number(row.get("total_page_engagement"))),
+        "post_engagement": _or_zero(_to_number(row.get("total_post_engagement"))),
+        "post_reactions": _or_zero(_to_number(row.get("total_post_reactions"))),
+        "post_comments": _or_zero(_to_number(row.get("total_post_comments"))),
+        "post_saves": _or_zero(_to_number(row.get("total_post_saves"))),
+        "post_shares": _or_zero(_to_number(row.get("total_post_shares"))),
     }
     return _calculate_rates(totals)
 
@@ -209,6 +263,12 @@ def _calculate_rates(totals: dict[str, Any]) -> dict[str, Any]:
     totals["cpm"] = _safe_divide(totals["spend"] * 1000, totals["impressions"])
     totals["cpa"] = _safe_divide(totals["spend"], totals["conversions"])
     totals["roas"] = _safe_divide(totals["conversion_value"], totals["spend"])
+    totals["cost_per_add_to_cart"] = _safe_divide(
+        totals["spend"],
+        totals["add_to_cart"],
+    )
+    totals["cost_per_purchase"] = _safe_divide(totals["spend"], totals["purchase"])
+    totals["purchase_roas"] = _safe_divide(totals["purchase_value"], totals["spend"])
     return totals
 
 

@@ -19,12 +19,56 @@
       {
         "action_type": "purchase",
         "value": "5"
+      },
+      {
+        "action_type": "add_to_cart",
+        "value": "12"
+      },
+      {
+        "action_type": "post_engagement",
+        "value": "80"
+      },
+      {
+        "action_type": "page_engagement",
+        "value": "90"
+      },
+      {
+        "action_type": "post_reaction",
+        "value": "20"
+      },
+      {
+        "action_type": "comment",
+        "value": "3"
+      },
+      {
+        "action_type": "onsite_conversion.post_save",
+        "value": "4"
+      },
+      {
+        "action_type": "post",
+        "value": "2"
       }
     ],
     "action_values": [
       {
         "action_type": "purchase",
         "value": "1500"
+      }
+    ],
+    "cost_per_action_type": [
+      {
+        "action_type": "purchase",
+        "value": "50.1"
+      },
+      {
+        "action_type": "add_to_cart",
+        "value": "20.875"
+      }
+    ],
+    "outbound_clicks": [
+      {
+        "action_type": "outbound_click",
+        "value": "35"
       }
     ],
     "unknown_future_field": "preserved in raw table upstream"
