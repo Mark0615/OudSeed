@@ -4,6 +4,7 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
@@ -19,6 +20,11 @@ DEFAULT_CONFIG_PATH = "config/clients.yaml"
 RAW_META_TABLE = "raw_meta_ads_daily"
 UNIFIED_TABLE = "unified_ads_daily"
 SYNC_LOGS_TABLE = "sync_logs"
+SUMMARY_SQL_PATHS = (
+    Path("sql/weekly_summary.sql"),
+    Path("sql/monthly_summary.sql"),
+    Path("sql/looker_studio_views.sql"),
+)
 
 
 def main() -> None:
@@ -38,6 +44,8 @@ def main() -> None:
     connector = MetaAdsConnector(access_token=access_token)
     destination = BigQueryDestination(project_id=project_id, dataset_id=dataset_id)
     run_meta_sync(config=config, connector=connector, destination=destination)
+    if _should_refresh_reporting_marts():
+        refresh_reporting_marts(destination=destination)
 
 
 def run_meta_sync(
@@ -88,6 +96,21 @@ def run_meta_sync(
 
     if failed_accounts:
         raise RuntimeError(f"Meta sync failed for {len(failed_accounts)} account(s).")
+
+
+def refresh_reporting_marts(
+    destination: BigQueryDestination,
+    sql_paths: tuple[Path, ...] = SUMMARY_SQL_PATHS,
+) -> None:
+    """Refresh BigQuery reporting marts and Looker Studio views."""
+    for sql_path in sql_paths:
+        destination.execute_sql(sql_path.read_text(encoding="utf-8"))
+
+
+def _should_refresh_reporting_marts() -> bool:
+    """Return whether reporting marts should refresh after a successful sync."""
+    value = os.getenv("REFRESH_REPORTING_MARTS", "true").strip().lower()
+    return value not in {"0", "false", "no"}
 
 
 def _load_runtime_config() -> dict[str, Any]:

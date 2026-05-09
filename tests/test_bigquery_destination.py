@@ -125,6 +125,19 @@ def test_replace_date_range_with_empty_rows_still_deletes() -> None:
     client.insert_rows_json.assert_not_called()
 
 
+def test_execute_sql_waits_for_query_completion() -> None:
+    """Ad hoc SQL execution waits for the BigQuery job to finish."""
+    query_job = Mock()
+    client = Mock()
+    client.query.return_value = query_job
+    destination = make_destination(client)
+
+    destination.execute_sql("SELECT 1")
+
+    client.query.assert_called_once_with("SELECT 1")
+    query_job.result.assert_called_once()
+
+
 def test_invalid_table_name_is_rejected() -> None:
     """Interpolated BigQuery identifiers are validated."""
     destination = make_destination()

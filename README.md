@@ -75,7 +75,7 @@ clients:
 Create or update the BigQuery tables and Looker Studio views:
 
 ```bash
-.venv/bin/python -c 'from dotenv import load_dotenv; load_dotenv(); from google.cloud import bigquery; client=bigquery.Client(); client.query(open("sql/create_tables.sql", encoding="utf-8").read()).result(); client.query(open("sql/looker_studio_views.sql", encoding="utf-8").read()).result(); print("bigquery_ready=True")'
+.venv/bin/python -c 'from dotenv import load_dotenv; load_dotenv(); from google.cloud import bigquery; client=bigquery.Client(); client.query(open("sql/create_tables.sql", encoding="utf-8").read()).result(); client.query(open("sql/weekly_summary.sql", encoding="utf-8").read()).result(); client.query(open("sql/monthly_summary.sql", encoding="utf-8").read()).result(); client.query(open("sql/looker_studio_views.sql", encoding="utf-8").read()).result(); print("bigquery_ready=True")'
 ```
 
 Run the default daily sync:
@@ -100,6 +100,7 @@ The sync flow will:
 - replace matching rows in `raw_meta_ads_daily`
 - normalize rows into `unified_ads_daily`
 - write a row to `sync_logs`
+- refresh weekly/monthly reporting marts and Looker Studio views
 
 For the March 2025 test account validation, the expected BigQuery result is:
 
@@ -145,10 +146,42 @@ Available reporting views:
 | View | Purpose |
 |---|---|
 | `vw_looker_ads_campaign_daily` | Campaign-level daily dashboard source |
+| `vw_looker_ads_campaign_weekly` | Campaign-level weekly WoW dashboard and AI summary source |
+| `vw_looker_ads_campaign_monthly` | Campaign-level monthly MoM dashboard and AI summary source |
 | `vw_looker_ads_ad_daily` | Ad-level detail table source |
 | `vw_looker_sync_status` | Sync monitoring and error review |
 
 Use `link_clicks` as the primary click metric for Meta reporting. It maps to Meta `inline_link_clicks`, which matches the current validation baseline.
+
+## Reporting Summaries
+
+Refresh weekly/monthly summary marts:
+
+```bash
+.venv/bin/python -c 'from dotenv import load_dotenv; load_dotenv(); from google.cloud import bigquery; client=bigquery.Client(project="oudseed"); client.query(open("sql/weekly_summary.sql", encoding="utf-8").read()).result(); client.query(open("sql/monthly_summary.sql", encoding="utf-8").read()).result(); client.query(open("sql/looker_studio_views.sql", encoding="utf-8").read()).result(); print("reporting_summaries_ready=True")'
+```
+
+The summary marts write to:
+
+```text
+oudseed.ads_pipeline.weekly_performance_summary
+oudseed.ads_pipeline.monthly_performance_summary
+```
+
+The Looker/AI-friendly views are:
+
+```text
+oudseed.ads_pipeline.vw_looker_ads_campaign_weekly
+oudseed.ads_pipeline.vw_looker_ads_campaign_monthly
+```
+
+This layer calculates spend, link clicks, conversions, CPC, CPA, ROAS, week-over-week deltas, and month-over-month deltas in BigQuery before any AI reporting is added.
+
+`make run` and the Cloud Run Job refresh these marts automatically after a successful Meta Ads sync. For one-off troubleshooting runs, disable the refresh with:
+
+```bash
+REFRESH_REPORTING_MARTS=false make run
+```
 
 ## Cloud Run Scheduler
 
