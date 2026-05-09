@@ -25,6 +25,8 @@ DEFAULT_META_INSIGHTS_FIELDS = [
     "spend",
     "actions",
     "action_values",
+    "cost_per_action_type",
+    "outbound_clicks",
 ]
 
 

@@ -46,6 +46,18 @@ def test_normalize_meta_ads_rows_maps_unified_schema() -> None:
     assert row["spend"] == 250.5
     assert row["conversions"] == 5.0
     assert row["conversion_value"] == 1500.0
+    assert row["add_to_cart"] == 12.0
+    assert row["purchase"] == 5.0
+    assert row["purchase_value"] == 1500.0
+    assert row["cost_per_add_to_cart"] == 20.875
+    assert row["cost_per_purchase"] == 50.1
+    assert row["outbound_clicks"] == 35
+    assert row["page_engagement"] == 90.0
+    assert row["post_engagement"] == 80.0
+    assert row["post_reactions"] == 20.0
+    assert row["post_comments"] == 3.0
+    assert row["post_saves"] == 4.0
+    assert row["post_shares"] == 2.0
     assert row["currency"] == "TWD"
     assert row["source_updated_at"] is None
     assert row["created_at"]
@@ -103,6 +115,31 @@ def test_normalize_meta_ads_rows_supports_configurable_conversion_action() -> No
 
     assert row["conversions"] == 3.0
     assert row["conversion_value"] == 90.0
+
+
+def test_normalize_meta_ads_rows_uses_action_aliases_and_cost_fallbacks() -> None:
+    """Common Meta action aliases are expanded for reporting."""
+    raw_rows = [
+        {
+            "date_start": "2026-05-03",
+            "impressions": "10",
+            "inline_link_clicks": "2",
+            "spend": "30",
+            "actions": [
+                {"action_type": "omni_add_to_cart", "value": "3"},
+                {"action_type": "omni_purchase", "value": "2"},
+            ],
+            "action_values": [{"action_type": "omni_purchase", "value": "120"}],
+        }
+    ]
+
+    row = normalize_meta_ads_rows(raw_rows, default_context())[0]
+
+    assert row["add_to_cart"] == 3.0
+    assert row["purchase"] == 2.0
+    assert row["purchase_value"] == 120.0
+    assert row["cost_per_add_to_cart"] == 10.0
+    assert row["cost_per_purchase"] == 15.0
 
 
 def test_normalize_meta_ads_rows_requires_context_fields() -> None:

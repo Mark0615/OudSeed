@@ -13,6 +13,8 @@ def test_weekly_summary_sql_contains_required_outputs() -> None:
         "SAFE_DIVIDE(SUM(clicks), SUM(impressions)) AS ctr",
         "previous_week_spend",
         "clicks_wow",
+        "add_to_cart_wow",
+        "purchase_wow",
         "spend_wow_rate",
         "roas_wow_rate",
     ]
@@ -31,6 +33,8 @@ def test_monthly_summary_sql_contains_required_outputs() -> None:
         "SAFE_DIVIDE(SUM(clicks), SUM(impressions)) AS ctr",
         "previous_month_spend",
         "clicks_mom",
+        "add_to_cart_mom",
+        "purchase_mom",
         "spend_mom_rate",
         "roas_mom_rate",
     ]
@@ -45,6 +49,8 @@ def test_looker_views_include_weekly_campaign_view() -> None:
 
     assert "vw_looker_ads_campaign_weekly" in sql
     assert "link_clicks_wow" in sql
+    assert "add_to_cart_wow" in sql
+    assert "purchase_wow" in sql
     assert "weekly_performance_summary" in sql
 
 
@@ -54,6 +60,8 @@ def test_looker_views_include_monthly_campaign_view() -> None:
 
     assert "vw_looker_ads_campaign_monthly" in sql
     assert "link_clicks_mom" in sql
+    assert "add_to_cart_mom" in sql
+    assert "purchase_mom" in sql
     assert "monthly_performance_summary" in sql
 
 
@@ -74,3 +82,5 @@ def test_create_tables_includes_summary_marts() -> None:
     assert "monthly_performance_summary" in sql
     assert "spend_wow_rate FLOAT64" in sql
     assert "spend_mom_rate FLOAT64" in sql
+    assert "add_to_cart FLOAT64" in sql
+    assert "post_engagement FLOAT64" in sql
