@@ -1,6 +1,7 @@
 """Meta Ads Insights API connector."""
 
 import json
+import re
 from typing import Any
 
 import requests
@@ -40,6 +41,7 @@ class MetaAdsConnector(BaseAdsConnector):
         access_token: str,
         api_version: str = "v24.0",
         fields: list[str] | None = None,
+        timeout_seconds: int = 60,
         session: requests.Session | None = None,
     ) -> None:
         if not access_token:
@@ -48,6 +50,7 @@ class MetaAdsConnector(BaseAdsConnector):
         self.access_token = access_token
         self.api_version = api_version
         self.fields = fields or DEFAULT_META_INSIGHTS_FIELDS
+        self.timeout_seconds = timeout_seconds
         self.session = session or requests.Session()
         self.base_url = f"https://graph.facebook.com/{api_version}"
 
@@ -90,14 +93,21 @@ class MetaAdsConnector(BaseAdsConnector):
     def _get_json(self, url: str, params: dict[str, Any] | None) -> dict:
         """Execute a GET request and return parsed JSON with readable errors."""
         try:
-            response = self.session.get(url, params=params, timeout=60)
+            response = self.session.get(
+                url,
+                params=params,
+                timeout=self.timeout_seconds,
+            )
         except requests.RequestException as exc:
-            raise RuntimeError(f"Meta Ads API request failed: {exc}") from exc
+            raise RuntimeError(
+                "Meta Ads API request failed: "
+                f"{exc.__class__.__name__}: {_redact_token(str(exc))}"
+            ) from exc
 
         if response.status_code >= 400:
             raise RuntimeError(
                 "Meta Ads API request failed "
-                f"with status {response.status_code}: {response.text}"
+                f"with status {response.status_code}: {_redact_token(response.text)}"
             )
 
         try:
@@ -111,3 +121,8 @@ class MetaAdsConnector(BaseAdsConnector):
             raise RuntimeError(f"Meta Ads API returned error: {payload['error']}")
 
         return payload
+
+
+def _redact_token(value: str) -> str:
+    """Redact common token shapes from error strings before logging."""
+    return re.sub(r"(access_token=)[^&\s)]+", r"\1REDACTED", value)

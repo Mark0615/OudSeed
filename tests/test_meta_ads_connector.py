@@ -5,7 +5,11 @@ from unittest.mock import Mock
 import pytest
 import requests
 
-from src.connectors.meta_ads import DEFAULT_META_INSIGHTS_FIELDS, MetaAdsConnector
+from src.connectors.meta_ads import (
+    DEFAULT_META_INSIGHTS_FIELDS,
+    MetaAdsConnector,
+    _redact_token,
+)
 
 
 def make_response(status_code: int, payload: object, text: str = "") -> Mock:
@@ -57,6 +61,26 @@ def test_fetch_daily_report_calls_insights_endpoint() -> None:
     assert params["level"] == "ad"
     assert params["time_increment"] == 1
     assert params["time_range"] == '{"since": "2026-04-26", "until": "2026-05-03"}'
+    assert session.get.call_args.kwargs["timeout"] == 60
+
+
+def test_fetch_daily_report_uses_configured_timeout() -> None:
+    """Connector forwards configured request timeout to requests."""
+    session = Mock()
+    session.get.return_value = make_response(200, {"data": []})
+    connector = MetaAdsConnector(
+        access_token="token",
+        timeout_seconds=120,
+        session=session,
+    )
+
+    connector.fetch_daily_report(
+        account_id="act_000000000000000",
+        start_date="2026-04-26",
+        end_date="2026-05-03",
+    )
+
+    assert session.get.call_args.kwargs["timeout"] == 120
 
 
 def test_fetch_daily_report_supports_pagination() -> None:
@@ -114,6 +138,22 @@ def test_fetch_daily_report_raises_for_request_exception() -> None:
         connector.fetch_daily_report("act_000000000000000", "2026-04-26", "2026-05-03")
 
 
+def test_fetch_daily_report_redacts_access_token_from_request_errors() -> None:
+    """Request errors must not leak access tokens into logs or sync_logs."""
+    session = Mock()
+    session.get.side_effect = requests.ConnectionError(
+        "GET https://graph.facebook.com/v24.0/act_1/insights?access_token=secret-token&fields=spend"
+    )
+    connector = MetaAdsConnector(access_token="token", session=session)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        connector.fetch_daily_report("act_000000000000000", "2026-04-26", "2026-05-03")
+
+    error_message = str(exc_info.value)
+    assert "secret-token" not in error_message
+    assert "access_token=REDACTED" in error_message
+
+
 def test_fetch_daily_report_raises_for_api_error_payload() -> None:
     """Meta error payloads are surfaced."""
     session = Mock()
@@ -122,6 +162,13 @@ def test_fetch_daily_report_raises_for_api_error_payload() -> None:
 
     with pytest.raises(RuntimeError, match="bad token"):
         connector.fetch_daily_report("act_000000000000000", "2026-04-26", "2026-05-03")
+
+
+def test_redact_token_redacts_query_parameter_value() -> None:
+    """Token query parameters are redacted without removing other context."""
+    redacted = _redact_token("url?access_token=secret&fields=spend")
+
+    assert redacted == "url?access_token=REDACTED&fields=spend"
 
 
 def test_fetch_daily_report_raises_when_data_is_not_list() -> None:
