@@ -7,6 +7,7 @@ from src.main import (
     SYNC_LOGS_TABLE,
     UNIFIED_TABLE,
     _load_runtime_config,
+    _positive_int_env,
     _should_refresh_reporting_marts,
     refresh_reporting_marts,
     run_meta_sync,
@@ -215,3 +216,18 @@ def test_should_refresh_reporting_marts_can_be_disabled(monkeypatch) -> None:
     monkeypatch.setenv("REFRESH_REPORTING_MARTS", "false")
 
     assert _should_refresh_reporting_marts() is False
+
+
+def test_positive_int_env_reads_meta_timeout(monkeypatch) -> None:
+    """Meta API timeout can be configured for Cloud Run jobs."""
+    monkeypatch.setenv("META_API_TIMEOUT_SECONDS", "120")
+
+    assert _positive_int_env("META_API_TIMEOUT_SECONDS", 60) == 120
+
+
+def test_positive_int_env_rejects_invalid_values(monkeypatch) -> None:
+    """Invalid timeout values fail clearly."""
+    monkeypatch.setenv("META_API_TIMEOUT_SECONDS", "0")
+
+    with pytest.raises(ValueError, match="positive integer"):
+        _positive_int_env("META_API_TIMEOUT_SECONDS", 60)

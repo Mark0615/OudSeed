@@ -51,6 +51,7 @@ GCP_PROJECT_ID=oudseed
 BIGQUERY_DATASET=ads_pipeline
 GOOGLE_APPLICATION_CREDENTIALS=/Users/mark/Desktop/OudSeed/secrets/your-service-account.json
 META_ACCESS_TOKEN=your-meta-marketing-api-token
+META_API_TIMEOUT_SECONDS=60
 ```
 
 Fill `config/clients.yaml` with the real Meta Ads account settings:

@@ -17,6 +17,7 @@ CLIENTS_CONFIG_FILE="${CLIENTS_CONFIG_FILE:-config/clients.yaml}"
 RUNTIME_SERVICE_ACCOUNT_NAME="${RUNTIME_SERVICE_ACCOUNT_NAME:-oudseed-ads-pipeline-runner}"
 META_TOKEN_SECRET_NAME="${META_TOKEN_SECRET_NAME:-oudseed-meta-access-token}"
 CLIENTS_CONFIG_SECRET_NAME="${CLIENTS_CONFIG_SECRET_NAME:-oudseed-clients-yaml}"
+META_API_TIMEOUT_SECONDS="${META_API_TIMEOUT_SECONDS:-60}"
 
 if [[ -f "${ENV_FILE}" ]]; then
   set -a
@@ -101,7 +102,7 @@ gcloud run jobs deploy "${JOB_NAME}" \
   --tasks=1 \
   --max-retries=1 \
   --task-timeout=900s \
-  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},BIGQUERY_DATASET=${BIGQUERY_DATASET}" \
+  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},BIGQUERY_DATASET=${BIGQUERY_DATASET},META_API_TIMEOUT_SECONDS=${META_API_TIMEOUT_SECONDS}" \
   --set-secrets="META_ACCESS_TOKEN=${META_TOKEN_SECRET_NAME}:latest,CLIENTS_CONFIG_YAML=${CLIENTS_CONFIG_SECRET_NAME}:latest"
 
 gcloud run jobs add-iam-policy-binding "${JOB_NAME}" \

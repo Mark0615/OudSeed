@@ -41,7 +41,18 @@ def main() -> None:
     if not dataset_id:
         raise ValueError("BigQuery dataset is required via BIGQUERY_DATASET or config.bigquery.dataset.")
 
-    connector = MetaAdsConnector(access_token=access_token)
+    meta_api_timeout_seconds = _positive_int_env("META_API_TIMEOUT_SECONDS", 60)
+    _log(
+        "starting_meta_sync",
+        project_id=project_id,
+        dataset_id=dataset_id,
+        meta_api_timeout_seconds=meta_api_timeout_seconds,
+    )
+
+    connector = MetaAdsConnector(
+        access_token=access_token,
+        timeout_seconds=meta_api_timeout_seconds,
+    )
     destination = BigQueryDestination(project_id=project_id, dataset_id=dataset_id)
     run_meta_sync(config=config, connector=connector, destination=destination)
     if _should_refresh_reporting_marts():
@@ -67,6 +78,13 @@ def run_meta_sync(
 
     workspace_id = config["workspace_id"]
     failed_accounts: list[str] = []
+    _log(
+        "meta_sync_range_resolved",
+        workspace_id=workspace_id,
+        start_date=start_date,
+        end_date=end_date,
+        scheduler_timezone=timezone_name,
+    )
     for client in config["clients"]:
         if not client.get("enabled", True):
             continue
@@ -104,7 +122,9 @@ def refresh_reporting_marts(
 ) -> None:
     """Refresh BigQuery reporting marts and Looker Studio views."""
     for sql_path in sql_paths:
+        _log("refresh_reporting_sql_started", sql_path=str(sql_path))
         destination.execute_sql(sql_path.read_text(encoding="utf-8"))
+        _log("refresh_reporting_sql_finished", sql_path=str(sql_path))
 
 
 def _should_refresh_reporting_marts() -> bool:
@@ -143,12 +163,25 @@ def _sync_meta_account(
     error_message = None
 
     try:
+        _log(
+            "meta_account_fetch_started",
+            client_id=client_id,
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
         raw_rows = connector.fetch_daily_report(
             account_id=account_id,
             start_date=start_date,
             end_date=end_date,
         )
         rows_fetched = len(raw_rows)
+        _log(
+            "meta_account_fetch_finished",
+            client_id=client_id,
+            account_id=account_id,
+            rows_fetched=rows_fetched,
+        )
 
         raw_table_rows = _build_raw_rows(
             raw_rows=raw_rows,
@@ -176,6 +209,12 @@ def _sync_meta_account(
                 "platform": "meta_ads",
                 "account_id": account_id,
             },
+        )
+        _log(
+            "meta_account_raw_replaced",
+            client_id=client_id,
+            account_id=account_id,
+            rows=len(raw_table_rows),
         )
 
         normalized_rows = normalize_meta_ads_rows(
@@ -211,10 +250,21 @@ def _sync_meta_account(
                 "account_id": account_id,
             },
         )
+        _log(
+            "meta_account_unified_replaced",
+            client_id=client_id,
+            account_id=account_id,
+            rows_inserted=rows_inserted,
+        )
     except Exception as exc:
         status = "failed"
         error_message = str(exc)
-        print(f"Meta Ads sync failed for {client_id}/{account_id}: {error_message}")
+        _log(
+            "meta_account_sync_failed",
+            client_id=client_id,
+            account_id=account_id,
+            error_message=error_message,
+        )
 
     sync_log = _build_sync_log(
         workspace_id=workspace_id,
@@ -237,7 +287,21 @@ def _sync_meta_account(
         scheduler_timezone=scheduler_timezone,
         started_at=started_at,
     )
+    _log(
+        "meta_account_sync_log_insert_started",
+        client_id=client_id,
+        account_id=account_id,
+        status=status,
+    )
     destination.insert_rows(SYNC_LOGS_TABLE, [sync_log])
+    _log(
+        "meta_account_sync_logged",
+        client_id=client_id,
+        account_id=account_id,
+        status=status,
+        rows_fetched=rows_fetched,
+        rows_inserted=rows_inserted,
+    )
     return status
 
 
@@ -312,6 +376,29 @@ def _required_env(name: str) -> str:
     if not value:
         raise ValueError(f"Missing required environment variable: {name}")
     return value
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    """Read a positive integer environment variable."""
+    raw_value = os.getenv(name)
+    if raw_value in {None, ""}:
+        return default
+
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a positive integer.") from exc
+
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer.")
+
+    return value
+
+
+def _log(event: str, **fields: Any) -> None:
+    """Print structured runtime progress for local runs and Cloud Logging."""
+    payload = " ".join(f"{key}={value}" for key, value in fields.items())
+    print(f"event={event} {payload}".strip(), flush=True)
 
 
 def _utc_now() -> str:
