@@ -183,11 +183,33 @@ This layer calculates spend, link clicks, conversions, CPC, CPA, ROAS, week-over
 REFRESH_REPORTING_MARTS=false make run
 ```
 
-## AI Report Context
+## AI Report Generation
 
-The AI reporting layer currently prepares model-ready weekly/monthly context and prompts from BigQuery reporting marts. It does not call an AI provider yet.
+The AI reporting layer prepares weekly/monthly context from BigQuery reporting marts, sends the prompt to OpenAI's Responses API, and stores the output in `ai_report_logs`.
 
-Example:
+Required environment values:
+
+```bash
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=gpt-5.2
+AI_REPORT_TYPE=monthly
+AI_REPORT_PERIOD_START_DATE=2025-03-01
+AI_REPORT_CLIENT_ID=your-client-id
+```
+
+Generate one report locally:
+
+```bash
+.venv/bin/python -m src.ai.generate_report
+```
+
+Generate a one-off weekly report:
+
+```bash
+AI_REPORT_TYPE=weekly AI_REPORT_PERIOD_START_DATE=2025-03-24 .venv/bin/python -m src.ai.generate_report
+```
+
+Preview the model-ready prompt without calling OpenAI:
 
 ```python
 from dotenv import load_dotenv
@@ -216,7 +238,11 @@ Supported report types:
 | `weekly` | `vw_looker_ads_campaign_weekly` | Week over week |
 | `monthly` | `vw_looker_ads_campaign_monthly` | Month over month |
 
-The next step is to choose an AI provider, add the provider API key to local/Cloud Run secrets, and store generated report outputs in `ai_report_logs`.
+Generated report logs are written to:
+
+```text
+oudseed.ads_pipeline.ai_report_logs
+```
 
 ## Cloud Run Scheduler
 
