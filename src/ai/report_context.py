@@ -24,6 +24,9 @@ class ReportMetricConfig:
     comparison_label: str
     previous_spend_field: str
     previous_clicks_field: str
+    previous_conversions_field: str
+    previous_add_to_cart_field: str
+    previous_purchase_field: str
     spend_delta_field: str
     clicks_delta_field: str
     spend_rate_field: str
@@ -38,6 +41,9 @@ REPORT_CONFIGS: dict[ReportType, ReportMetricConfig] = {
         comparison_label="week_over_week",
         previous_spend_field="previous_week_spend",
         previous_clicks_field="previous_week_link_clicks",
+        previous_conversions_field="previous_week_conversions",
+        previous_add_to_cart_field="previous_week_add_to_cart",
+        previous_purchase_field="previous_week_purchase",
         spend_delta_field="spend_wow",
         clicks_delta_field="link_clicks_wow",
         spend_rate_field="spend_wow_rate",
@@ -50,6 +56,9 @@ REPORT_CONFIGS: dict[ReportType, ReportMetricConfig] = {
         comparison_label="month_over_month",
         previous_spend_field="previous_month_spend",
         previous_clicks_field="previous_month_link_clicks",
+        previous_conversions_field="previous_month_conversions",
+        previous_add_to_cart_field="previous_month_add_to_cart",
+        previous_purchase_field="previous_month_purchase",
         spend_delta_field="spend_mom",
         clicks_delta_field="link_clicks_mom",
         spend_rate_field="spend_mom_rate",
@@ -127,6 +136,9 @@ def build_report_context(
         roas,
         {config.previous_spend_field} AS previous_spend,
         {config.previous_clicks_field} AS previous_link_clicks,
+        {config.previous_conversions_field} AS previous_conversions,
+        {config.previous_add_to_cart_field} AS previous_add_to_cart,
+        {config.previous_purchase_field} AS previous_purchase,
         {config.spend_delta_field} AS spend_delta,
         {config.clicks_delta_field} AS link_clicks_delta,
         {config.spend_rate_field} AS spend_delta_rate,
@@ -141,6 +153,11 @@ def build_report_context(
       SUM(spend) OVER() AS total_spend,
       SUM(conversions) OVER() AS total_conversions,
       SUM(conversion_value) OVER() AS total_conversion_value,
+      SUM(previous_spend) OVER() AS total_previous_spend,
+      SUM(previous_link_clicks) OVER() AS total_previous_link_clicks,
+      SUM(previous_conversions) OVER() AS total_previous_conversions,
+      SUM(previous_add_to_cart) OVER() AS total_previous_add_to_cart,
+      SUM(previous_purchase) OVER() AS total_previous_purchase,
       SUM(add_to_cart) OVER() AS total_add_to_cart,
       SUM(purchase) OVER() AS total_purchase,
       SUM(purchase_value) OVER() AS total_purchase_value,
@@ -205,6 +222,9 @@ def _normalize_campaign(row: dict[str, Any]) -> dict[str, Any]:
         "roas": _to_number(row.get("roas")),
         "previous_spend": _to_number(row.get("previous_spend")),
         "previous_link_clicks": _to_number(row.get("previous_link_clicks")),
+        "previous_conversions": _to_number(row.get("previous_conversions")),
+        "previous_add_to_cart": _to_number(row.get("previous_add_to_cart")),
+        "previous_purchase": _to_number(row.get("previous_purchase")),
         "spend_delta": _to_number(row.get("spend_delta")),
         "link_clicks_delta": _to_number(row.get("link_clicks_delta")),
         "spend_delta_rate": _to_number(row.get("spend_delta_rate")),
@@ -232,6 +252,13 @@ def _extract_totals(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "post_comments": 0,
                 "post_saves": 0,
                 "post_shares": 0,
+                "previous": {
+                    "spend": 0,
+                    "link_clicks": 0,
+                    "conversions": 0,
+                    "add_to_cart": 0,
+                    "purchase": 0,
+                },
             }
         )
 
@@ -252,6 +279,19 @@ def _extract_totals(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "post_comments": _or_zero(_to_number(row.get("total_post_comments"))),
         "post_saves": _or_zero(_to_number(row.get("total_post_saves"))),
         "post_shares": _or_zero(_to_number(row.get("total_post_shares"))),
+        "previous": {
+            "spend": _or_zero(_to_number(row.get("total_previous_spend"))),
+            "link_clicks": _or_zero(
+                _to_number(row.get("total_previous_link_clicks"))
+            ),
+            "conversions": _or_zero(
+                _to_number(row.get("total_previous_conversions"))
+            ),
+            "add_to_cart": _or_zero(
+                _to_number(row.get("total_previous_add_to_cart"))
+            ),
+            "purchase": _or_zero(_to_number(row.get("total_previous_purchase"))),
+        },
     }
     return _calculate_rates(totals)
 
@@ -269,6 +309,31 @@ def _calculate_rates(totals: dict[str, Any]) -> dict[str, Any]:
     )
     totals["cost_per_purchase"] = _safe_divide(totals["spend"], totals["purchase"])
     totals["purchase_roas"] = _safe_divide(totals["purchase_value"], totals["spend"])
+    previous = totals.get("previous")
+    if isinstance(previous, dict):
+        previous["cpc"] = _safe_divide(previous["spend"], previous["link_clicks"])
+        previous["cpa"] = _safe_divide(previous["spend"], previous["conversions"])
+        previous["cost_per_add_to_cart"] = _safe_divide(
+            previous["spend"],
+            previous["add_to_cart"],
+        )
+        previous["cost_per_purchase"] = _safe_divide(
+            previous["spend"],
+            previous["purchase"],
+        )
+        totals["delta"] = {
+            "spend": totals["spend"] - previous["spend"],
+            "link_clicks": totals["link_clicks"] - previous["link_clicks"],
+            "conversions": totals["conversions"] - previous["conversions"],
+            "add_to_cart": totals["add_to_cart"] - previous["add_to_cart"],
+            "purchase": totals["purchase"] - previous["purchase"],
+            "cpc": _subtract_optional(totals["cpc"], previous["cpc"]),
+            "cpa": _subtract_optional(totals["cpa"], previous["cpa"]),
+            "cost_per_purchase": _subtract_optional(
+                totals["cost_per_purchase"],
+                previous["cost_per_purchase"],
+            ),
+        }
     return totals
 
 
@@ -304,3 +369,12 @@ def _safe_divide(numerator: float | int, denominator: float | int) -> float | No
     if denominator == 0:
         return None
     return numerator / denominator
+
+
+def _subtract_optional(
+    value: float | int | None,
+    previous_value: float | int | None,
+) -> float | int | None:
+    if value is None or previous_value is None:
+        return None
+    return value - previous_value
