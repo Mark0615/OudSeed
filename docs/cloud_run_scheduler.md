@@ -131,6 +131,44 @@ The deployment script will add a new Secret Manager version for `oudseed-meta-ac
 
 If a sync fails for any account, the pipeline writes a `failed` row to `sync_logs` and exits non-zero so Cloud Run job executions also show as failed.
 
+## AI Report Job
+
+Deploy the OpenAI report generator as a separate Cloud Run Job:
+
+```bash
+bash deploy/deploy_ai_report_job.sh
+```
+
+The AI report deployment uses the same runtime service account and Artifact Registry repository, but stores `OPENAI_API_KEY` in Secret Manager as `oudseed-openai-api-key`.
+
+Default settings:
+
+| Setting | Value |
+|---|---|
+| Cloud Run Job | `oudseed-ai-report` |
+| Cloud Scheduler Job | `oudseed-ai-report-monthly` |
+| Schedule | `0 5 1 * * *` |
+| Timezone | `Asia/Taipei` |
+| Report type | `monthly` |
+
+The scheduled job does not need `AI_REPORT_PERIOD_START_DATE`. Monthly reports default to the previous complete month. Weekly reports default to the previous complete Monday-starting week.
+
+Run the AI report job manually:
+
+```bash
+gcloud run jobs execute oudseed-ai-report --region asia-east1 --wait
+```
+
+Deploy a weekly report job:
+
+```bash
+AI_REPORT_TYPE=weekly \
+JOB_NAME=oudseed-ai-report-weekly \
+SCHEDULER_JOB_NAME=oudseed-ai-report-weekly \
+SCHEDULE="0 5 * * 1" \
+bash deploy/deploy_ai_report_job.sh
+```
+
 ## Notes
 
 - The Cloud Run Job reads `CLIENTS_CONFIG_YAML` from Secret Manager.

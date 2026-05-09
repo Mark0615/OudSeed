@@ -27,6 +27,18 @@ def get_default_sync_range(
     return start_date.isoformat(), end_date.isoformat()
 
 
+def get_default_report_period_start(
+    report_type: str,
+    timezone: str = "Asia/Taipei",
+) -> str:
+    """Return the latest complete report period start date."""
+    return _get_default_report_period_start_for_now(
+        report_type=report_type,
+        timezone=timezone,
+        now=datetime.now(tz=ZoneInfo(timezone)),
+    )
+
+
 def _today_in_timezone(timezone: str, now: datetime | None = None) -> date:
     """Return today's date in a timezone, with injectable time for tests."""
     zone = ZoneInfo(timezone)
@@ -51,3 +63,20 @@ def _get_default_sync_range_for_now(
     start_date = end_date - timedelta(days=days_back)
 
     return start_date.isoformat(), end_date.isoformat()
+
+
+def _get_default_report_period_start_for_now(
+    report_type: str,
+    timezone: str,
+    now: datetime,
+) -> str:
+    """Return report period start for a fixed datetime used by tests."""
+    today = _today_in_timezone(timezone, now=now)
+    if report_type == "weekly":
+        current_week_start = today - timedelta(days=today.weekday())
+        return (current_week_start - timedelta(days=7)).isoformat()
+    if report_type == "monthly":
+        current_month_start = today.replace(day=1)
+        previous_month_end = current_month_start - timedelta(days=1)
+        return previous_month_end.replace(day=1).isoformat()
+    raise ValueError("report_type must be 'weekly' or 'monthly'.")
