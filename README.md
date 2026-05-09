@@ -183,6 +183,41 @@ This layer calculates spend, link clicks, conversions, CPC, CPA, ROAS, week-over
 REFRESH_REPORTING_MARTS=false make run
 ```
 
+## AI Report Context
+
+The AI reporting layer currently prepares model-ready weekly/monthly context and prompts from BigQuery reporting marts. It does not call an AI provider yet.
+
+Example:
+
+```python
+from dotenv import load_dotenv
+
+from src.ai.weekly_report import build_report_prompt
+from src.destinations.bigquery import BigQueryDestination
+
+load_dotenv()
+
+destination = BigQueryDestination(project_id="oudseed", dataset_id="ads_pipeline")
+result = build_report_prompt(
+    destination=destination,
+    report_type="monthly",
+    workspace_id="mark_internal",
+    client_id="your_client_id",
+    period_start_date="2025-03-01",
+)
+
+print(result["prompt"])
+```
+
+Supported report types:
+
+| Report type | Source view | Comparison |
+|---|---|---|
+| `weekly` | `vw_looker_ads_campaign_weekly` | Week over week |
+| `monthly` | `vw_looker_ads_campaign_monthly` | Month over month |
+
+The next step is to choose an AI provider, add the provider API key to local/Cloud Run secrets, and store generated report outputs in `ai_report_logs`.
+
 ## Cloud Run Scheduler
 
 Deploy the daily Meta Ads sync job with:

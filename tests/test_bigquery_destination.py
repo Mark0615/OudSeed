@@ -2,6 +2,7 @@
 
 from unittest.mock import Mock
 
+from google.cloud import bigquery
 import pytest
 
 from src.destinations.bigquery import BigQueryDestination
@@ -136,6 +137,38 @@ def test_execute_sql_waits_for_query_completion() -> None:
 
     client.query.assert_called_once_with("SELECT 1")
     query_job.result.assert_called_once()
+
+
+def test_query_rows_returns_dict_rows() -> None:
+    """Parameterized queries return rows as plain dictionaries."""
+    query_job = Mock()
+    query_job.result.return_value = [{"name": "Campaign", "spend": 100.0}]
+    client = Mock()
+    client.query.return_value = query_job
+    destination = make_destination(client)
+
+    rows = destination.query_rows("SELECT @client_id", [])
+
+    assert rows == [{"name": "Campaign", "spend": 100.0}]
+    client.query.assert_called_once_with("SELECT @client_id", job_config=None)
+
+
+def test_query_rows_uses_query_parameters() -> None:
+    """Parameterized queries pass a BigQuery job config."""
+    query_job = Mock()
+    query_job.result.return_value = []
+    client = Mock()
+    client.query.return_value = query_job
+    destination = make_destination(client)
+
+    rows = destination.query_rows(
+        "SELECT @client_id",
+        [bigquery.ScalarQueryParameter("client_id", "STRING", "demo")],
+    )
+
+    assert rows == []
+    job_config = client.query.call_args.kwargs["job_config"]
+    assert len(job_config.query_parameters) == 1
 
 
 def test_invalid_table_name_is_rejected() -> None:

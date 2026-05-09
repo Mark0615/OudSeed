@@ -103,6 +103,19 @@ class BigQueryDestination:
         query_job = self.client.query(sql)
         query_job.result()
 
+    def query_rows(
+        self,
+        sql: str,
+        query_parameters: list[bigquery.ScalarQueryParameter] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Run a parameterized query and return rows as dictionaries."""
+        job_config = None
+        if query_parameters:
+            job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
+
+        query_job = self.client.query(sql, job_config=job_config)
+        return [dict(row) for row in query_job.result()]
+
     def _table_id(self, table_name: str) -> str:
         """Return fully-qualified table id for a local table name."""
         self._validate_identifier(table_name, "table name")
