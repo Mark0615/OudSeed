@@ -17,6 +17,21 @@ def load_config(path: str) -> dict:
 
     if config is None:
         raise ValueError(f"Config file is empty: {config_path}")
+
+    return load_config_from_yaml(yaml_text=None, parsed_config=config, source=str(config_path))
+
+
+def load_config_from_yaml(
+    yaml_text: str | None = None,
+    *,
+    parsed_config: object | None = None,
+    source: str = "config yaml",
+) -> dict:
+    """Load and validate pipeline config from YAML text or parsed YAML."""
+    config = yaml.safe_load(yaml_text) if yaml_text is not None else parsed_config
+
+    if config is None:
+        raise ValueError(f"Config is empty: {source}")
     if not isinstance(config, dict):
         raise ValueError("Config root must be a mapping/object.")
 

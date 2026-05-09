@@ -1,2 +1,20 @@
-# Cloud Build placeholder for future Cloud Run Job deployment.
-steps: []
+substitutions:
+  _IMAGE_URI: asia-east1-docker.pkg.dev/oudseed/ads-ai-pipeline/oudseed-meta-ads-sync:latest
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - deploy/Dockerfile
+      - -t
+      - ${_IMAGE_URI}
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_IMAGE_URI}
+
+images:
+  - ${_IMAGE_URI}

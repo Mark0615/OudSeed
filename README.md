@@ -150,6 +150,32 @@ Available reporting views:
 
 Use `link_clicks` as the primary click metric for Meta reporting. It maps to Meta `inline_link_clicks`, which matches the current validation baseline.
 
+## Cloud Run Scheduler
+
+Deploy the daily Meta Ads sync job with:
+
+```bash
+bash deploy/deploy_cloud_run_job.sh
+```
+
+Default deployment settings:
+
+```text
+Cloud Run Job: oudseed-meta-ads-sync
+Scheduler Job: oudseed-meta-ads-sync-daily
+Schedule: 0 4 * * *
+Timezone: Asia/Taipei
+Region: asia-east1
+```
+
+Run the Cloud Run Job manually:
+
+```bash
+gcloud run jobs execute oudseed-meta-ads-sync --region asia-east1 --wait
+```
+
+See [docs/cloud_run_scheduler.md](docs/cloud_run_scheduler.md) for the full deployment runbook.
+
 ## Current Scope
 
 This repository is currently prepared for v0.1 development:
