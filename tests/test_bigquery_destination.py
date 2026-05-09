@@ -63,6 +63,33 @@ def test_insert_rows_error_message_is_summarized() -> None:
         destination.insert_rows("unified_ads_daily", [{"date": "2026-05-03"}])
 
 
+def test_load_rows_returns_zero_for_empty_rows() -> None:
+    """Empty load jobs are a no-op."""
+    client = Mock()
+    destination = make_destination(client)
+
+    assert destination.load_rows("unified_ads_daily", []) == 0
+    client.load_table_from_json.assert_not_called()
+
+
+def test_load_rows_uses_bigquery_load_job() -> None:
+    """Load jobs append rows without BigQuery streaming inserts."""
+    load_job = Mock()
+    client = Mock()
+    client.load_table_from_json.return_value = load_job
+    destination = make_destination(client)
+
+    count = destination.load_rows("unified_ads_daily", [{"date": "2026-05-03"}])
+
+    assert count == 1
+    rows, table_id = client.load_table_from_json.call_args.args[:2]
+    job_config = client.load_table_from_json.call_args.kwargs["job_config"]
+    assert rows == [{"date": "2026-05-03"}]
+    assert table_id == "oudseed.ads_pipeline.unified_ads_daily"
+    assert job_config.write_disposition == bigquery.WriteDisposition.WRITE_APPEND
+    load_job.result.assert_called_once()
+
+
 def test_delete_date_range_uses_query_parameters() -> None:
     """Deletes use parameters for dates and filter values."""
     query_job = Mock()
@@ -88,9 +115,10 @@ def test_delete_date_range_uses_query_parameters() -> None:
 
 
 def test_replace_date_range_deletes_then_inserts() -> None:
-    """Replacement deletes matching rows before inserting latest rows."""
+    """Replacement deletes matching rows before loading latest rows."""
+    load_job = Mock()
     client = Mock()
-    client.insert_rows_json.return_value = []
+    client.load_table_from_json.return_value = load_job
     client.query.return_value = Mock()
     destination = make_destination(client)
 
@@ -104,7 +132,8 @@ def test_replace_date_range_deletes_then_inserts() -> None:
 
     assert count == 1
     client.query.assert_called_once()
-    client.insert_rows_json.assert_called_once()
+    client.load_table_from_json.assert_called_once()
+    client.insert_rows_json.assert_not_called()
 
 
 def test_replace_date_range_with_empty_rows_still_deletes() -> None:
@@ -124,6 +153,7 @@ def test_replace_date_range_with_empty_rows_still_deletes() -> None:
     assert count == 0
     client.query.assert_called_once()
     client.insert_rows_json.assert_not_called()
+    client.load_table_from_json.assert_not_called()
 
 
 def test_execute_sql_waits_for_query_completion() -> None:
