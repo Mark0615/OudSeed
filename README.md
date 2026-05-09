@@ -253,6 +253,26 @@ gcloud run jobs execute oudseed-ai-report-weekly \
 
 For scheduled reports, `AI_REPORT_PERIOD_START_DATE` can be omitted. Monthly reports default to the first day of the previous month, and weekly reports default to the Monday of the previous complete week.
 
+Email a generated report:
+
+```bash
+AI_REPORT_EMAIL_TO=recipient@example.com \
+AI_REPORT_TYPE=weekly \
+AI_REPORT_PERIOD_START_DATE=2026-05-04 \
+.venv/bin/python -m src.ai.send_report_email
+```
+
+Email delivery requires SMTP settings:
+
+```bash
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your-sender-email@example.com
+SMTP_PASSWORD=your-smtp-or-app-password
+SMTP_FROM_EMAIL=your-sender-email@example.com
+SMTP_USE_TLS=true
+```
+
 Preview the model-ready prompt without calling OpenAI:
 
 ```python

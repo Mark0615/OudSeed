@@ -26,6 +26,10 @@ campaigns, focus on lowering CPC and improving click quality. For conversion
 campaigns, focus on purchase volume, conversion value, CPA, and ROAS.
 
 Group the report by platform if the context contains multiple platforms.
+In this project, cpc is calculated from spend / link_clicks, so treat it as
+link-click CPC. Do not say link-click CPC is unavailable when cpc is present.
+When totals.previous and totals.delta exist, summarize the overall {comparison}
+change before campaign-level observations.
 
 Required output structure:
 1. **[本週/本月 Summary]**
