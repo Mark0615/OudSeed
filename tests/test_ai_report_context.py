@@ -168,6 +168,8 @@ def test_render_performance_report_prompt_includes_context() -> None:
 
     assert "Traditional Chinese" in prompt
     assert "Do not invent numbers" in prompt
+    assert "表現較好的廣告" in prompt
+    assert "素材觀察" in prompt
     assert "Prospecting" in prompt
 
 

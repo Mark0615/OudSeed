@@ -55,6 +55,57 @@ Meta Ads → BigQuery → unified_ads_daily → Looker Studio
 
 > 不只同步資料，而是成為廣告投手的 AI Performance Analyst。
 
+### 2.1 產品願景：自動回報廣告成效的廣告助理
+
+最終產品應協助廣告投手與行銷顧問自動完成：
+
+- 每天同步 Meta Ads、Google Ads、LINE Ads 等平台數據
+- 將資料集中到 BigQuery
+- 讓使用者選擇資料落地位置，MVP 先以 Looker Studio 為主，後續支援 Google Sheets
+- 每週、每月，未來可每日，自動產出廣告成效洞察與行動建議
+- 以客戶或廣告帳戶為單位寄送報告；同一客戶若有 Meta + Google，應整合在同一份報告中，不同客戶分開寄送
+- 支援 Email 與 LINE 發送；未來 SaaS 版本可讓使用者自行選擇發送頻率與通路，多通路可作為付費升級
+
+AI 報告的核心價值不是重述數字，而是協助客戶提升業績，並依照廣告原始目標給出合理建議。
+
+### 2.2 AI 報告內容格式
+
+AI 報告應以繁體中文輸出。若同一客戶有多個平台，需依平台分段呈現，但維持一致格式。
+
+每週或每月報告至少包含：
+
+```text
+**[當週/當月 Summary]**
+- 本週/本月整體花費、CPM、CPC（連結點擊成本）、CPA（預設 purchase）、ROAS（如有）
+- 加入購物車數、購買數（如有）
+
+**表現較好的廣告**
+- 不限一個 campaign / ad set / ad
+- 說明 CPA 特別低、ROAS 特別高、CPC 特別低、CTR 特別好或轉換量明顯成長的原因
+- 建議如何維持或放大表現
+
+**表現較差的廣告**
+- 不限一個 campaign / ad set / ad
+- 說明相比上週或上月下降的指標
+- 建議如何改善、是否降低預算、是否暫停
+
+**素材觀察**
+- 判斷哪些素材值得學習
+- 除 CPC / CTR 外，盡量納入留言、按讚、分享、儲存、影片觀看、outbound click 等互動指標
+- 建議下週或下月應提供哪些素材，哪些素材可減少
+
+**整體建議**
+- 下週或下月具體調整項目
+- 需要客戶提供的素材、優惠、Landing Page 或其他資源
+```
+
+建議原則：
+
+- 第一優先是協助客戶業績提升
+- 若廣告目標是導流，優先提供降低 CPC、提高 CTR、提高點擊品質的建議
+- 若廣告目標是轉換，優先提供增加購買數、轉換價值、降低 CPA、提高 ROAS 的建議
+- 若資料不足，不可捏造原因，應明確說明缺少哪些資料
+
 ---
 
 ## 3. 產品階段
@@ -102,7 +153,27 @@ v0.1 必須做到：
 - AI weekly report generator
 - 儲存 AI report logs
 
-## 3.5 v1.0
+## 3.5 v0.4
+
+加入雲端排程與 AI 報告部署：
+
+- Cloud Run Job 執行 Meta Ads daily sync
+- Cloud Scheduler 每日觸發 sync
+- Cloud Run Job 執行 AI weekly/monthly report generation
+- Cloud Scheduler 觸發 monthly report，weekly report 可依需求新增
+- AI report logs 可被 Looker Studio 查詢
+
+## 3.6 v0.5
+
+擴充 Meta Ads 欄位覆蓋率：
+
+- 加入 Meta action/action_values/cost_per_action_type 常用 action 展開欄位
+- 加入 creative metadata，例如 image URL、thumbnail URL、headline、body、link URL
+- 加入 campaign/ad set/ad settings，例如 objective、optimization goal、bid strategy、budget、status、created/end time
+- 加入 engagement metrics，例如 comments、reactions、saves、shares、page engagement、post engagement
+- 規劃 Meta field catalog，記錄欄位名稱、來源 endpoint、報表層級、資料型別與 Looker 顯示名稱
+
+## 3.7 v1.0
 
 內測版：
 
@@ -325,6 +396,43 @@ unified_ads_daily
 ```text
 date + platform + account_id + campaign_id + ad_group_id + ad_id
 ```
+
+### 8.3 Windsor-like Meta 欄位覆蓋策略
+
+本專案可以逐步做到接近 Windsor.ai 的 Meta 欄位覆蓋，但不應理解成「Meta 廣告管理員所有欄位都能用一次 API call 抓進同一張表」。
+
+原因：
+
+- Ads Manager UI 欄位來自多個來源：Insights、Campaign、Ad Set、Ad、Creative、Custom Conversion、Breakdowns 等
+- 有些 UI 欄位是衍生指標，例如 cost per action、ROAS、CTR、CPC
+- 有些欄位是 nested action type，例如 `actions:purchase`、`actions:add_to_cart`
+- 有些欄位需要特定歸因設定、conversion event 或 Pixel/CAPI 設定才會有值
+- 有些 breakdown 不能任意互相組合，且會讓資料列數大幅增加
+
+建議資料層：
+
+| Layer | 說明 |
+|---|---|
+| Raw API payload | 保存完整 API 回傳，支援重算與補欄位 |
+| Platform wide table/view | 展開 Meta-only 欄位，給 Looker Studio 與 AI 使用 |
+| Unified table/view | 保存跨平台核心欄位，避免被平台特有欄位污染 |
+| Field catalog | 記錄欄位來源、型別、endpoint、report level、是否可用於 Looker/AI |
+
+Meta 欄位擴充順序：
+
+1. Insights performance preset：spend、impressions、reach、frequency、clicks、inline link clicks、CTR、CPC、CPM
+2. Conversion preset：`actions`、`action_values`、`cost_per_action_type` 中的 purchase、add_to_cart、view_content、initiate_checkout、lead 等
+3. Engagement preset：comments、reactions、shares、saves、page engagement、post engagement、video metrics
+4. Creative preset：ad creative ID、headline、body、description、image URL、thumbnail URL、destination URL、object type
+5. Settings preset：campaign objective、status、budget、bid strategy、optimization goal、created/end time
+6. Breakdown preset：publisher platform、platform position、device、country、region、age、gender
+
+實作規則：
+
+- 使用 configurable field presets，不要在 connector 中硬寫一份不可調整的巨大欄位清單
+- Meta API 不支援或當前帳戶無資料的欄位，應保留為 `NULL` 或從 raw_payload 可追溯，不可捏造
+- 若新增欄位只適用 Meta，優先放在 Meta-specific view/table，不要直接塞進 `unified_ads_daily`
+- Looker Studio 可連接 platform wide view 取得更多欄位；AI summary 可優先使用 summary marts，再補 creative/engagement context
 
 ---
 

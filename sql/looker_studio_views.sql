@@ -170,3 +170,19 @@ SELECT
   finished_at,
   TIMESTAMP_DIFF(finished_at, started_at, SECOND) AS duration_seconds
 FROM `oudseed.ads_pipeline.sync_logs`;
+
+CREATE OR REPLACE VIEW `oudseed.ads_pipeline.vw_looker_ai_report_logs` AS
+SELECT
+  report_id,
+  workspace_id,
+  client_id,
+  report_type,
+  week_start_date AS period_start_date,
+  week_end_date AS period_end_date,
+  model_name,
+  status,
+  error_message,
+  report_text,
+  LENGTH(report_text) AS report_text_chars,
+  created_at
+FROM `oudseed.ads_pipeline.ai_report_logs`;

@@ -57,6 +57,15 @@ def test_looker_views_include_monthly_campaign_view() -> None:
     assert "monthly_performance_summary" in sql
 
 
+def test_looker_views_include_ai_report_logs_view() -> None:
+    """Looker Studio views include generated AI report output."""
+    sql = Path("sql/looker_studio_views.sql").read_text(encoding="utf-8")
+
+    assert "vw_looker_ai_report_logs" in sql
+    assert "ai_report_logs" in sql
+    assert "report_text_chars" in sql
+
+
 def test_create_tables_includes_summary_marts() -> None:
     """Warehouse bootstrap SQL includes weekly and monthly summary tables."""
     sql = Path("sql/create_tables.sql").read_text(encoding="utf-8")

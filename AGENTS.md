@@ -10,18 +10,20 @@ Local development path:
 
 ## Project context
 
-This project is an ads data pipeline that syncs advertising data into BigQuery, then supports Looker Studio dashboards, Google Sheet export, and future AI-generated weekly/monthly reports.
+This project is an automated ads performance assistant. It syncs advertising data
+into BigQuery, exposes reporting datasets to Looker Studio first and Google
+Sheets later, then generates recurring AI performance insights for media buyers.
 
 Current MVP priority:
 
 ```text
-Meta Ads → BigQuery → unified_ads_daily → Looker Studio
+Meta Ads → BigQuery → Looker Studio → AI report logs
 ```
 
 Future order:
 
 ```text
-Google Ads → LINE Ads → AI weekly report → SaaS features
+Google Ads → LINE Ads → Google Sheets export → Email/LINE delivery → SaaS features
 ```
 
 Read this file and `docs/ads_ai_pipeline_codex_development_spec.md` before making changes.
@@ -30,21 +32,26 @@ Read this file and `docs/ads_ai_pipeline_codex_development_spec.md` before makin
 
 ## Current implementation scope
 
-Current target version: `v0.1`
+Current target version: `v0.4` product-shaped MVP.
 
-Only implement work related to:
+Current implemented foundation:
 
-- Engineering governance files
-- Project skeleton
-- BigQuery schema
-- Config loader
-- Date utils
-- BigQuery destination
-- Base connector
-- Meta Ads connector
-- Meta Ads normalize
-- Main Meta Ads sync flow
-- Sync logs
+- Meta Ads daily sync to BigQuery
+- Raw Meta Ads payload storage
+- Unified daily ads table
+- Weekly/monthly BigQuery summary marts
+- Looker Studio reporting views
+- Cloud Run Job + Cloud Scheduler for Meta sync
+- OpenAI-powered weekly/monthly report generation
+- AI report Cloud Run Job + monthly Cloud Scheduler
+- Sync and AI report logs for failure tracking
+
+Current product focus:
+
+- Improve Meta field coverage for reporting and AI analysis
+- Make Looker Studio expose both performance data and generated AI reports
+- Improve AI report structure so it matches media buyer workflows
+- Keep platform-specific raw/wide fields available without bloating the unified table
 
 Do not implement these unless explicitly requested:
 
@@ -54,9 +61,47 @@ Do not implement these unless explicitly requested:
 - SaaS user system
 - Payment
 - Google Sheet export
-- AI weekly/monthly reports
 - Frontend dashboard
-- Cloud Run deployment
+- Email delivery
+- LINE delivery
+
+## Product reporting rules
+
+AI reports should be useful to a media buyer, not just descriptive summaries.
+For each client/account report:
+
+- Group results by advertising platform when multiple platforms exist.
+- Include weekly/monthly spend, CPM, CPC/link-click CPC, CPA for the configured
+  conversion action, ROAS when conversion value exists, add-to-cart count when
+  available, and purchase count when available.
+- Identify stronger ads/campaigns/ad sets, explain the metric basis, and suggest
+  how to maintain or scale performance.
+- Identify weaker ads/campaigns/ad sets, explain the metric basis, and suggest
+  whether to improve, reduce spend, or pause.
+- Include creative observations when creative or engagement data exists. Use
+  CTR/CPC plus engagement signals such as reactions, comments, saves, shares,
+  outbound clicks, or video metrics when available.
+- Tie recommendations to the campaign objective. Traffic campaigns should focus
+  on lower CPC and higher-quality clicks. Conversion campaigns should focus on
+  purchase count, conversion value, CPA, and ROAS.
+- Ask for concrete client inputs when needed, such as new creatives, offer
+  details, landing page changes, target CPA, or target ROAS.
+
+## Meta field coverage strategy
+
+The goal is Windsor-like coverage over time, but not by forcing every platform
+field into `unified_ads_daily`.
+
+- Preserve full raw API payloads.
+- Keep a compact cross-platform unified table for common metrics.
+- Add platform-specific raw/wide tables or views for Meta-only reporting fields.
+- Keep field sets configurable by report preset instead of hardcoding one giant
+  API call.
+- Track field availability in a field catalog when coverage grows.
+- Do not assume every Ads Manager UI column is available from one endpoint. Some
+  fields require Insights, creative, campaign, ad set, ad, or breakdown endpoints.
+- Be careful with breakdowns because age, gender, country, placement, device, and
+  publisher platform can multiply rows and are not all freely combinable.
 
 ---
 

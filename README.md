@@ -149,6 +149,7 @@ Available reporting views:
 | `vw_looker_ads_campaign_weekly` | Campaign-level weekly WoW dashboard and AI summary source |
 | `vw_looker_ads_campaign_monthly` | Campaign-level monthly MoM dashboard and AI summary source |
 | `vw_looker_ads_ad_daily` | Ad-level detail table source |
+| `vw_looker_ai_report_logs` | Generated AI report text and report status source |
 | `vw_looker_sync_status` | Sync monitoring and error review |
 
 Use `link_clicks` as the primary click metric for Meta reporting. It maps to Meta `inline_link_clicks`, which matches the current validation baseline.
@@ -245,6 +246,32 @@ Generated report logs are written to:
 
 ```text
 oudseed.ads_pipeline.ai_report_logs
+```
+
+Looker Studio can read generated report output from:
+
+```text
+oudseed.ads_pipeline.vw_looker_ai_report_logs
+```
+
+The current AI report output is stored in BigQuery. Email and LINE delivery are
+future delivery channels and are not sent automatically yet.
+
+Preview recent AI reports:
+
+```sql
+SELECT
+  report_id,
+  report_type,
+  status,
+  model_name,
+  period_start_date,
+  period_end_date,
+  report_text,
+  created_at
+FROM `oudseed.ads_pipeline.vw_looker_ai_report_logs`
+ORDER BY created_at DESC
+LIMIT 5;
 ```
 
 ## Cloud Run Scheduler
