@@ -210,6 +210,8 @@ Generate a one-off weekly report:
 AI_REPORT_TYPE=weekly AI_REPORT_PERIOD_START_DATE=2025-03-24 .venv/bin/python -m src.ai.generate_report
 ```
 
+For scheduled reports, `AI_REPORT_PERIOD_START_DATE` can be omitted. Monthly reports default to the first day of the previous month, and weekly reports default to the Monday of the previous complete week.
+
 Preview the model-ready prompt without calling OpenAI:
 
 ```python
@@ -270,6 +272,41 @@ gcloud run jobs execute oudseed-meta-ads-sync --region asia-east1 --wait
 ```
 
 See [docs/cloud_run_scheduler.md](docs/cloud_run_scheduler.md) for the full deployment runbook.
+
+## AI Report Scheduler
+
+Deploy the monthly AI report job with:
+
+```bash
+bash deploy/deploy_ai_report_job.sh
+```
+
+Default deployment settings:
+
+```text
+Cloud Run Job: oudseed-ai-report
+Scheduler Job: oudseed-ai-report-monthly
+Schedule: 0 5 1 * * *
+Timezone: Asia/Taipei
+Region: asia-east1
+Report type: monthly
+```
+
+Run the AI report Cloud Run Job manually:
+
+```bash
+gcloud run jobs execute oudseed-ai-report --region asia-east1 --wait
+```
+
+Deploy a weekly AI report job instead:
+
+```bash
+AI_REPORT_TYPE=weekly \
+JOB_NAME=oudseed-ai-report-weekly \
+SCHEDULER_JOB_NAME=oudseed-ai-report-weekly \
+SCHEDULE="0 5 * * 1" \
+bash deploy/deploy_ai_report_job.sh
+```
 
 ## Current Scope
 
