@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from src.connectors.meta_ads import MetaAdsConnector
 from src.destinations.bigquery import BigQueryDestination
 from src.transforms.normalize_meta import normalize_meta_ads_rows
-from src.utils.config_loader import load_config
+from src.utils.config_loader import load_config, load_config_from_yaml
 from src.utils.date_utils import get_default_sync_range
 
 
@@ -24,8 +24,7 @@ SYNC_LOGS_TABLE = "sync_logs"
 def main() -> None:
     """Run the Meta Ads sync flow using local configuration."""
     load_dotenv()
-    config_path = os.getenv("CLIENTS_CONFIG_PATH", DEFAULT_CONFIG_PATH)
-    config = load_config(config_path)
+    config = _load_runtime_config()
     access_token = _required_env("META_ACCESS_TOKEN")
 
     bigquery_config = config.get("bigquery", {})
@@ -59,6 +58,7 @@ def run_meta_sync(
         )
 
     workspace_id = config["workspace_id"]
+    failed_accounts: list[str] = []
     for client in config["clients"]:
         if not client.get("enabled", True):
             continue
@@ -72,7 +72,7 @@ def run_meta_sync(
             if account.get("enabled", True) is False:
                 continue
 
-            _sync_meta_account(
+            status = _sync_meta_account(
                 workspace_id=workspace_id,
                 client_id=client_id,
                 account=account,
@@ -83,6 +83,21 @@ def run_meta_sync(
                 connector=connector,
                 destination=destination,
             )
+            if status != "success":
+                failed_accounts.append(f"{client_id}/{account['ad_account_id']}")
+
+    if failed_accounts:
+        raise RuntimeError(f"Meta sync failed for {len(failed_accounts)} account(s).")
+
+
+def _load_runtime_config() -> dict[str, Any]:
+    """Load config from Secret Manager env content or a local file path."""
+    config_yaml = os.getenv("CLIENTS_CONFIG_YAML")
+    if config_yaml:
+        return load_config_from_yaml(config_yaml, source="CLIENTS_CONFIG_YAML")
+
+    config_path = os.getenv("CLIENTS_CONFIG_PATH", DEFAULT_CONFIG_PATH)
+    return load_config(config_path)
 
 
 def _sync_meta_account(
@@ -95,7 +110,7 @@ def _sync_meta_account(
     end_date: str,
     connector: MetaAdsConnector,
     destination: BigQueryDestination,
-) -> None:
+) -> str:
     """Sync one Meta Ads account and always write a sync log."""
     account_id = account["ad_account_id"]
     started_at = _utc_now()
@@ -200,6 +215,7 @@ def _sync_meta_account(
         started_at=started_at,
     )
     destination.insert_rows(SYNC_LOGS_TABLE, [sync_log])
+    return status
 
 
 def _build_raw_rows(

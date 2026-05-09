@@ -1,6 +1,14 @@
 """Tests for the Meta sync flow."""
 
-from src.main import RAW_META_TABLE, SYNC_LOGS_TABLE, UNIFIED_TABLE, run_meta_sync
+import pytest
+
+from src.main import (
+    RAW_META_TABLE,
+    SYNC_LOGS_TABLE,
+    UNIFIED_TABLE,
+    _load_runtime_config,
+    run_meta_sync,
+)
 
 
 class FakeConnector:
@@ -146,7 +154,8 @@ def test_run_meta_sync_continues_to_sync_log_on_failure() -> None:
     connector = FakeConnector(error=RuntimeError("bad token"))
     destination = FakeDestination()
 
-    run_meta_sync(sample_config(), connector, destination)
+    with pytest.raises(RuntimeError, match="Meta sync failed for 1 account"):
+        run_meta_sync(sample_config(), connector, destination)
 
     assert destination.replacements == []
     sync_log = destination.inserts[0]["rows"][0]
@@ -154,3 +163,21 @@ def test_run_meta_sync_continues_to_sync_log_on_failure() -> None:
     assert sync_log["rows_fetched"] == 0
     assert sync_log["rows_inserted"] == 0
     assert sync_log["error_message"] == "bad token"
+
+
+def test_load_runtime_config_prefers_yaml_env(monkeypatch) -> None:
+    """Cloud Run can provide clients config through Secret Manager env vars."""
+    monkeypatch.setenv(
+        "CLIENTS_CONFIG_YAML",
+        """
+        workspace_id: mark_internal
+        clients:
+          - client_id: demo_client_001
+            platforms: {}
+            destinations: {}
+        """,
+    )
+
+    config = _load_runtime_config()
+
+    assert config["workspace_id"] == "mark_internal"

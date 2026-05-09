@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from src.utils.config_loader import load_config
+from src.utils.config_loader import load_config, load_config_from_yaml
 
 
 def write_yaml(path: Path, data: object) -> None:
@@ -20,6 +20,23 @@ def test_load_config_reads_example_config() -> None:
     assert config["workspace_id"] == "mark_internal"
     assert config["clients"][0]["client_id"] == "demo_client_001"
     assert config["clients"][0]["platforms"]["meta_ads"]["enabled"] is True
+
+
+def test_load_config_from_yaml_reads_yaml_text() -> None:
+    """Runtime YAML text can be loaded from Secret Manager env vars."""
+    config = load_config_from_yaml(
+        """
+        workspace_id: mark_internal
+        clients:
+          - client_id: demo_client_001
+            platforms: {}
+            destinations: {}
+        """,
+        source="CLIENTS_CONFIG_YAML",
+    )
+
+    assert config["workspace_id"] == "mark_internal"
+    assert config["clients"][0]["client_id"] == "demo_client_001"
 
 
 def test_load_config_raises_for_missing_file(tmp_path: Path) -> None:
