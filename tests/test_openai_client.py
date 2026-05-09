@@ -52,6 +52,27 @@ def test_openai_text_client_posts_to_responses_api() -> None:
     assert request.kwargs["json"]["model"] == "gpt-test"
     assert request.kwargs["json"]["input"] == "Prompt"
     assert request.kwargs["json"]["max_output_tokens"] == 100
+    assert request.kwargs["json"]["reasoning"] == {"effort": "medium"}
+
+
+def test_openai_text_client_uses_configured_reasoning_effort() -> None:
+    """Client includes configured reasoning effort in Responses API payload."""
+    response = Mock()
+    response.status_code = 200
+    response.json.return_value = {"output_text": "Report text"}
+    session = Mock()
+    session.post.return_value = response
+    client = OpenAITextClient(
+        api_key="test-key",
+        model="gpt-test",
+        reasoning_effort="low",
+        session=session,
+    )
+
+    client.generate_text("Prompt")
+
+    request = session.post.call_args
+    assert request.kwargs["json"]["reasoning"] == {"effort": "low"}
 
 
 def test_openai_text_client_raises_for_http_error() -> None:

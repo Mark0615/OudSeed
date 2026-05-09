@@ -191,7 +191,8 @@ Required environment values:
 
 ```bash
 OPENAI_API_KEY=your-openai-api-key
-OPENAI_MODEL=gpt-5.2
+OPENAI_MODEL=gpt-5.4 mini
+OPENAI_REASONING_EFFORT=medium
 AI_REPORT_TYPE=monthly
 AI_REPORT_PERIOD_START_DATE=2025-03-01
 AI_REPORT_CLIENT_ID=your-client-id

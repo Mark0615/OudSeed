@@ -16,7 +16,8 @@ class OpenAITextClient:
     def __init__(
         self,
         api_key: str,
-        model: str = "gpt-5.2",
+        model: str = "gpt-5.4 mini",
+        reasoning_effort: str = "medium",
         timeout_seconds: int = 60,
         session: requests.Session | None = None,
     ) -> None:
@@ -24,6 +25,7 @@ class OpenAITextClient:
             raise ValueError("OpenAI api_key is required.")
         self.api_key = api_key
         self.model = model
+        self.reasoning_effort = reasoning_effort
         self.timeout_seconds = timeout_seconds
         self.session = session or requests.Session()
 
@@ -33,17 +35,21 @@ class OpenAITextClient:
         max_output_tokens: int = 1800,
     ) -> tuple[str, dict[str, Any]]:
         """Generate text and return the text plus raw response payload."""
+        payload = {
+            "model": self.model,
+            "input": prompt,
+            "max_output_tokens": max_output_tokens,
+        }
+        if self.reasoning_effort:
+            payload["reasoning"] = {"effort": self.reasoning_effort}
+
         response = self.session.post(
             OPENAI_RESPONSES_URL,
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             },
-            json={
-                "model": self.model,
-                "input": prompt,
-                "max_output_tokens": max_output_tokens,
-            },
+            json=payload,
             timeout=self.timeout_seconds,
         )
         if response.status_code >= 400:
