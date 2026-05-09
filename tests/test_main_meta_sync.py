@@ -7,6 +7,8 @@ from src.main import (
     SYNC_LOGS_TABLE,
     UNIFIED_TABLE,
     _load_runtime_config,
+    _should_refresh_reporting_marts,
+    refresh_reporting_marts,
     run_meta_sync,
 )
 
@@ -39,6 +41,7 @@ class FakeDestination:
     def __init__(self) -> None:
         self.replacements: list[dict] = []
         self.inserts: list[dict] = []
+        self.executed_sql: list[str] = []
 
     def replace_date_range(
         self,
@@ -64,6 +67,10 @@ class FakeDestination:
         """Record insert calls."""
         self.inserts.append({"table_name": table_name, "rows": rows})
         return len(rows)
+
+    def execute_sql(self, sql: str) -> None:
+        """Record SQL execution calls."""
+        self.executed_sql.append(sql)
 
 
 def sample_config() -> dict:
@@ -181,3 +188,30 @@ def test_load_runtime_config_prefers_yaml_env(monkeypatch) -> None:
     config = _load_runtime_config()
 
     assert config["workspace_id"] == "mark_internal"
+
+
+def test_refresh_reporting_marts_executes_sql_files(tmp_path) -> None:
+    """Reporting mart refresh executes each configured SQL file in order."""
+    first_sql = tmp_path / "first.sql"
+    second_sql = tmp_path / "second.sql"
+    first_sql.write_text("SELECT 1", encoding="utf-8")
+    second_sql.write_text("SELECT 2", encoding="utf-8")
+    destination = FakeDestination()
+
+    refresh_reporting_marts(destination, sql_paths=(first_sql, second_sql))
+
+    assert destination.executed_sql == ["SELECT 1", "SELECT 2"]
+
+
+def test_should_refresh_reporting_marts_defaults_to_true(monkeypatch) -> None:
+    """Reporting marts refresh by default after successful syncs."""
+    monkeypatch.delenv("REFRESH_REPORTING_MARTS", raising=False)
+
+    assert _should_refresh_reporting_marts() is True
+
+
+def test_should_refresh_reporting_marts_can_be_disabled(monkeypatch) -> None:
+    """Operators can disable mart refresh for one-off troubleshooting runs."""
+    monkeypatch.setenv("REFRESH_REPORTING_MARTS", "false")
+
+    assert _should_refresh_reporting_marts() is False

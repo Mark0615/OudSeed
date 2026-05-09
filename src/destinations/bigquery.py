@@ -98,6 +98,11 @@ class BigQueryDestination:
         )
         return self.insert_rows(table_name=table_name, rows=rows)
 
+    def execute_sql(self, sql: str) -> None:
+        """Execute one BigQuery SQL statement and wait for completion."""
+        query_job = self.client.query(sql)
+        query_job.result()
+
     def _table_id(self, table_name: str) -> str:
         """Return fully-qualified table id for a local table name."""
         self._validate_identifier(table_name, "table name")
