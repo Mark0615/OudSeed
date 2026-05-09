@@ -42,6 +42,27 @@ class BigQueryDestination:
         LOGGER.info("Inserted %s rows into %s.", len(rows), table_id)
         return len(rows)
 
+    def load_rows(self, table_name: str, rows: list[dict]) -> int:
+        """Load JSON rows into a table and return loaded count."""
+        if not rows:
+            LOGGER.info("No rows to load into %s.", table_name)
+            return 0
+
+        table_id = self._table_id(table_name)
+        job_config = bigquery.LoadJobConfig(
+            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+            write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        )
+        load_job = self.client.load_table_from_json(
+            rows,
+            table_id,
+            job_config=job_config,
+        )
+        load_job.result()
+
+        LOGGER.info("Loaded %s rows into %s.", len(rows), table_id)
+        return len(rows)
+
     def delete_date_range(
         self,
         table_name: str,
@@ -89,14 +110,14 @@ class BigQueryDestination:
         end_date: str,
         filters: dict,
     ) -> int:
-        """Delete matching rows in a date range, then insert replacement rows."""
+        """Delete matching rows in a date range, then load replacement rows."""
         self.delete_date_range(
             table_name=table_name,
             start_date=start_date,
             end_date=end_date,
             filters=filters,
         )
-        return self.insert_rows(table_name=table_name, rows=rows)
+        return self.load_rows(table_name=table_name, rows=rows)
 
     def execute_sql(self, sql: str) -> None:
         """Execute one BigQuery SQL statement and wait for completion."""
