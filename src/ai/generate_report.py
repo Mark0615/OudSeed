@@ -37,14 +37,23 @@ def main() -> None:
     )
     client_id = os.getenv("AI_REPORT_CLIENT_ID") or _first_enabled_client_id(config)
     account_id = os.getenv("AI_REPORT_ACCOUNT_ID")
-    limit = int(os.getenv("AI_REPORT_LIMIT", "10"))
-    max_output_tokens = int(os.getenv("OPENAI_MAX_OUTPUT_TOKENS", "1800"))
+    limit = _positive_int_env("AI_REPORT_LIMIT", 10)
+    max_output_tokens = _positive_int_env("OPENAI_MAX_OUTPUT_TOKENS", 1800)
+    openai_timeout_seconds = _positive_int_env("OPENAI_TIMEOUT_SECONDS", 60)
+
+    print(
+        "starting_ai_report_generation="
+        f"true report_type={report_type} client_id={client_id} "
+        f"period_start_date={period_start_date} model={os.getenv('OPENAI_MODEL', 'gpt-5.4 mini')} "
+        f"timeout_seconds={openai_timeout_seconds}"
+    )
 
     destination = BigQueryDestination(project_id=project_id, dataset_id=dataset_id)
     openai_client = OpenAITextClient(
         api_key=_required_env("OPENAI_API_KEY"),
         model=os.getenv("OPENAI_MODEL", "gpt-5.4 mini"),
         reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium"),
+        timeout_seconds=openai_timeout_seconds,
     )
     result = generate_and_log_report(
         destination=destination,
@@ -86,6 +95,23 @@ def _required_env(name: str) -> str:
     value = os.getenv(name)
     if not value:
         raise ValueError(f"Missing required environment variable: {name}")
+    return value
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    """Read a positive integer environment variable."""
+    raw_value = os.getenv(name)
+    if raw_value in {None, ""}:
+        return default
+
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a positive integer.") from exc
+
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer.")
+
     return value
 
 
