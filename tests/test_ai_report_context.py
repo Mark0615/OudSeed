@@ -30,6 +30,19 @@ class FakeDestination:
         return self.rows
 
 
+class QueueDestination(FakeDestination):
+    """Fake destination that returns one queued result per query."""
+
+    def __init__(self, query_results: list[list[dict]]) -> None:
+        super().__init__(rows=[])
+        self.query_results = query_results
+
+    def query_rows(self, sql: str, query_parameters: list | None = None) -> list[dict]:
+        self.queries.append(sql)
+        self.parameters.append(query_parameters or [])
+        return self.query_results.pop(0)
+
+
 def sample_weekly_rows() -> list[dict]:
     """Return fake weekly campaign rows."""
     return [
@@ -140,6 +153,74 @@ def test_build_monthly_report_context_queries_monthly_view() -> None:
     assert context["totals"]["spend"] == 0
 
 
+def test_monthly_report_context_uses_complete_previous_period_totals() -> None:
+    """Previous totals are fetched from the full previous month, not current campaigns only."""
+    current_rows = [
+        {
+            "period_start_date": date(2026, 4, 1),
+            "period_end_date": date(2026, 4, 30),
+            "platform": "meta_ads",
+            "account_id": "act_123",
+            "account_name": "Miniware TW",
+            "campaign_id": "campaign_001",
+            "campaign_name": "Current Campaign",
+            "impressions": 100,
+            "link_clicks": 10,
+            "spend": 100.0,
+            "conversions": 2.0,
+            "conversion_value": 300.0,
+            "previous_spend": 20.0,
+            "previous_link_clicks": 2,
+            "previous_conversions": 1.0,
+            "total_impressions": 100,
+            "total_link_clicks": 10,
+            "total_spend": 100.0,
+            "total_conversions": 2.0,
+            "total_conversion_value": 300.0,
+            "total_previous_spend": 20.0,
+            "total_previous_link_clicks": 2,
+            "total_previous_conversions": 1.0,
+        }
+    ]
+    previous_total_rows = [
+        {
+            "impressions": 1000,
+            "link_clicks": 100,
+            "spend": 500.0,
+            "conversions": 8.0,
+            "conversion_value": 900.0,
+            "add_to_cart": 20.0,
+            "purchase": 8.0,
+            "purchase_value": 900.0,
+        }
+    ]
+    destination = QueueDestination(
+        [
+            current_rows,
+            previous_total_rows,
+            [],
+            [],
+            [],
+            [],
+        ]
+    )
+
+    context = build_report_context(
+        destination=destination,
+        report_type="monthly",
+        workspace_id="mark_internal",
+        client_id="demo_client_001",
+        period_start_date="2026-04-01",
+        account_id="act_123",
+    )
+
+    assert context["totals"]["previous"]["spend"] == 500.0
+    assert context["totals"]["previous"]["purchase"] == 8.0
+    assert context["totals"]["delta"]["spend"] == -400.0
+    assert context["totals"]["delta"]["purchase"] == -8.0
+    assert "2026-03-01" in str(destination.parameters[1][0].value)
+
+
 def test_build_report_context_rejects_invalid_limit() -> None:
     """Report context limits must be positive."""
     destination = FakeDestination([])
@@ -171,6 +252,8 @@ def test_render_performance_report_prompt_includes_context() -> None:
     assert "表現較好的廣告" in prompt
     assert "素材觀察" in prompt
     assert "Prospecting" in prompt
+    assert "thousands separators" in prompt
+    assert "search terms" in prompt
 
 
 def test_build_report_prompt_returns_context_and_prompt() -> None:
