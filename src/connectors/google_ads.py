@@ -69,6 +69,34 @@ WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
   AND metrics.impressions > 0
 """
 
+SEARCH_TERM_LEVEL_QUERY = """
+SELECT
+  segments.date,
+  customer.id,
+  customer.descriptive_name,
+  customer.currency_code,
+  campaign.id,
+  campaign.name,
+  campaign.status,
+  campaign.advertising_channel_type,
+  ad_group.id,
+  ad_group.name,
+  ad_group.status,
+  search_term_view.search_term,
+  metrics.impressions,
+  metrics.clicks,
+  metrics.cost_micros,
+  metrics.conversions,
+  metrics.conversions_value,
+  metrics.ctr,
+  metrics.average_cpc,
+  metrics.average_cpm,
+  metrics.cost_per_conversion
+FROM search_term_view
+WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
+  AND metrics.impressions > 0
+"""
+
 
 class GoogleAdsConnector(BaseAdsConnector):
     """Fetch daily Google Ads performance rows."""
@@ -125,7 +153,12 @@ class GoogleAdsConnector(BaseAdsConnector):
             query=KEYWORD_LEVEL_QUERY.format(start_date=start_date, end_date=end_date),
             report_level="keyword",
         )
-        return ad_rows + keyword_rows
+        search_term_rows = self._run_query(
+            customer_id=customer_id,
+            query=SEARCH_TERM_LEVEL_QUERY.format(start_date=start_date, end_date=end_date),
+            report_level="search_term",
+        )
+        return ad_rows + keyword_rows + search_term_rows
 
     def _run_query(
         self,
@@ -194,6 +227,8 @@ def _flatten_google_ads_row(row: Any, report_level: str) -> dict[str, Any]:
                 "criterion_status": criterion.status.name,
             }
         )
+    elif report_level == "search_term":
+        flattened["search_term"] = row.search_term_view.search_term
 
     return flattened
 

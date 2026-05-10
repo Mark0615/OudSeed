@@ -92,9 +92,15 @@ For each client/account report:
   the user's configured report cadence and delivery date.
 - Format report numbers consistently: prefix all money values with `$` including
   spend, CPC, CPM, CPA, cost per add-to-cart, purchase value, and similar fields;
-  show CPC with 2 decimals; show other money values as rounded whole numbers
-  unless a later product setting requires currency-specific precision; show CTR
-  and other rates as percentages with 2 decimals; show ROAS with 2 decimals.
+  use thousands separators for all numbers; show CPC with 2 decimals; show other
+  money values as rounded whole numbers unless a later product setting requires
+  currency-specific precision; show CTR and other rates as percentages with 2
+  decimals; show ROAS with 2 decimals.
+- WoW/MoM comparisons should consistently show current value, previous value,
+  and absolute movement, such as
+  `Spend：$13,006（較上月 $13,601 下降 $594）`. Previous-period totals must be
+  calculated from the complete previous period, not only from campaigns that
+  still exist in the current period.
 - Reporting and recommendations must evolve beyond campaign-level only. Use
   campaign, ad set, and ad/creative-level data when available so the report can
   recommend which ad sets have scaling potential, which should be reduced or
@@ -106,6 +112,9 @@ For each client/account report:
 - Email reports should be HTML, not raw Markdown. Put a campaign-level table
   after the period header for each platform, include a total row, use thousands
   separators for numbers, and render emphasis with HTML instead of visible `**`.
+- Google Ads recommendations should use keyword and search-term context when
+  available and name specific keywords/search terms to pause, reduce, expand, or
+  add as negatives. Avoid generic budget/CPC advice when deeper data exists.
 
 ## Meta field coverage strategy
 

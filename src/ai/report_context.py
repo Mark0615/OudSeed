@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Literal
 
 from google.cloud import bigquery
@@ -182,6 +182,14 @@ def build_report_context(
     rows = destination.query_rows(query, query_parameters=query_parameters)
     campaigns = [_normalize_campaign(row) for row in rows]
     period_end_date = _first_value(campaigns, "period_end_date")
+    previous_totals = _fetch_previous_period_totals(
+        destination=destination,
+        config=config,
+        workspace_id=workspace_id,
+        client_id=client_id,
+        period_start_date=period_start_date,
+        account_ids=scoped_account_ids,
+    )
     details = _fetch_performance_details(
         destination=destination,
         workspace_id=workspace_id,
@@ -202,11 +210,12 @@ def build_report_context(
         "account_ids": scoped_account_ids,
         "period_start_date": period_start_date,
         "period_end_date": period_end_date,
-        "totals": _extract_totals(rows),
+        "totals": _extract_totals(rows, previous_totals=previous_totals),
         "campaigns": campaigns,
         "ad_groups": details["ad_groups"],
         "ads": details["ads"],
         "keywords": details["keywords"],
+        "search_terms": details["search_terms"],
     }
 
 
@@ -225,6 +234,7 @@ def _fetch_performance_details(
         "ad_groups": [],
         "ads": [],
         "keywords": [],
+        "search_terms": [],
     }
     if not period_end_date:
         return empty_details
@@ -251,6 +261,16 @@ def _fetch_performance_details(
             limit=limit,
         ),
         "keywords": _fetch_google_keyword_breakdown(
+            destination=destination,
+            workspace_id=workspace_id,
+            client_id=client_id,
+            account_id=account_id,
+            account_ids=account_ids,
+            period_start_date=period_start_date,
+            period_end_date=period_end_date,
+            limit=limit,
+        ),
+        "search_terms": _fetch_google_search_term_breakdown(
             destination=destination,
             workspace_id=workspace_id,
             client_id=client_id,
@@ -446,6 +466,71 @@ def _fetch_google_keyword_breakdown(
     return [_normalize_detail_row(row) for row in destination.query_rows(query, parameters)]
 
 
+def _fetch_google_search_term_breakdown(
+    destination: BigQueryDestination,
+    workspace_id: str,
+    client_id: str,
+    account_id: str | None,
+    account_ids: list[str],
+    period_start_date: str,
+    period_end_date: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Return top Google Ads search term rows from raw search-term payloads."""
+    filters, parameters = _detail_filters(
+        workspace_id=workspace_id,
+        client_id=client_id,
+        account_id=account_id,
+        account_ids=account_ids,
+        period_start_date=period_start_date,
+        period_end_date=period_end_date,
+        limit=limit,
+    )
+    filters.extend(["platform = 'google_ads'", "report_level = 'search_term'"])
+    query = f"""
+    SELECT
+      platform,
+      account_id,
+      JSON_VALUE(raw_payload, '$.account_name') AS account_name,
+      JSON_VALUE(raw_payload, '$.campaign_id') AS campaign_id,
+      ANY_VALUE(JSON_VALUE(raw_payload, '$.campaign_name')) AS campaign_name,
+      JSON_VALUE(raw_payload, '$.ad_group_id') AS ad_group_id,
+      ANY_VALUE(JSON_VALUE(raw_payload, '$.ad_group_name')) AS ad_group_name,
+      JSON_VALUE(raw_payload, '$.search_term') AS search_term,
+      SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64)) AS impressions,
+      SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64)) AS link_clicks,
+      SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)) AS spend,
+      SUM(CAST(JSON_VALUE(raw_payload, '$.conversions') AS FLOAT64)) AS conversions,
+      SUM(CAST(JSON_VALUE(raw_payload, '$.conversion_value') AS FLOAT64)) AS conversion_value,
+      SAFE_DIVIDE(
+        SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64)),
+        SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64))
+      ) AS ctr,
+      SAFE_DIVIDE(
+        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)),
+        SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64))
+      ) AS cpc,
+      SAFE_DIVIDE(
+        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)) * 1000,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64))
+      ) AS cpm,
+      SAFE_DIVIDE(
+        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)),
+        SUM(CAST(JSON_VALUE(raw_payload, '$.conversions') AS FLOAT64))
+      ) AS cpa,
+      SAFE_DIVIDE(
+        SUM(CAST(JSON_VALUE(raw_payload, '$.conversion_value') AS FLOAT64)),
+        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64))
+      ) AS roas
+    FROM `{destination._table_id("raw_google_ads_daily")}`
+    WHERE {" AND ".join(filters)}
+    GROUP BY platform, account_id, account_name, campaign_id, ad_group_id, search_term
+    ORDER BY spend DESC
+    LIMIT @limit
+    """
+    return [_normalize_detail_row(row) for row in destination.query_rows(query, parameters)]
+
+
 def _detail_filters(
     workspace_id: str,
     client_id: str,
@@ -493,6 +578,86 @@ def _normalize_account_ids(
     if account_ids:
         values.extend(account_ids)
     return list(dict.fromkeys(str(value) for value in values if value))
+
+
+def _fetch_previous_period_totals(
+    destination: BigQueryDestination,
+    config: ReportMetricConfig,
+    workspace_id: str,
+    client_id: str,
+    period_start_date: str,
+    account_ids: list[str],
+) -> dict[str, Any] | None:
+    """Fetch complete previous-period totals independent of current campaigns."""
+    previous_start_date = _previous_period_start_date(
+        period_start_date=period_start_date,
+        start_field=config.start_field,
+    )
+    filters = [
+        f"{config.start_field} = @previous_start_date",
+        "workspace_id = @workspace_id",
+        "client_id = @client_id",
+    ]
+    parameters: list[bigquery.ScalarQueryParameter | bigquery.ArrayQueryParameter] = [
+        bigquery.ScalarQueryParameter("previous_start_date", "DATE", previous_start_date),
+        bigquery.ScalarQueryParameter("workspace_id", "STRING", workspace_id),
+        bigquery.ScalarQueryParameter("client_id", "STRING", client_id),
+    ]
+    if len(account_ids) == 1:
+        filters.append("account_id = @account_id")
+        parameters.append(bigquery.ScalarQueryParameter("account_id", "STRING", account_ids[0]))
+    elif account_ids:
+        filters.append("account_id IN UNNEST(@account_ids)")
+        parameters.append(bigquery.ArrayQueryParameter("account_ids", "STRING", account_ids))
+
+    query = f"""
+    SELECT
+      SUM(impressions) AS impressions,
+      SUM(link_clicks) AS link_clicks,
+      SUM(spend) AS spend,
+      SUM(conversions) AS conversions,
+      SUM(conversion_value) AS conversion_value,
+      SUM(add_to_cart) AS add_to_cart,
+      SUM(purchase) AS purchase,
+      SUM(purchase_value) AS purchase_value
+    FROM `{destination._table_id(config.view_name)}`
+    WHERE {" AND ".join(filters)}
+    """
+    rows = destination.query_rows(query, query_parameters=parameters)
+    if not rows:
+        return None
+
+    row = rows[0]
+    previous = {
+        "impressions": _or_zero(_to_number(row.get("impressions"))),
+        "link_clicks": _or_zero(_to_number(row.get("link_clicks"))),
+        "spend": _or_zero(_to_number(row.get("spend"))),
+        "conversions": _or_zero(_to_number(row.get("conversions"))),
+        "conversion_value": _or_zero(_to_number(row.get("conversion_value"))),
+        "add_to_cart": _or_zero(_to_number(row.get("add_to_cart"))),
+        "purchase": _or_zero(_to_number(row.get("purchase"))),
+        "purchase_value": _or_zero(_to_number(row.get("purchase_value"))),
+    }
+    previous["cpc"] = _safe_divide(previous["spend"], previous["link_clicks"])
+    previous["cpa"] = _safe_divide(previous["spend"], previous["conversions"])
+    previous["cost_per_add_to_cart"] = _safe_divide(
+        previous["spend"],
+        previous["add_to_cart"],
+    )
+    previous["cost_per_purchase"] = _safe_divide(previous["spend"], previous["purchase"])
+    previous["roas"] = _safe_divide(previous["conversion_value"], previous["spend"])
+    return previous
+
+
+def _previous_period_start_date(period_start_date: str, start_field: str) -> str:
+    """Return previous week/month start date for report comparison."""
+    current = date.fromisoformat(period_start_date)
+    if start_field == "week_start_date":
+        return (current - timedelta(days=7)).isoformat()
+
+    first_of_current_month = current.replace(day=1)
+    last_day_previous_month = first_of_current_month - timedelta(days=1)
+    return last_day_previous_month.replace(day=1).isoformat()
 
 
 def _normalize_campaign(row: dict[str, Any]) -> dict[str, Any]:
@@ -554,6 +719,7 @@ def _normalize_detail_row(row: dict[str, Any]) -> dict[str, Any]:
         "criterion_id": row.get("criterion_id"),
         "keyword_text": row.get("keyword_text"),
         "keyword_match_type": row.get("keyword_match_type"),
+        "search_term": row.get("search_term"),
         "impressions": _to_number(row.get("impressions")),
         "link_clicks": _to_number(row.get("link_clicks")),
         "spend": _to_number(row.get("spend")),
@@ -575,10 +741,13 @@ def _normalize_detail_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _extract_totals(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _extract_totals(
+    rows: list[dict[str, Any]],
+    previous_totals: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Extract full-period totals from window fields returned by BigQuery."""
     if not rows:
-        return _calculate_rates(
+        totals = _calculate_rates(
             {
                 "impressions": 0,
                 "link_clicks": 0,
@@ -604,8 +773,25 @@ def _extract_totals(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 },
             }
         )
+        if previous_totals:
+            totals["previous"] = previous_totals
+            totals["delta"] = _calculate_delta(totals, previous_totals)
+        return totals
 
     row = rows[0]
+    default_previous = {
+        "spend": _or_zero(_to_number(row.get("total_previous_spend"))),
+        "link_clicks": _or_zero(
+            _to_number(row.get("total_previous_link_clicks"))
+        ),
+        "conversions": _or_zero(
+            _to_number(row.get("total_previous_conversions"))
+        ),
+        "add_to_cart": _or_zero(
+            _to_number(row.get("total_previous_add_to_cart"))
+        ),
+        "purchase": _or_zero(_to_number(row.get("total_previous_purchase"))),
+    }
     totals = {
         "impressions": _or_zero(_to_number(row.get("total_impressions"))),
         "link_clicks": _or_zero(_to_number(row.get("total_link_clicks"))),
@@ -622,19 +808,7 @@ def _extract_totals(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "post_comments": _or_zero(_to_number(row.get("total_post_comments"))),
         "post_saves": _or_zero(_to_number(row.get("total_post_saves"))),
         "post_shares": _or_zero(_to_number(row.get("total_post_shares"))),
-        "previous": {
-            "spend": _or_zero(_to_number(row.get("total_previous_spend"))),
-            "link_clicks": _or_zero(
-                _to_number(row.get("total_previous_link_clicks"))
-            ),
-            "conversions": _or_zero(
-                _to_number(row.get("total_previous_conversions"))
-            ),
-            "add_to_cart": _or_zero(
-                _to_number(row.get("total_previous_add_to_cart"))
-            ),
-            "purchase": _or_zero(_to_number(row.get("total_previous_purchase"))),
-        },
+        "previous": previous_totals or default_previous,
     }
     return _calculate_rates(totals)
 
@@ -654,30 +828,38 @@ def _calculate_rates(totals: dict[str, Any]) -> dict[str, Any]:
     totals["purchase_roas"] = _safe_divide(totals["purchase_value"], totals["spend"])
     previous = totals.get("previous")
     if isinstance(previous, dict):
-        previous["cpc"] = _safe_divide(previous["spend"], previous["link_clicks"])
-        previous["cpa"] = _safe_divide(previous["spend"], previous["conversions"])
-        previous["cost_per_add_to_cart"] = _safe_divide(
-            previous["spend"],
-            previous["add_to_cart"],
+        previous.setdefault("cpc", _safe_divide(previous["spend"], previous["link_clicks"]))
+        previous.setdefault("cpa", _safe_divide(previous["spend"], previous["conversions"]))
+        previous.setdefault(
+            "cost_per_add_to_cart",
+            _safe_divide(previous["spend"], previous["add_to_cart"]),
         )
-        previous["cost_per_purchase"] = _safe_divide(
-            previous["spend"],
-            previous["purchase"],
+        previous.setdefault(
+            "cost_per_purchase",
+            _safe_divide(previous["spend"], previous["purchase"]),
         )
-        totals["delta"] = {
-            "spend": totals["spend"] - previous["spend"],
-            "link_clicks": totals["link_clicks"] - previous["link_clicks"],
-            "conversions": totals["conversions"] - previous["conversions"],
-            "add_to_cart": totals["add_to_cart"] - previous["add_to_cart"],
-            "purchase": totals["purchase"] - previous["purchase"],
-            "cpc": _subtract_optional(totals["cpc"], previous["cpc"]),
-            "cpa": _subtract_optional(totals["cpa"], previous["cpa"]),
-            "cost_per_purchase": _subtract_optional(
-                totals["cost_per_purchase"],
-                previous["cost_per_purchase"],
-            ),
-        }
+        totals["delta"] = _calculate_delta(totals, previous)
     return totals
+
+
+def _calculate_delta(totals: dict[str, Any], previous: dict[str, Any]) -> dict[str, Any]:
+    """Calculate current-vs-previous total deltas."""
+    return {
+        "spend": totals["spend"] - previous["spend"],
+        "link_clicks": totals["link_clicks"] - previous["link_clicks"],
+        "conversions": totals["conversions"] - previous["conversions"],
+        "conversion_value": totals["conversion_value"] - previous.get("conversion_value", 0),
+        "add_to_cart": totals["add_to_cart"] - previous["add_to_cart"],
+        "purchase": totals["purchase"] - previous["purchase"],
+        "purchase_value": totals["purchase_value"] - previous.get("purchase_value", 0),
+        "cpc": _subtract_optional(totals["cpc"], previous.get("cpc")),
+        "cpa": _subtract_optional(totals["cpa"], previous.get("cpa")),
+        "cost_per_purchase": _subtract_optional(
+            totals["cost_per_purchase"],
+            previous.get("cost_per_purchase"),
+        ),
+        "roas": _subtract_optional(totals["roas"], previous.get("roas")),
+    }
 
 
 def _format_date(value: Any) -> str | None:
