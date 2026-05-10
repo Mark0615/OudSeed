@@ -1,6 +1,5 @@
 """Entry point for the OudSeed Meta Ads sync pipeline."""
 
-import json
 import os
 import uuid
 from datetime import datetime, timezone
@@ -555,7 +554,7 @@ def _build_raw_rows(
             "report_level": row.get("report_level") or report_level,
             "attribution_setting": attribution_setting,
             "timezone_setting": timezone_setting,
-            "raw_payload": json.dumps(row, ensure_ascii=False),
+            "raw_payload": row,
             "created_at": now,
             "updated_at": now,
         }

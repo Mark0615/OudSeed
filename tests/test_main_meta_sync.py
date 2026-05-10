@@ -223,7 +223,8 @@ def test_run_meta_sync_writes_raw_unified_and_success_log() -> None:
     raw_replacement = destination.replacements[0]
     assert raw_replacement["filters"]["platform"] == "meta_ads"
     assert raw_replacement["rows"][0]["raw_payload"]
-    assert isinstance(raw_replacement["rows"][0]["raw_payload"], str)
+    assert isinstance(raw_replacement["rows"][0]["raw_payload"], dict)
+    assert raw_replacement["rows"][0]["raw_payload"]["campaign_name"] == "Campaign"
     unified_replacement = destination.replacements[1]
     assert unified_replacement["rows"][0]["platform"] == "meta_ads"
     assert unified_replacement["rows"][0]["conversions"] == 2.0
@@ -253,6 +254,7 @@ def test_run_google_ads_sync_writes_raw_unified_and_success_log() -> None:
         "ad",
         "keyword",
     ]
+    assert raw_replacement["rows"][0]["raw_payload"]["campaign_name"] == "Search"
     unified_replacement = destination.replacements[1]
     assert len(unified_replacement["rows"]) == 1
     assert unified_replacement["rows"][0]["platform"] == "google_ads"
