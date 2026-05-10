@@ -66,3 +66,32 @@ def test_smtp_email_sender_sends_message() -> None:
     sent_message = smtp_instance.send_message.call_args.args[0]
     assert sent_message["To"] == "user@example.com"
     assert sent_message["Subject"] == "Report"
+
+
+def test_smtp_email_sender_can_send_html_alternative() -> None:
+    """SMTP sender can include an HTML alternative body."""
+    smtp_instance = Mock()
+    smtp_context = Mock()
+    smtp_context.__enter__ = Mock(return_value=smtp_instance)
+    smtp_context.__exit__ = Mock(return_value=None)
+
+    with patch("src.notifications.email_delivery.smtplib.SMTP", return_value=smtp_context):
+        sender = SMTPEmailSender(
+            SMTPEmailConfig(
+                host="smtp.example.com",
+                port=587,
+                username="sender@example.com",
+                password="secret",
+                from_email="reports@example.com",
+            )
+        )
+        sender.send(
+            recipient="user@example.com",
+            subject="Report",
+            body="Plain body",
+            html_body="<strong>HTML body</strong>",
+        )
+
+    sent_message = smtp_instance.send_message.call_args.args[0]
+    assert sent_message.is_multipart()
+    assert "HTML body" in sent_message.get_body(("html",)).get_content()

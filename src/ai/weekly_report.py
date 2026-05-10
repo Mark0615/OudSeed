@@ -16,6 +16,7 @@ def build_report_prompt(
     client_id: str,
     period_start_date: str,
     account_id: str | None = None,
+    account_ids: list[str] | None = None,
     limit: int = 10,
 ) -> dict[str, Any]:
     """Build report context plus a ready-to-send LLM prompt."""
@@ -26,6 +27,7 @@ def build_report_prompt(
         client_id=client_id,
         period_start_date=period_start_date,
         account_id=account_id,
+        account_ids=account_ids,
         limit=limit,
     )
     return {

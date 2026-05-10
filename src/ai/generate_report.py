@@ -37,6 +37,7 @@ def main() -> None:
     )
     client_id = os.getenv("AI_REPORT_CLIENT_ID") or _first_enabled_client_id(config)
     account_id = os.getenv("AI_REPORT_ACCOUNT_ID")
+    account_ids = _comma_separated_env("AI_REPORT_ACCOUNT_IDS")
     limit = _positive_int_env("AI_REPORT_LIMIT", 10)
     max_output_tokens = _positive_int_env("OPENAI_MAX_OUTPUT_TOKENS", 1800)
     openai_timeout_seconds = _positive_int_env("OPENAI_TIMEOUT_SECONDS", 60)
@@ -63,6 +64,7 @@ def main() -> None:
         client_id=client_id,
         period_start_date=period_start_date,
         account_id=account_id,
+        account_ids=account_ids,
         limit=limit,
         max_output_tokens=max_output_tokens,
     )
@@ -96,6 +98,13 @@ def _required_env(name: str) -> str:
     if not value:
         raise ValueError(f"Missing required environment variable: {name}")
     return value
+
+
+def _comma_separated_env(name: str) -> list[str] | None:
+    value = os.getenv(name)
+    if not value:
+        return None
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def _positive_int_env(name: str, default: int) -> int:

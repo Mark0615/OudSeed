@@ -31,6 +31,7 @@ class SMTPEmailSender:
         recipient: str,
         subject: str,
         body: str,
+        html_body: str | None = None,
     ) -> None:
         """Send one email."""
         message = EmailMessage()
@@ -38,6 +39,8 @@ class SMTPEmailSender:
         message["To"] = recipient
         message["Subject"] = subject
         message.set_content(body)
+        if html_body:
+            message.add_alternative(html_body, subtype="html")
 
         with smtplib.SMTP(self.config.host, self.config.port, timeout=60) as smtp:
             if self.config.use_tls:
