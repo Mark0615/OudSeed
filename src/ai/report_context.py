@@ -74,6 +74,7 @@ def build_report_context(
     client_id: str,
     period_start_date: str,
     account_id: str | None = None,
+    account_ids: list[str] | None = None,
     limit: int = 10,
 ) -> dict[str, Any]:
     """Return AI-ready summary context for one weekly or monthly period."""
@@ -94,10 +95,16 @@ def build_report_context(
         bigquery.ScalarQueryParameter("limit", "INT64", limit),
     ]
 
-    if account_id:
+    scoped_account_ids = _normalize_account_ids(account_id, account_ids)
+    if len(scoped_account_ids) == 1:
         filters.append("account_id = @account_id")
         query_parameters.append(
-            bigquery.ScalarQueryParameter("account_id", "STRING", account_id)
+            bigquery.ScalarQueryParameter("account_id", "STRING", scoped_account_ids[0])
+        )
+    elif scoped_account_ids:
+        filters.append("account_id IN UNNEST(@account_ids)")
+        query_parameters.append(
+            bigquery.ArrayQueryParameter("account_ids", "STRING", scoped_account_ids)
         )
 
     query = f"""
@@ -180,6 +187,7 @@ def build_report_context(
         workspace_id=workspace_id,
         client_id=client_id,
         account_id=account_id,
+        account_ids=scoped_account_ids,
         period_start_date=period_start_date,
         period_end_date=period_end_date,
         limit=limit,
@@ -191,6 +199,7 @@ def build_report_context(
         "workspace_id": workspace_id,
         "client_id": client_id,
         "account_id": account_id,
+        "account_ids": scoped_account_ids,
         "period_start_date": period_start_date,
         "period_end_date": period_end_date,
         "totals": _extract_totals(rows),
@@ -206,6 +215,7 @@ def _fetch_performance_details(
     workspace_id: str,
     client_id: str,
     account_id: str | None,
+    account_ids: list[str],
     period_start_date: str,
     period_end_date: str | None,
     limit: int,
@@ -225,6 +235,7 @@ def _fetch_performance_details(
             workspace_id=workspace_id,
             client_id=client_id,
             account_id=account_id,
+            account_ids=account_ids,
             period_start_date=period_start_date,
             period_end_date=period_end_date,
             limit=limit,
@@ -234,6 +245,7 @@ def _fetch_performance_details(
             workspace_id=workspace_id,
             client_id=client_id,
             account_id=account_id,
+            account_ids=account_ids,
             period_start_date=period_start_date,
             period_end_date=period_end_date,
             limit=limit,
@@ -243,6 +255,7 @@ def _fetch_performance_details(
             workspace_id=workspace_id,
             client_id=client_id,
             account_id=account_id,
+            account_ids=account_ids,
             period_start_date=period_start_date,
             period_end_date=period_end_date,
             limit=limit,
@@ -255,6 +268,7 @@ def _fetch_ad_group_breakdown(
     workspace_id: str,
     client_id: str,
     account_id: str | None,
+    account_ids: list[str],
     period_start_date: str,
     period_end_date: str,
     limit: int,
@@ -264,6 +278,7 @@ def _fetch_ad_group_breakdown(
         workspace_id=workspace_id,
         client_id=client_id,
         account_id=account_id,
+        account_ids=account_ids,
         period_start_date=period_start_date,
         period_end_date=period_end_date,
         limit=limit,
@@ -310,6 +325,7 @@ def _fetch_ad_breakdown(
     workspace_id: str,
     client_id: str,
     account_id: str | None,
+    account_ids: list[str],
     period_start_date: str,
     period_end_date: str,
     limit: int,
@@ -319,6 +335,7 @@ def _fetch_ad_breakdown(
         workspace_id=workspace_id,
         client_id=client_id,
         account_id=account_id,
+        account_ids=account_ids,
         period_start_date=period_start_date,
         period_end_date=period_end_date,
         limit=limit,
@@ -367,6 +384,7 @@ def _fetch_google_keyword_breakdown(
     workspace_id: str,
     client_id: str,
     account_id: str | None,
+    account_ids: list[str],
     period_start_date: str,
     period_end_date: str,
     limit: int,
@@ -376,6 +394,7 @@ def _fetch_google_keyword_breakdown(
         workspace_id=workspace_id,
         client_id=client_id,
         account_id=account_id,
+        account_ids=account_ids,
         period_start_date=period_start_date,
         period_end_date=period_end_date,
         limit=limit,
@@ -431,6 +450,7 @@ def _detail_filters(
     workspace_id: str,
     client_id: str,
     account_id: str | None,
+    account_ids: list[str],
     period_start_date: str,
     period_end_date: str,
     limit: int,
@@ -448,12 +468,31 @@ def _detail_filters(
         bigquery.ScalarQueryParameter("client_id", "STRING", client_id),
         bigquery.ScalarQueryParameter("limit", "INT64", limit),
     ]
-    if account_id:
+    scoped_account_ids = _normalize_account_ids(account_id, account_ids)
+    if len(scoped_account_ids) == 1:
         filters.append("account_id = @account_id")
         parameters.append(
-            bigquery.ScalarQueryParameter("account_id", "STRING", account_id)
+            bigquery.ScalarQueryParameter("account_id", "STRING", scoped_account_ids[0])
+        )
+    elif scoped_account_ids:
+        filters.append("account_id IN UNNEST(@account_ids)")
+        parameters.append(
+            bigquery.ArrayQueryParameter("account_ids", "STRING", scoped_account_ids)
         )
     return filters, parameters
+
+
+def _normalize_account_ids(
+    account_id: str | None,
+    account_ids: list[str] | None,
+) -> list[str]:
+    """Return de-duplicated account ids from single and multi-account filters."""
+    values: list[str] = []
+    if account_id:
+        values.append(account_id)
+    if account_ids:
+        values.extend(account_ids)
+    return list(dict.fromkeys(str(value) for value in values if value))
 
 
 def _normalize_campaign(row: dict[str, Any]) -> dict[str, Any]:

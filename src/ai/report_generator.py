@@ -24,6 +24,7 @@ def generate_and_log_report(
     client_id: str,
     period_start_date: str,
     account_id: str | None = None,
+    account_ids: list[str] | None = None,
     limit: int = 10,
     max_output_tokens: int = 1800,
 ) -> dict[str, Any]:
@@ -36,6 +37,7 @@ def generate_and_log_report(
         client_id=client_id,
         period_start_date=period_start_date,
         account_id=account_id,
+        account_ids=account_ids,
         limit=limit,
     )
     context = prompt_result["context"]

@@ -99,6 +99,13 @@ For each client/account report:
   campaign, ad set, and ad/creative-level data when available so the report can
   recommend which ad sets have scaling potential, which should be reduced or
   paused, and which creatives should be learned from, refreshed, or stopped.
+- Report delivery should be grouped by customer/account identity. MVP may use
+  normalized `account_name` as the grouping key: same account name across
+  platforms can be combined into one email, while different account names should
+  be sent as separate emails. Later SaaS customer mapping can override this.
+- Email reports should be HTML, not raw Markdown. Put a campaign-level table
+  after the period header for each platform, include a total row, use thousands
+  separators for numbers, and render emphasis with HTML instead of visible `**`.
 
 ## Meta field coverage strategy
 
