@@ -86,6 +86,19 @@ For each client/account report:
   purchase count, conversion value, CPA, and ROAS.
 - Ask for concrete client inputs when needed, such as new creatives, offer
   details, landing page changes, target CPA, or target ROAS.
+- Support user-configurable report schedules over time. Users should be able to
+  choose weekly or monthly cadence and the delivery day, such as every Monday or
+  the 10th day of each month. WoW/MoM comparison windows must be derived from
+  the user's configured report cadence and delivery date.
+- Format report numbers consistently: prefix all money values with `$` including
+  spend, CPC, CPM, CPA, cost per add-to-cart, purchase value, and similar fields;
+  show CPC with 2 decimals; show other money values as rounded whole numbers
+  unless a later product setting requires currency-specific precision; show CTR
+  and other rates as percentages with 2 decimals; show ROAS with 2 decimals.
+- Reporting and recommendations must evolve beyond campaign-level only. Use
+  campaign, ad set, and ad/creative-level data when available so the report can
+  recommend which ad sets have scaling potential, which should be reduced or
+  paused, and which creatives should be learned from, refreshed, or stopped.
 
 ## Meta field coverage strategy
 
