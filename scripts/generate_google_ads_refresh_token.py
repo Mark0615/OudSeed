@@ -56,7 +56,7 @@ def main() -> None:
             expected_state=passthrough_state,
         )
     )
-    flow.fetch_token(code=code)
+    flow.fetch_token(code=code, scope=flow.oauth2session.scope)
     refresh_token = flow.credentials.refresh_token
     if not refresh_token:
         raise RuntimeError(
