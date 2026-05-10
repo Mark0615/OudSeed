@@ -56,7 +56,15 @@ def main() -> None:
             expected_state=passthrough_state,
         )
     )
-    flow.fetch_token(code=code, scope=flow.oauth2session.scope)
+    previous_relax_scope = os.environ.get("OAUTHLIB_RELAX_TOKEN_SCOPE")
+    os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
+    try:
+        flow.fetch_token(code=code)
+    finally:
+        if previous_relax_scope is None:
+            os.environ.pop("OAUTHLIB_RELAX_TOKEN_SCOPE", None)
+        else:
+            os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = previous_relax_scope
     refresh_token = flow.credentials.refresh_token
     if not refresh_token:
         raise RuntimeError(
