@@ -3,6 +3,7 @@
 import pytest
 
 from src.main import (
+    RAW_GOOGLE_TABLE,
     RAW_META_TABLE,
     SYNC_LOGS_TABLE,
     UNIFIED_TABLE,
@@ -10,6 +11,7 @@ from src.main import (
     _positive_int_env,
     _should_refresh_reporting_marts,
     refresh_reporting_marts,
+    run_google_ads_sync,
     run_meta_sync,
 )
 
@@ -33,6 +35,25 @@ class FakeConnector:
         )
         if self.error:
             raise self.error
+        return self.rows
+
+
+class FakeGoogleConnector:
+    """Fake Google Ads connector for sync tests."""
+
+    def __init__(self, rows: list[dict] | None = None) -> None:
+        self.rows = rows or []
+        self.calls: list[dict] = []
+
+    def fetch_daily_report(self, customer_id: str, start_date: str, end_date: str) -> list[dict]:
+        """Return fake Google Ads rows."""
+        self.calls.append(
+            {
+                "customer_id": customer_id,
+                "start_date": start_date,
+                "end_date": end_date,
+            }
+        )
         return self.rows
 
 
@@ -130,6 +151,63 @@ def sample_raw_rows() -> list[dict]:
     ]
 
 
+def sample_google_config() -> dict:
+    """Return a minimal enabled Google Ads config."""
+    return {
+        "workspace_id": "mark_internal",
+        "defaults": {"timezone": "Asia/Taipei", "sync_days_back": 7},
+        "clients": [
+            {
+                "client_id": "demo_client_001",
+                "enabled": True,
+                "platforms": {
+                    "google_ads": {
+                        "enabled": True,
+                        "accounts": [
+                            {
+                                "customer_id": "1234567890",
+                                "account_name": "Demo Google",
+                                "report_level": "ad",
+                            }
+                        ],
+                    }
+                },
+                "destinations": {"bigquery": {"enabled": True}},
+            }
+        ],
+    }
+
+
+def sample_google_rows() -> list[dict]:
+    """Return Google ad and keyword raw rows."""
+    return [
+        {
+            "date": "2026-04-01",
+            "report_level": "ad",
+            "campaign_id": "campaign_1",
+            "campaign_name": "Search",
+            "ad_group_id": "ad_group_1",
+            "ad_group_name": "Brand",
+            "ad_id": "ad_1",
+            "ad_name": "Brand Ad",
+            "impressions": 100,
+            "clicks": 10,
+            "spend": 50.0,
+            "conversions": 2.0,
+            "conversion_value": 500.0,
+        },
+        {
+            "date": "2026-04-01",
+            "report_level": "keyword",
+            "criterion_id": "criterion_1",
+            "keyword_text": "brand keyword",
+            "impressions": 100,
+            "clicks": 10,
+            "spend": 50.0,
+        },
+    ]
+
+
 def test_run_meta_sync_writes_raw_unified_and_success_log() -> None:
     """Successful sync writes raw rows, unified rows, and sync log."""
     connector = FakeConnector(rows=sample_raw_rows())
@@ -154,6 +232,36 @@ def test_run_meta_sync_writes_raw_unified_and_success_log() -> None:
     sync_log = destination.inserts[0]["rows"][0]
     assert sync_log["status"] == "success"
     assert sync_log["rows_fetched"] == 1
+    assert sync_log["rows_inserted"] == 1
+
+
+def test_run_google_ads_sync_writes_raw_unified_and_success_log() -> None:
+    """Google Ads sync writes raw rows, ad-level unified rows, and sync log."""
+    connector = FakeGoogleConnector(rows=sample_google_rows())
+    destination = FakeDestination()
+
+    run_google_ads_sync(sample_google_config(), connector, destination)
+
+    assert connector.calls[0]["customer_id"] == "1234567890"
+    assert [call["table_name"] for call in destination.replacements] == [
+        RAW_GOOGLE_TABLE,
+        UNIFIED_TABLE,
+    ]
+    raw_replacement = destination.replacements[0]
+    assert raw_replacement["filters"]["platform"] == "google_ads"
+    assert [row["report_level"] for row in raw_replacement["rows"]] == [
+        "ad",
+        "keyword",
+    ]
+    unified_replacement = destination.replacements[1]
+    assert len(unified_replacement["rows"]) == 1
+    assert unified_replacement["rows"][0]["platform"] == "google_ads"
+    assert unified_replacement["rows"][0]["conversions"] == 2.0
+
+    sync_log = destination.inserts[0]["rows"][0]
+    assert sync_log["platform"] == "google_ads"
+    assert sync_log["status"] == "success"
+    assert sync_log["rows_fetched"] == 2
     assert sync_log["rows_inserted"] == 1
 
 

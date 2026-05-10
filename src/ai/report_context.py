@@ -174,6 +174,16 @@ def build_report_context(
     """
     rows = destination.query_rows(query, query_parameters=query_parameters)
     campaigns = [_normalize_campaign(row) for row in rows]
+    period_end_date = _first_value(campaigns, "period_end_date")
+    details = _fetch_performance_details(
+        destination=destination,
+        workspace_id=workspace_id,
+        client_id=client_id,
+        account_id=account_id,
+        period_start_date=period_start_date,
+        period_end_date=period_end_date,
+        limit=limit,
+    )
 
     return {
         "report_type": report_type,
@@ -182,10 +192,268 @@ def build_report_context(
         "client_id": client_id,
         "account_id": account_id,
         "period_start_date": period_start_date,
-        "period_end_date": _first_value(campaigns, "period_end_date"),
+        "period_end_date": period_end_date,
         "totals": _extract_totals(rows),
         "campaigns": campaigns,
+        "ad_groups": details["ad_groups"],
+        "ads": details["ads"],
+        "keywords": details["keywords"],
     }
+
+
+def _fetch_performance_details(
+    destination: BigQueryDestination,
+    workspace_id: str,
+    client_id: str,
+    account_id: str | None,
+    period_start_date: str,
+    period_end_date: str | None,
+    limit: int,
+) -> dict[str, list[dict[str, Any]]]:
+    """Fetch ad group, ad, and keyword details for AI recommendations."""
+    empty_details: dict[str, list[dict[str, Any]]] = {
+        "ad_groups": [],
+        "ads": [],
+        "keywords": [],
+    }
+    if not period_end_date:
+        return empty_details
+
+    return {
+        "ad_groups": _fetch_ad_group_breakdown(
+            destination=destination,
+            workspace_id=workspace_id,
+            client_id=client_id,
+            account_id=account_id,
+            period_start_date=period_start_date,
+            period_end_date=period_end_date,
+            limit=limit,
+        ),
+        "ads": _fetch_ad_breakdown(
+            destination=destination,
+            workspace_id=workspace_id,
+            client_id=client_id,
+            account_id=account_id,
+            period_start_date=period_start_date,
+            period_end_date=period_end_date,
+            limit=limit,
+        ),
+        "keywords": _fetch_google_keyword_breakdown(
+            destination=destination,
+            workspace_id=workspace_id,
+            client_id=client_id,
+            account_id=account_id,
+            period_start_date=period_start_date,
+            period_end_date=period_end_date,
+            limit=limit,
+        ),
+    }
+
+
+def _fetch_ad_group_breakdown(
+    destination: BigQueryDestination,
+    workspace_id: str,
+    client_id: str,
+    account_id: str | None,
+    period_start_date: str,
+    period_end_date: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Return top ad group rows for the report period."""
+    filters, parameters = _detail_filters(
+        workspace_id=workspace_id,
+        client_id=client_id,
+        account_id=account_id,
+        period_start_date=period_start_date,
+        period_end_date=period_end_date,
+        limit=limit,
+    )
+    query = f"""
+    SELECT
+      platform,
+      account_id,
+      ANY_VALUE(account_name) AS account_name,
+      campaign_id,
+      ANY_VALUE(campaign_name) AS campaign_name,
+      ad_group_id,
+      ANY_VALUE(ad_group_name) AS ad_group_name,
+      SUM(impressions) AS impressions,
+      SUM(link_clicks) AS link_clicks,
+      SUM(spend) AS spend,
+      SUM(conversions) AS conversions,
+      SUM(conversion_value) AS conversion_value,
+      SUM(add_to_cart) AS add_to_cart,
+      SUM(purchase) AS purchase,
+      SUM(purchase_value) AS purchase_value,
+      SAFE_DIVIDE(SUM(link_clicks), SUM(impressions)) AS ctr,
+      SAFE_DIVIDE(SUM(spend), SUM(link_clicks)) AS cpc,
+      SAFE_DIVIDE(SUM(spend) * 1000, SUM(impressions)) AS cpm,
+      SAFE_DIVIDE(SUM(spend), SUM(conversions)) AS cpa,
+      SAFE_DIVIDE(SUM(conversion_value), SUM(spend)) AS roas,
+      SUM(post_engagement) AS post_engagement,
+      SUM(post_reactions) AS post_reactions,
+      SUM(post_comments) AS post_comments,
+      SUM(post_saves) AS post_saves,
+      SUM(post_shares) AS post_shares
+    FROM `{destination._table_id("vw_looker_ads_ad_daily")}`
+    WHERE {" AND ".join(filters)}
+      AND ad_group_id IS NOT NULL
+    GROUP BY platform, account_id, campaign_id, ad_group_id
+    ORDER BY spend DESC
+    LIMIT @limit
+    """
+    return [_normalize_detail_row(row) for row in destination.query_rows(query, parameters)]
+
+
+def _fetch_ad_breakdown(
+    destination: BigQueryDestination,
+    workspace_id: str,
+    client_id: str,
+    account_id: str | None,
+    period_start_date: str,
+    period_end_date: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Return top ad/creative rows for the report period."""
+    filters, parameters = _detail_filters(
+        workspace_id=workspace_id,
+        client_id=client_id,
+        account_id=account_id,
+        period_start_date=period_start_date,
+        period_end_date=period_end_date,
+        limit=limit,
+    )
+    query = f"""
+    SELECT
+      platform,
+      account_id,
+      ANY_VALUE(account_name) AS account_name,
+      campaign_id,
+      ANY_VALUE(campaign_name) AS campaign_name,
+      ad_group_id,
+      ANY_VALUE(ad_group_name) AS ad_group_name,
+      ad_id,
+      ANY_VALUE(ad_name) AS ad_name,
+      SUM(impressions) AS impressions,
+      SUM(link_clicks) AS link_clicks,
+      SUM(spend) AS spend,
+      SUM(conversions) AS conversions,
+      SUM(conversion_value) AS conversion_value,
+      SUM(add_to_cart) AS add_to_cart,
+      SUM(purchase) AS purchase,
+      SUM(purchase_value) AS purchase_value,
+      SAFE_DIVIDE(SUM(link_clicks), SUM(impressions)) AS ctr,
+      SAFE_DIVIDE(SUM(spend), SUM(link_clicks)) AS cpc,
+      SAFE_DIVIDE(SUM(spend) * 1000, SUM(impressions)) AS cpm,
+      SAFE_DIVIDE(SUM(spend), SUM(conversions)) AS cpa,
+      SAFE_DIVIDE(SUM(conversion_value), SUM(spend)) AS roas,
+      SUM(post_engagement) AS post_engagement,
+      SUM(post_reactions) AS post_reactions,
+      SUM(post_comments) AS post_comments,
+      SUM(post_saves) AS post_saves,
+      SUM(post_shares) AS post_shares
+    FROM `{destination._table_id("vw_looker_ads_ad_daily")}`
+    WHERE {" AND ".join(filters)}
+      AND ad_id IS NOT NULL
+    GROUP BY platform, account_id, campaign_id, ad_group_id, ad_id
+    ORDER BY spend DESC
+    LIMIT @limit
+    """
+    return [_normalize_detail_row(row) for row in destination.query_rows(query, parameters)]
+
+
+def _fetch_google_keyword_breakdown(
+    destination: BigQueryDestination,
+    workspace_id: str,
+    client_id: str,
+    account_id: str | None,
+    period_start_date: str,
+    period_end_date: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Return top Google Ads keyword rows from raw keyword-level payloads."""
+    filters, parameters = _detail_filters(
+        workspace_id=workspace_id,
+        client_id=client_id,
+        account_id=account_id,
+        period_start_date=period_start_date,
+        period_end_date=period_end_date,
+        limit=limit,
+    )
+    filters.extend(["platform = 'google_ads'", "report_level = 'keyword'"])
+    query = f"""
+    SELECT
+      platform,
+      account_id,
+      JSON_VALUE(raw_payload, '$.account_name') AS account_name,
+      JSON_VALUE(raw_payload, '$.campaign_id') AS campaign_id,
+      ANY_VALUE(JSON_VALUE(raw_payload, '$.campaign_name')) AS campaign_name,
+      JSON_VALUE(raw_payload, '$.ad_group_id') AS ad_group_id,
+      ANY_VALUE(JSON_VALUE(raw_payload, '$.ad_group_name')) AS ad_group_name,
+      JSON_VALUE(raw_payload, '$.criterion_id') AS criterion_id,
+      ANY_VALUE(JSON_VALUE(raw_payload, '$.keyword_text')) AS keyword_text,
+      ANY_VALUE(JSON_VALUE(raw_payload, '$.keyword_match_type')) AS keyword_match_type,
+      SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64)) AS impressions,
+      SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64)) AS link_clicks,
+      SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)) AS spend,
+      SUM(CAST(JSON_VALUE(raw_payload, '$.conversions') AS FLOAT64)) AS conversions,
+      SUM(CAST(JSON_VALUE(raw_payload, '$.conversion_value') AS FLOAT64)) AS conversion_value,
+      SAFE_DIVIDE(
+        SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64)),
+        SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64))
+      ) AS ctr,
+      SAFE_DIVIDE(
+        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)),
+        SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64))
+      ) AS cpc,
+      SAFE_DIVIDE(
+        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)) * 1000,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64))
+      ) AS cpm,
+      SAFE_DIVIDE(
+        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)),
+        SUM(CAST(JSON_VALUE(raw_payload, '$.conversions') AS FLOAT64))
+      ) AS cpa,
+      SAFE_DIVIDE(
+        SUM(CAST(JSON_VALUE(raw_payload, '$.conversion_value') AS FLOAT64)),
+        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64))
+      ) AS roas
+    FROM `{destination._table_id("raw_google_ads_daily")}`
+    WHERE {" AND ".join(filters)}
+    GROUP BY platform, account_id, account_name, campaign_id, ad_group_id, criterion_id
+    ORDER BY spend DESC
+    LIMIT @limit
+    """
+    return [_normalize_detail_row(row) for row in destination.query_rows(query, parameters)]
+
+
+def _detail_filters(
+    workspace_id: str,
+    client_id: str,
+    account_id: str | None,
+    period_start_date: str,
+    period_end_date: str,
+    limit: int,
+) -> tuple[list[str], list[bigquery.ScalarQueryParameter]]:
+    """Return shared filters and query parameters for detail breakdowns."""
+    filters = [
+        "date BETWEEN @period_start_date AND @period_end_date",
+        "workspace_id = @workspace_id",
+        "client_id = @client_id",
+    ]
+    parameters: list[bigquery.ScalarQueryParameter] = [
+        bigquery.ScalarQueryParameter("period_start_date", "DATE", period_start_date),
+        bigquery.ScalarQueryParameter("period_end_date", "DATE", period_end_date),
+        bigquery.ScalarQueryParameter("workspace_id", "STRING", workspace_id),
+        bigquery.ScalarQueryParameter("client_id", "STRING", client_id),
+        bigquery.ScalarQueryParameter("limit", "INT64", limit),
+    ]
+    if account_id:
+        filters.append("account_id = @account_id")
+        parameters.append(
+            bigquery.ScalarQueryParameter("account_id", "STRING", account_id)
+        )
+    return filters, parameters
 
 
 def _normalize_campaign(row: dict[str, Any]) -> dict[str, Any]:
@@ -229,6 +497,42 @@ def _normalize_campaign(row: dict[str, Any]) -> dict[str, Any]:
         "link_clicks_delta": _to_number(row.get("link_clicks_delta")),
         "spend_delta_rate": _to_number(row.get("spend_delta_rate")),
         "link_clicks_delta_rate": _to_number(row.get("link_clicks_delta_rate")),
+    }
+
+
+def _normalize_detail_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Normalize detailed BigQuery rows into JSON-friendly report fields."""
+    return {
+        "platform": row.get("platform"),
+        "account_id": row.get("account_id"),
+        "account_name": row.get("account_name"),
+        "campaign_id": row.get("campaign_id"),
+        "campaign_name": row.get("campaign_name"),
+        "ad_group_id": row.get("ad_group_id"),
+        "ad_group_name": row.get("ad_group_name"),
+        "ad_id": row.get("ad_id"),
+        "ad_name": row.get("ad_name"),
+        "criterion_id": row.get("criterion_id"),
+        "keyword_text": row.get("keyword_text"),
+        "keyword_match_type": row.get("keyword_match_type"),
+        "impressions": _to_number(row.get("impressions")),
+        "link_clicks": _to_number(row.get("link_clicks")),
+        "spend": _to_number(row.get("spend")),
+        "conversions": _to_number(row.get("conversions")),
+        "conversion_value": _to_number(row.get("conversion_value")),
+        "add_to_cart": _to_number(row.get("add_to_cart")),
+        "purchase": _to_number(row.get("purchase")),
+        "purchase_value": _to_number(row.get("purchase_value")),
+        "ctr": _to_number(row.get("ctr")),
+        "cpc": _to_number(row.get("cpc")),
+        "cpm": _to_number(row.get("cpm")),
+        "cpa": _to_number(row.get("cpa")),
+        "roas": _to_number(row.get("roas")),
+        "post_engagement": _to_number(row.get("post_engagement")),
+        "post_reactions": _to_number(row.get("post_reactions")),
+        "post_comments": _to_number(row.get("post_comments")),
+        "post_saves": _to_number(row.get("post_saves")),
+        "post_shares": _to_number(row.get("post_shares")),
     }
 
 

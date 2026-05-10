@@ -31,6 +31,14 @@ link-click CPC. Do not say link-click CPC is unavailable when cpc is present.
 When totals.previous and totals.delta exist, summarize the overall {comparison}
 change before campaign-level observations.
 
+Formatting rules:
+- Prefix all monetary values with "$".
+- Show CPC with exactly 2 decimals.
+- Show other monetary values as rounded whole numbers.
+- Show CTR and other rates as percentages with 2 decimals.
+- Show ROAS with 2 decimals.
+- Do not output raw decimal CTR values such as 0.0187; write 1.87% instead.
+
 Required output structure:
 1. **[本週/本月 Summary]**
    - Include spend, CPM, CPC or link-click CPC, CPA for the configured
