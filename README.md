@@ -5,10 +5,10 @@ OudSeed is a Python ads data pipeline for syncing advertising performance data i
 The current MVP priority is:
 
 ```text
-Meta Ads -> BigQuery -> unified_ads_daily -> Looker Studio
+Meta Ads + Google Ads -> BigQuery -> unified_ads_daily -> Looker Studio -> AI reports
 ```
 
-Future phases will add Google Ads, LINE Ads, Google Sheet export, and AI-generated weekly reports.
+Future phases will add LINE Ads, Google Sheet export, and SaaS onboarding.
 
 ## Project Structure
 
@@ -52,6 +52,11 @@ BIGQUERY_DATASET=ads_pipeline
 GOOGLE_APPLICATION_CREDENTIALS=/Users/mark/Desktop/OudSeed/secrets/your-service-account.json
 META_ACCESS_TOKEN=your-meta-marketing-api-token
 META_API_TIMEOUT_SECONDS=60
+GOOGLE_ADS_DEVELOPER_TOKEN=your-google-ads-developer-token
+GOOGLE_ADS_CLIENT_ID=your-google-oauth-client-id
+GOOGLE_ADS_CLIENT_SECRET=your-google-oauth-client-secret
+GOOGLE_ADS_REFRESH_TOKEN=your-google-ads-refresh-token
+GOOGLE_ADS_LOGIN_CUSTOMER_ID=your-manager-customer-id-without-dashes
 ```
 
 Fill `config/clients.yaml` with the real Meta Ads account settings:
@@ -71,7 +76,33 @@ clients:
             attribution_setting: "platform_default"
             timezone_setting: "platform_account_default"
             conversion_action_type: "purchase"
+
+      google_ads:
+        enabled: true
+        accounts:
+          - customer_id: "0000000000"
+            account_name: "Your Google Ads Account"
+            login_customer_id: null
+            report_level: "ad"
+            attribution_setting: "platform_default"
+            timezone_setting: "platform_account_default"
 ```
+
+For Google Ads, `customer_id` should be the target ad account ID without dashes.
+If the OAuth user accesses the account through a manager account, set
+`GOOGLE_ADS_LOGIN_CUSTOMER_ID` in `.env` to the manager account ID without
+dashes. The per-account `login_customer_id` is reserved for future multi-manager
+support and can stay `null` for now.
+
+Generate a local Google Ads refresh token with the official OAuth flow:
+
+```bash
+.venv/bin/python scripts/generate_google_ads_refresh_token.py
+```
+
+The script opens a local OAuth callback at `http://127.0.0.1:8080` and prints the
+`GOOGLE_ADS_REFRESH_TOKEN` value to paste into `.env`. This script is local-only
+and should not be deployed to Cloud Run.
 
 Create or update the BigQuery tables and Looker Studio views:
 
@@ -98,7 +129,9 @@ SYNC_START_DATE=2025-03-01 SYNC_END_DATE=2025-03-31 make run
 The sync flow will:
 
 - fetch Meta Ads Insights rows
+- fetch Google Ads ad-level rows and keyword-level raw rows when Google Ads is enabled
 - replace matching rows in `raw_meta_ads_daily`
+- replace matching rows in `raw_google_ads_daily`
 - normalize rows into `unified_ads_daily`
 - write a row to `sync_logs`
 - refresh weekly/monthly reporting marts and Looker Studio views
@@ -414,7 +447,7 @@ bash deploy/deploy_ai_report_job.sh
 
 ## Current Scope
 
-This repository is currently prepared for v0.1 development:
+This repository currently includes the product-shaped MVP foundation:
 
 - Project skeleton
 - BigQuery schema
@@ -424,7 +457,11 @@ This repository is currently prepared for v0.1 development:
 - Base connector
 - Meta Ads connector
 - Meta Ads normalize
-- Main Meta Ads sync flow
+- Google Ads connector
+- Google Ads normalize
+- Main Meta + Google Ads sync flow
+- AI report generation and email delivery
 - Sync logs
 
-Google Ads, LINE Ads, AI reports, OAuth, SaaS login, payment, and frontend dashboard work are intentionally out of scope until explicitly requested.
+LINE Ads, SaaS login, payment, Google Sheets export, and frontend dashboard work
+remain out of scope until explicitly requested.
