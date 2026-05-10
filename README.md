@@ -104,6 +104,14 @@ The script opens a local OAuth callback at `http://127.0.0.1:8080` and prints th
 `GOOGLE_ADS_REFRESH_TOKEN` value to paste into `.env`. This script is local-only
 and should not be deployed to Cloud Run.
 
+If your OAuth client is a Web application, add `http://127.0.0.1:8080` to its
+authorized redirect URIs in Google Cloud Console. If it is a Desktop app client,
+run:
+
+```bash
+.venv/bin/python scripts/generate_google_ads_refresh_token.py --client-type installed
+```
+
 Create or update the BigQuery tables and Looker Studio views:
 
 ```bash

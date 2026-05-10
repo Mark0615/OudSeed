@@ -35,6 +35,7 @@ def main() -> None:
         client_id=args.client_id or _required_env("GOOGLE_ADS_CLIENT_ID"),
         client_secret=args.client_secret or _required_env("GOOGLE_ADS_CLIENT_SECRET"),
         redirect_uri=redirect_uri,
+        client_type=args.client_type,
     )
     passthrough_state = hashlib.sha256(os.urandom(1024)).hexdigest()
     authorization_url, _ = flow.authorization_url(
@@ -69,10 +70,16 @@ def main() -> None:
     print("GOOGLE_ADS_REFRESH_TOKEN=<the value above>")
 
 
-def _build_flow(client_id: str, client_secret: str, redirect_uri: str) -> Flow:
+def _build_flow(
+    client_id: str,
+    client_secret: str,
+    redirect_uri: str,
+    client_type: str,
+) -> Flow:
     """Build an OAuth flow from environment-provided client credentials."""
+    config_key = "installed" if client_type == "installed" else "web"
     client_config = {
-        "web": {
+        config_key: {
             "client_id": client_id,
             "client_secret": client_secret,
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -145,6 +152,15 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--client-id", default=None)
     parser.add_argument("--client-secret", default=None)
+    parser.add_argument(
+        "--client-type",
+        choices=("web", "installed"),
+        default="web",
+        help=(
+            "OAuth client type. Web clients must allow http://127.0.0.1:8080 "
+            "as an authorized redirect URI."
+        ),
+    )
     parser.add_argument("--callback-host", default=DEFAULT_CALLBACK_HOST)
     parser.add_argument("--callback-port", type=int, default=DEFAULT_CALLBACK_PORT)
     return parser.parse_args()
