@@ -116,6 +116,12 @@ For each client/account report:
   be tables instead of long repeated text lists. Do not repeat the same MoM/WoW
   metrics in both "overall change" and "core performance" sections. Use warning
   callouts, such as `⚠️`, for high-spend/low-result or sharply worsening items.
+- Report headings must follow Markdown hierarchy before HTML rendering: `#` for
+  major sections, `##` for named campaign/ad set/ad/keyword groups, and `###`
+  for analysis layers such as campaign level, keyword/search-term level, and
+  recommended actions. Numbered recommendation sentences should remain body
+  text, not large headings. Leave visual breathing room after each
+  recommendation before the next item.
 - Google Ads recommendations should use keyword and search-term context when
   available and name specific keywords/search terms to pause, reduce, expand, or
   add as negatives. Avoid generic budget/CPC advice when deeper data exists.
