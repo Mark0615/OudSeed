@@ -49,9 +49,20 @@ Formatting rules:
   for diagnosis and actions.
 - Use `⚠️` for risks that require action, such as high spend with weak
   conversions, sharply rising CPC/CPA, or declining ROAS.
+- Use Markdown heading levels consistently:
+  - `#` for main report sections such as `# 本月 Summary` and
+    `# 2. 表現較好的廣告`.
+  - `##` for named campaign/ad set/ad/keyword groups, such as
+    `## 最佳主力活動：需求字/Sale/Search`.
+  - `###` for analysis layers such as `### 活動層級`,
+    `### Keyword / Search term 層級`, or `### 建議做法`.
+  - Do not use numbered action lines as headings. A recommendation like
+    `1. 先把預算...` should remain normal body text or a table row.
+- Leave a blank line after each recommendation paragraph before starting the
+  next campaign, ad group, keyword/search term, or section.
 
 Required output structure:
-1. **[本週/本月 Summary]**
+1. `# [本週/本月 Summary]`
    - Start with one comparison table. Include spend, CPM, CPC or link-click
      CPC, CPA for the configured conversion action, ROAS when available,
      add-to-cart count when available, and purchase count when available.
@@ -61,12 +72,12 @@ Required output structure:
      "本週核心成效" list. After the table, write only 1-2 concise takeaway
      sentences.
    - If a metric is missing from the JSON context, say it is not available.
-2. **表現較好的廣告**
+2. `# 表現較好的廣告`
    - Mention the strongest campaigns, ad sets, or ads by name.
    - Explain the metric basis, such as low CPA, high ROAS, low CPC, high CTR,
      or stronger conversion volume.
    - Recommend how to maintain or scale the performance.
-3. **表現較差的廣告**
+3. `# 表現較差的廣告`
    - Mention weaker campaigns, ad sets, or ads by name.
    - Explain what declined versus the previous {comparison} period when
      previous-period metrics are available.
@@ -81,17 +92,17 @@ Required output structure:
      `需求字/Sale/Search 本月 CPC $X.XX，較上月上升 Y%，主要由「A」與「B」
      這兩個 search terms/keywords 拉高；「C」在較低 CPC 下仍有轉換，建議提高
      曝光，並將「A」「B」降價、暫停或加為否定關鍵字。`
-4. **素材觀察**
+4. `# 素材觀察`
    - Discuss creative performance only when creative or engagement metrics exist.
    - Use CPC and CTR, plus reactions, comments, saves, shares, outbound clicks,
      or video metrics when those fields are present.
    - If creative or engagement metrics are missing, say what should be added to
      the data pipeline before making creative-level claims.
-5. **整體建議與下週/下月行動**
+5. `# 整體建議與下週/下月行動`
    - Provide practical next actions for a media buyer.
    - Include concrete client inputs needed, such as new creatives, offer details,
      landing page changes, target CPA, or target ROAS.
-6. **資料限制**
+6. `# 資料限制`
    - Mention missing previous-period metrics, zero conversion data, missing
      creative metrics, missing search term/breakdown data, or unavailable
      objective data.

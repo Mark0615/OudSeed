@@ -159,14 +159,21 @@ def format_html_email(
 
     return f"""<!doctype html>
 <html>
-<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1f2937;line-height:1.55;">
-  <h1 style="font-size:22px;margin:0 0 12px;">OudSeed 廣告成效報告｜{html.escape(account_group_name)}</h1>
-  <p style="margin:0 0 16px;color:#4b5563;">
-    Report ID: {html.escape(report_id)}<br>
-    Client: {html.escape(client_id)}<br>
-    Period: {html.escape(str(context.get("period_start_date")))} - {html.escape(str(context.get("period_end_date")))}
-  </p>
-  {''.join(sections)}
+<body style="margin:0;padding:0;background:#f5f1e8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,'PingFang TC','Microsoft JhengHei',sans-serif;color:#1f2937;line-height:1.65;">
+  <div style="max-width:760px;margin:0 auto;background:#fffdf8;border:1px solid #e5dccb;">
+    <div style="padding:28px 34px 22px;border-bottom:1px solid #e5dccb;background:#faf6ef;">
+      <div style="font-size:11px;letter-spacing:1.8px;text-transform:uppercase;color:#b45309;font-weight:700;margin-bottom:10px;">OudSeed Ads Intelligence</div>
+      <h1 style="font-size:26px;line-height:1.25;margin:0 0 12px;color:#111827;">OudSeed 廣告成效報告｜{html.escape(account_group_name)}</h1>
+      <p style="margin:0;color:#6b7280;font-size:13px;">
+        Report ID: {html.escape(report_id)}<br>
+        Client: {html.escape(client_id)}<br>
+        Period: {html.escape(str(context.get("period_start_date")))} - {html.escape(str(context.get("period_end_date")))}
+      </p>
+    </div>
+    <div style="padding:26px 34px 34px;">
+      {''.join(sections)}
+    </div>
+  </div>
 </body>
 </html>"""
 
@@ -235,6 +242,11 @@ def _sum_campaign_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
 def _render_report_text_html(text: str) -> str:
     escaped = html.escape(text)
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(
+        r"`(.+?)`",
+        r"<strong style='font-weight:800;color:#111827;'>\1</strong>",
+        escaped,
+    )
     paragraphs = []
     lines = escaped.splitlines()
     index = 0
@@ -252,19 +264,63 @@ def _render_report_text_html(text: str) -> str:
             paragraphs.append(_markdown_table_html(table_lines))
             continue
         rendered = _normalize_inline_numbers(stripped)
-        if re.match(r"^\d+\.\s", stripped):
-            paragraphs.append(f"<h2>{rendered}</h2>")
+        heading = _parse_markdown_heading(rendered)
+        if heading:
+            level, content = heading
+            paragraphs.append(_heading_html(level, content))
+        elif _is_legacy_section_heading(stripped):
+            paragraphs.append(_heading_html(1, rendered))
         elif stripped.startswith("⚠️"):
             paragraphs.append(
-                "<div style='background:#fff7ed;border-left:4px solid #f97316;"
-                f"padding:10px 12px;margin:10px 0;'>{rendered}</div>"
+                "<div style='background:#fff7ed;border-left:4px solid #f97316;color:#7c2d12;"
+                f"padding:12px 14px;margin:14px 0 18px;font-weight:650;'>{rendered}</div>"
             )
+        elif re.match(r"^\d+\.\s", stripped):
+            paragraphs.append(f"<p style='{_paragraph_style()}margin-left:16px;'>{rendered}</p>")
         elif stripped.startswith("- "):
-            paragraphs.append(f"<p style='margin:4px 0 4px 18px;'>{rendered[2:]}</p>")
+            paragraphs.append(f"<p style='{_paragraph_style()}margin-left:18px;'>{rendered[2:]}</p>")
         else:
-            paragraphs.append(f"<p>{rendered}</p>")
+            paragraphs.append(f"<p style='{_paragraph_style()}'>{rendered}</p>")
         index += 1
     return "\n".join(paragraphs)
+
+
+def _parse_markdown_heading(value: str) -> tuple[int, str] | None:
+    """Parse Markdown heading syntax and return a normalized report heading level."""
+    match = re.match(r"^(#{1,4})\s+(.+)$", value)
+    if not match:
+        return None
+    return len(match.group(1)), match.group(2).strip()
+
+
+def _is_legacy_section_heading(value: str) -> bool:
+    """Return whether an older numbered line should still render as a section heading."""
+    if not re.match(r"^\d+\.\s", value):
+        return False
+    return bool(re.search(r"Summary|表現較好|表現較差|素材觀察|整體建議|資料限制", value))
+
+
+def _heading_html(level: int, content: str) -> str:
+    """Render report headings with a clear hierarchy."""
+    if level <= 1:
+        return (
+            "<h2 style='font-size:26px;line-height:1.3;margin:30px 0 14px;"
+            f"color:#111827;font-weight:800;border-top:1px solid #e5dccb;padding-top:22px;'>{content}</h2>"
+        )
+    if level == 2:
+        return (
+            "<h3 style='font-size:20px;line-height:1.35;margin:24px 0 12px;"
+            f"color:#111827;font-weight:800;'>{content}</h3>"
+        )
+    return (
+        "<h4 style='font-size:16px;line-height:1.4;margin:20px 0 8px;"
+        f"color:#374151;font-weight:750;'>{content}</h4>"
+    )
+
+
+def _paragraph_style() -> str:
+    """Return default paragraph spacing for report prose."""
+    return "font-size:15px;line-height:1.8;margin:8px 0 18px;color:#1f2937;"
 
 
 def _is_markdown_table_start(lines: list[str], index: int) -> bool:
@@ -292,7 +348,7 @@ def _markdown_table_html(table_lines: list[str]) -> str:
         for row in body_rows
     )
     return (
-        "<table style='border-collapse:collapse;width:100%;font-size:13px;margin:10px 0 18px;'>"
+        "<table style='border-collapse:collapse;width:100%;font-size:13px;margin:12px 0 24px;background:#fff;'>"
         f"<thead><tr style='background:#f3f4f6;'>{header_html}</tr></thead>"
         f"<tbody>{body_html}</tbody></table>"
     )

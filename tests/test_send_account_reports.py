@@ -103,3 +103,32 @@ def test_format_html_email_renders_table_and_bold_without_markdown_stars() -> No
     assert "總計" in html
     assert "<strong>本月 Summary</strong>" in html
     assert "**" not in html
+
+
+def test_format_html_email_renders_heading_hierarchy_without_oversized_actions() -> None:
+    """HTML email respects Markdown heading levels and keeps action lines as prose."""
+    html = format_html_email(
+        report_id="report-1",
+        client_id="demo_client_001",
+        context={
+            "period_start_date": "2026-04-01",
+            "period_end_date": "2026-04-30",
+            "campaigns": [],
+        },
+        report_text=(
+            "# 2. 表現較好的廣告\n"
+            "## 最佳主力活動：`需求字/Sale/Search`\n"
+            "### 活動層級\n"
+            "1. 先把預算移到已驗證能帶回收的字詞。\n"
+        ),
+        account_group_name="JK貓舍",
+    )
+
+    assert "## 2. 表現較好的廣告" not in html
+    assert "<h2" in html
+    assert "<h3" in html
+    assert "<h4" in html
+    assert "需求字/Sale/Search" in html
+    assert "先把預算移到已驗證能帶回收的字詞" in html
+    assert "<h2" in html.split("1. 先把預算移到已驗證能帶回收的字詞", 1)[0]
+    assert "<p style=" in html.split("1. 先把預算移到已驗證能帶回收的字詞", 1)[0]
