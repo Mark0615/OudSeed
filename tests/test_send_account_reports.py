@@ -90,6 +90,10 @@ def test_format_html_email_renders_table_and_bold_without_markdown_stars() -> No
     )
 
     assert html.count("<table") >= 2
+    assert "max-width:760px" not in html
+    assert "background:#f5f1e8" not in html
+    assert "overflow-x:auto" in html
+    assert "min-width:980px" in html
     assert "Campaign A" in html
     assert "$12,324" in html
     assert "$2.54" in html
