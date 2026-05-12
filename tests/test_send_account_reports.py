@@ -51,7 +51,7 @@ def test_discover_account_report_groups_uses_account_name() -> None:
 
 
 def test_format_html_email_renders_table_and_bold_without_markdown_stars() -> None:
-    """HTML email renders campaign table, totals, and strong tags."""
+    """HTML email renders tables, totals, strong tags, and normalized numbers."""
     context = {
         "period_start_date": "2026-04-01",
         "period_end_date": "2026-04-30",
@@ -78,15 +78,28 @@ def test_format_html_email_renders_table_and_bold_without_markdown_stars() -> No
         report_id="report-1",
         client_id="demo_client_001",
         context=context,
-        report_text="1. **本月 Summary**\n- **重點**：表現提升",
+        report_text=(
+            "1. **本月 Summary**\n"
+            "| 指標 | 本期 | 前期 | 變化 |\n"
+            "| --- | ---: | ---: | ---: |\n"
+            "| Spend | $15948 | $50731 | 下降 $34783 |\n"
+            "| Clicks | 2973 | 4331 | 下降 1358 |\n"
+            "⚠️ CPC 上升，需要檢查 search terms"
+        ),
         account_group_name="Miniware TW",
     )
 
-    assert "<table" in html
+    assert html.count("<table") >= 2
     assert "Campaign A" in html
     assert "$12,324" in html
     assert "$2.54" in html
     assert "4,850" in html
+    assert "$15,948" in html
+    assert "$50,731" in html
+    assert "$34,783" in html
+    assert "2,973" in html
+    assert "1,358" in html
+    assert "border-left:4px solid #f97316" in html
     assert "總計" in html
     assert "<strong>本月 Summary</strong>" in html
     assert "**" not in html

@@ -112,9 +112,20 @@ For each client/account report:
 - Email reports should be HTML, not raw Markdown. Put a campaign-level table
   after the period header for each platform, include a total row, use thousands
   separators for numbers, and render emphasis with HTML instead of visible `**`.
+- Keep the email scannable. Metric-heavy summary and comparison sections should
+  be tables instead of long repeated text lists. Do not repeat the same MoM/WoW
+  metrics in both "overall change" and "core performance" sections. Use warning
+  callouts, such as `⚠️`, for high-spend/low-result or sharply worsening items.
 - Google Ads recommendations should use keyword and search-term context when
   available and name specific keywords/search terms to pause, reduce, expand, or
   add as negatives. Avoid generic budget/CPC advice when deeper data exists.
+  Campaign-level Google diagnosis should explain which ad groups, keywords, or
+  search terms moved CPC/CPA/ROAS and which lower-cost converting terms should
+  be expanded.
+- Google Ads UI custom columns are product configuration, not a generic
+  one-call reporting surface. When users need custom columns, preserve and sync
+  the underlying conversion actions or metrics into BigQuery, then rebuild the
+  custom column formulas in SQL/reporting config.
 
 ## Meta field coverage strategy
 

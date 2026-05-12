@@ -236,17 +236,86 @@ def _render_report_text_html(text: str) -> str:
     escaped = html.escape(text)
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
     paragraphs = []
-    for line in escaped.splitlines():
+    lines = escaped.splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index]
         stripped = line.strip()
         if not stripped or stripped == "---":
+            index += 1
             continue
+        if _is_markdown_table_start(lines, index):
+            table_lines = []
+            while index < len(lines) and lines[index].strip().startswith("|"):
+                table_lines.append(lines[index].strip())
+                index += 1
+            paragraphs.append(_markdown_table_html(table_lines))
+            continue
+        rendered = _normalize_inline_numbers(stripped)
         if re.match(r"^\d+\.\s", stripped):
-            paragraphs.append(f"<h2>{stripped}</h2>")
+            paragraphs.append(f"<h2>{rendered}</h2>")
+        elif stripped.startswith("⚠️"):
+            paragraphs.append(
+                "<div style='background:#fff7ed;border-left:4px solid #f97316;"
+                f"padding:10px 12px;margin:10px 0;'>{rendered}</div>"
+            )
         elif stripped.startswith("- "):
-            paragraphs.append(f"<p style='margin:4px 0 4px 18px;'>{stripped[2:]}</p>")
+            paragraphs.append(f"<p style='margin:4px 0 4px 18px;'>{rendered[2:]}</p>")
         else:
-            paragraphs.append(f"<p>{stripped}</p>")
+            paragraphs.append(f"<p>{rendered}</p>")
+        index += 1
     return "\n".join(paragraphs)
+
+
+def _is_markdown_table_start(lines: list[str], index: int) -> bool:
+    """Return whether a Markdown table starts at the current line."""
+    if index + 1 >= len(lines):
+        return False
+    current = lines[index].strip()
+    separator = lines[index + 1].strip()
+    return current.startswith("|") and separator.startswith("|") and re.search(r"\|[\s:-]+\|", separator)
+
+
+def _markdown_table_html(table_lines: list[str]) -> str:
+    """Render a simple Markdown pipe table as email-safe HTML."""
+    parsed_rows = [_parse_markdown_table_row(line) for line in table_lines]
+    rows = [row for row in parsed_rows if row and not all(re.fullmatch(r":?-{3,}:?", cell) for cell in row)]
+    if not rows:
+        return ""
+
+    header, *body_rows = rows
+    header_html = "".join(f"<th style='{_th()}'>{_normalize_inline_numbers(cell)}</th>" for cell in header)
+    body_html = "".join(
+        "<tr>"
+        + "".join(f"<td style='{_td()}'>{_normalize_inline_numbers(cell)}</td>" for cell in row)
+        + "</tr>"
+        for row in body_rows
+    )
+    return (
+        "<table style='border-collapse:collapse;width:100%;font-size:13px;margin:10px 0 18px;'>"
+        f"<thead><tr style='background:#f3f4f6;'>{header_html}</tr></thead>"
+        f"<tbody>{body_html}</tbody></table>"
+    )
+
+
+def _parse_markdown_table_row(line: str) -> list[str]:
+    """Parse one Markdown pipe table row."""
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def _normalize_inline_numbers(value: str) -> str:
+    """Add thousands separators to money and large standalone numbers in rendered report text."""
+    value = re.sub(r"(?<![\w/])(-?)\$(\d{4,})(\.\d+)?", _format_money_match, value)
+    return re.sub(r"(?<![\w/$.-])(\d{4,})(?![\w/.-])", _format_count_match, value)
+
+
+def _format_money_match(match: re.Match[str]) -> str:
+    sign, integer, decimal = match.groups()
+    return f"{sign}${int(integer):,}{decimal or ''}"
+
+
+def _format_count_match(match: re.Match[str]) -> str:
+    return f"{int(match.group(1)):,}"
 
 
 def _format_text_email(

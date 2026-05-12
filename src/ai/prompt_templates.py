@@ -44,12 +44,22 @@ Formatting rules:
 - Show CTR and other rates as percentages with 2 decimals.
 - Show ROAS with 2 decimals.
 - Do not output raw decimal CTR values such as 0.0187; write 1.87% instead.
+- Do not write internal data-shape notes such as "有提供 previous 與 delta".
+- Prefer Markdown tables for metric-heavy sections. Use short paragraphs only
+  for diagnosis and actions.
+- Use `⚠️` for risks that require action, such as high spend with weak
+  conversions, sharply rising CPC/CPA, or declining ROAS.
 
 Required output structure:
 1. **[本週/本月 Summary]**
-   - Include spend, CPM, CPC or link-click CPC, CPA for the configured
-     conversion action, ROAS when available, add-to-cart count when available,
-     and purchase count when available.
+   - Start with one comparison table. Include spend, CPM, CPC or link-click
+     CPC, CPA for the configured conversion action, ROAS when available,
+     add-to-cart count when available, and purchase count when available.
+   - The comparison table should have columns like `指標`, `本期`, `前期`,
+     `變化`, and `判讀`.
+   - Do not repeat the same metrics again in a separate "本月核心成效" or
+     "本週核心成效" list. After the table, write only 1-2 concise takeaway
+     sentences.
    - If a metric is missing from the JSON context, say it is not available.
 2. **表現較好的廣告**
    - Mention the strongest campaigns, ad sets, or ads by name.
@@ -66,6 +76,11 @@ Required output structure:
      added as negative keywords when their spend/CPC is high and conversions or
      ROAS are weak. Avoid generic advice like "avoid CPC rising" unless it is
      tied to a specific campaign, ad group, keyword, or search term.
+   - For Google Ads, explain campaign-level changes by tying them to ad group,
+     keyword, or search term rows. Example style:
+     `需求字/Sale/Search 本月 CPC $X.XX，較上月上升 Y%，主要由「A」與「B」
+     這兩個 search terms/keywords 拉高；「C」在較低 CPC 下仍有轉換，建議提高
+     曝光，並將「A」「B」降價、暫停或加為否定關鍵字。`
 4. **素材觀察**
    - Discuss creative performance only when creative or engagement metrics exist.
    - Use CPC and CTR, plus reactions, comments, saves, shares, outbound clicks,
