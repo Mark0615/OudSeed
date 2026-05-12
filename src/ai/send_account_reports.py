@@ -159,9 +159,9 @@ def format_html_email(
 
     return f"""<!doctype html>
 <html>
-<body style="margin:0;padding:0;background:#f5f1e8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,'PingFang TC','Microsoft JhengHei',sans-serif;color:#1f2937;line-height:1.65;">
-  <div style="max-width:760px;margin:0 auto;background:#fffdf8;border:1px solid #e5dccb;">
-    <div style="padding:28px 34px 22px;border-bottom:1px solid #e5dccb;background:#faf6ef;">
+<body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,'PingFang TC','Microsoft JhengHei',sans-serif;color:#1f2937;line-height:1.65;">
+  <div style="padding:24px 28px 32px;background:#ffffff;">
+    <div style="padding:0 0 18px;border-bottom:1px solid #e5dccb;margin-bottom:22px;">
       <div style="font-size:11px;letter-spacing:1.8px;text-transform:uppercase;color:#b45309;font-weight:700;margin-bottom:10px;">OudSeed Ads Intelligence</div>
       <h1 style="font-size:26px;line-height:1.25;margin:0 0 12px;color:#111827;">OudSeed 廣告成效報告｜{html.escape(account_group_name)}</h1>
       <p style="margin:0;color:#6b7280;font-size:13px;">
@@ -170,9 +170,7 @@ def format_html_email(
         Period: {html.escape(str(context.get("period_start_date")))} - {html.escape(str(context.get("period_end_date")))}
       </p>
     </div>
-    <div style="padding:26px 34px 34px;">
-      {''.join(sections)}
-    </div>
+    {''.join(sections)}
   </div>
 </body>
 </html>"""
@@ -184,7 +182,8 @@ def _campaign_table_html(context: dict[str, Any], platform: str) -> str:
     table_rows = rows + [{"campaign_name": "總計", **totals}]
     body = "".join(_campaign_table_row_html(row, is_total=row.get("campaign_name") == "總計") for row in table_rows)
     return f"""
-<table style="border-collapse:collapse;width:100%;font-size:13px;margin:8px 0 20px;">
+<div style="overflow-x:auto;width:100%;margin:8px 0 20px;">
+<table style="border-collapse:collapse;width:100%;min-width:980px;font-size:13px;">
   <thead>
     <tr style="background:#f3f4f6;">
       <th style="{_th()}">Campaign name</th>
@@ -201,7 +200,8 @@ def _campaign_table_html(context: dict[str, Any], platform: str) -> str:
     </tr>
   </thead>
   <tbody>{body}</tbody>
-</table>"""
+</table>
+</div>"""
 
 
 def _campaign_table_row_html(row: dict[str, Any], is_total: bool = False) -> str:
@@ -348,9 +348,10 @@ def _markdown_table_html(table_lines: list[str]) -> str:
         for row in body_rows
     )
     return (
-        "<table style='border-collapse:collapse;width:100%;font-size:13px;margin:12px 0 24px;background:#fff;'>"
+        "<div style='overflow-x:auto;width:100%;margin:12px 0 24px;'>"
+        "<table style='border-collapse:collapse;width:100%;min-width:720px;font-size:13px;background:#fff;'>"
         f"<thead><tr style='background:#f3f4f6;'>{header_html}</tr></thead>"
-        f"<tbody>{body_html}</tbody></table>"
+        f"<tbody>{body_html}</tbody></table></div>"
     )
 
 
