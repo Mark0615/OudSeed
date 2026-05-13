@@ -241,6 +241,7 @@ def test_render_performance_report_prompt_includes_context() -> None:
     context = {
         "report_type": "weekly",
         "comparison": "week_over_week",
+        "report_depth": "deep",
         "client_id": "demo_client_001",
         "campaigns": [{"campaign_name": "Prospecting", "spend": 1200.0}],
     }
@@ -254,6 +255,8 @@ def test_render_performance_report_prompt_includes_context() -> None:
     assert "Prospecting" in prompt
     assert "thousands separators" in prompt
     assert "search terms" in prompt
+    assert "Report depth: deep" in prompt
+    assert "consultant-style" in prompt
 
 
 def test_build_report_prompt_returns_context_and_prompt() -> None:
@@ -266,7 +269,10 @@ def test_build_report_prompt_returns_context_and_prompt() -> None:
         workspace_id="mark_internal",
         client_id="demo_client_001",
         period_start_date="2025-03-24",
+        report_depth="brief",
     )
 
     assert result["context"]["totals"]["spend"] == 1500.0
+    assert result["context"]["report_depth"] == "brief"
+    assert "Report depth: brief" in result["prompt"]
     assert "Prospecting" in result["prompt"]

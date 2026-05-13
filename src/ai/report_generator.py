@@ -27,6 +27,7 @@ def generate_and_log_report(
     account_ids: list[str] | None = None,
     limit: int = 10,
     max_output_tokens: int = 1800,
+    report_depth: str = "standard",
 ) -> dict[str, Any]:
     """Generate one AI report and write the result to ai_report_logs."""
     report_id = str(uuid.uuid4())
@@ -39,6 +40,7 @@ def generate_and_log_report(
         account_id=account_id,
         account_ids=account_ids,
         limit=limit,
+        report_depth=report_depth,
     )
     context = prompt_result["context"]
     prompt = prompt_result["prompt"]

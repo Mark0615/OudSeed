@@ -6,15 +6,20 @@ import json
 from typing import Any
 
 
+REPORT_DEPTHS = {"brief", "standard", "deep"}
+
+
 def render_performance_report_prompt(context: dict[str, Any]) -> str:
     """Render an LLM prompt for weekly or monthly performance analysis."""
     report_type = context["report_type"]
     comparison = context["comparison"]
+    depth = _report_depth(context.get("report_depth", "standard"))
     context_json = json.dumps(context, ensure_ascii=False, indent=2, sort_keys=True)
 
     return f"""You are an ads performance analyst for paid media buyers.
 
 Write a concise {report_type} performance report in Traditional Chinese.
+Report depth: {depth}
 
 Use only the metrics in the JSON context. Do not invent numbers, campaigns,
 budgets, or conversion explanations. If there is not enough historical data for
@@ -60,6 +65,9 @@ Formatting rules:
     `1. 先把預算...` should remain normal body text or a table row.
 - Leave a blank line after each recommendation paragraph before starting the
   next campaign, ad group, keyword/search term, or section.
+
+Depth rules:
+{_depth_rules(depth)}
 
 Required output structure:
 1. `# [本週/本月 Summary]`
@@ -110,3 +118,35 @@ Required output structure:
 JSON context:
 {context_json}
 """
+
+
+def _report_depth(value: Any) -> str:
+    """Return a supported report depth."""
+    depth = str(value or "standard").strip().lower()
+    if depth not in REPORT_DEPTHS:
+        raise ValueError("report_depth must be 'brief', 'standard', or 'deep'.")
+    return depth
+
+
+def _depth_rules(depth: str) -> str:
+    """Return output length guidance for the selected report depth."""
+    if depth == "brief":
+        return """- Write an executive short report.
+- Summary: one table plus 1 short takeaway.
+- Strong performers: at most 2 items.
+- Weak performers: at most 2 items.
+- Final actions: at most 3 bullets.
+- Avoid long diagnosis unless a critical anomaly exists."""
+    if depth == "deep":
+        return """- Write a deeper consultant-style analysis.
+- Summary: one table plus 2-3 diagnostic takeaways.
+- Strong performers: up to 5 items across campaign/ad group/ad/keyword/search term.
+- Weak performers: up to 5 items, with root-cause reasoning and concrete next actions.
+- Include anomaly checks, competing hypotheses, and data limitations when useful.
+- Final actions: prioritize 5-8 actions by expected impact and confidence."""
+    return """- Write a standard client-ready report.
+- Summary: one table plus 1-2 diagnostic takeaways.
+- Strong performers: at most 3 items.
+- Weak performers: at most 3 items.
+- Google keyword/search term recommendations: include up to 5 expand/keep items and up to 5 reduce/pause/negative items when available.
+- Final actions: at most 5 prioritized actions."""

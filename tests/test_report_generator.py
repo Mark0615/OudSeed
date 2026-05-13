@@ -86,6 +86,7 @@ def test_generate_and_log_report_writes_success_log() -> None:
         workspace_id="mark_internal",
         client_id="demo_client_001",
         period_start_date="2025-03-01",
+        report_depth="deep",
     )
 
     assert result["status"] == "success"
@@ -98,6 +99,8 @@ def test_generate_and_log_report_writes_success_log() -> None:
     assert log_row["report_text"] == "AI report text"
     assert log_row["model_name"] == "gpt-test"
     assert "Prospecting" in log_row["prompt_payload"]
+    assert '"report_depth": "deep"' in log_row["prompt_payload"]
+    assert "Report depth: deep" in log_row["prompt_payload"]
 
 
 def test_generate_and_log_report_writes_failed_log() -> None:

@@ -122,6 +122,10 @@ For each client/account report:
   recommended actions. Numbered recommendation sentences should remain body
   text, not large headings. Leave visual breathing room after each
   recommendation before the next item.
+- Report length should be product-controlled through `AI_REPORT_DEPTH`, not left
+  entirely to the model. Supported depths are `brief`, `standard`, and `deep`.
+  Standard is the default client-ready monthly/weekly report; deep may include
+  more root-cause reasoning, anomaly checks, and consultant-style hypotheses.
 - Google Ads recommendations should use keyword and search-term context when
   available and name specific keywords/search terms to pause, reduce, expand, or
   add as negatives. Avoid generic budget/CPC advice when deeper data exists.

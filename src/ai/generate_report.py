@@ -39,6 +39,7 @@ def main() -> None:
     account_id = os.getenv("AI_REPORT_ACCOUNT_ID")
     account_ids = _comma_separated_env("AI_REPORT_ACCOUNT_IDS")
     limit = _positive_int_env("AI_REPORT_LIMIT", 10)
+    report_depth = _report_depth(os.getenv("AI_REPORT_DEPTH", "standard"))
     max_output_tokens = _positive_int_env("OPENAI_MAX_OUTPUT_TOKENS", 1800)
     openai_timeout_seconds = _positive_int_env("OPENAI_TIMEOUT_SECONDS", 60)
 
@@ -46,7 +47,7 @@ def main() -> None:
         "starting_ai_report_generation="
         f"true report_type={report_type} client_id={client_id} "
         f"period_start_date={period_start_date} model={os.getenv('OPENAI_MODEL', 'gpt-5.4 mini')} "
-        f"timeout_seconds={openai_timeout_seconds}"
+        f"report_depth={report_depth} timeout_seconds={openai_timeout_seconds}"
     )
 
     destination = BigQueryDestination(project_id=project_id, dataset_id=dataset_id)
@@ -67,6 +68,7 @@ def main() -> None:
         account_ids=account_ids,
         limit=limit,
         max_output_tokens=max_output_tokens,
+        report_depth=report_depth,
     )
     print(f"ai_report_id={result['report_id']} status={result['status']}")
 
@@ -74,6 +76,13 @@ def main() -> None:
 def _report_type(value: str) -> ReportType:
     if value not in {"weekly", "monthly"}:
         raise ValueError("AI_REPORT_TYPE must be 'weekly' or 'monthly'.")
+    return value
+
+
+def _report_depth(value: str) -> str:
+    """Validate report depth."""
+    if value not in {"brief", "standard", "deep"}:
+        raise ValueError("AI_REPORT_DEPTH must be 'brief', 'standard', or 'deep'.")
     return value
 
 
