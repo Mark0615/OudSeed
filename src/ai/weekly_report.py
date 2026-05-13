@@ -18,6 +18,7 @@ def build_report_prompt(
     account_id: str | None = None,
     account_ids: list[str] | None = None,
     limit: int = 10,
+    report_depth: str = "standard",
 ) -> dict[str, Any]:
     """Build report context plus a ready-to-send LLM prompt."""
     context = build_report_context(
@@ -30,6 +31,7 @@ def build_report_prompt(
         account_ids=account_ids,
         limit=limit,
     )
+    context["report_depth"] = report_depth
     return {
         "context": context,
         "prompt": render_performance_report_prompt(context),

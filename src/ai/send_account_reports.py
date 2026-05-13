@@ -32,6 +32,7 @@ def main() -> None:
     client_id = os.getenv("AI_REPORT_CLIENT_ID") or _first_enabled_client_id(config)
     recipient = _required_env("AI_REPORT_EMAIL_TO")
     limit = _positive_int_env("AI_REPORT_LIMIT", 50)
+    report_depth = _report_depth(os.getenv("AI_REPORT_DEPTH", "standard"))
     max_output_tokens = _positive_int_env("OPENAI_MAX_OUTPUT_TOKENS", 5000)
     openai_timeout_seconds = _positive_int_env("OPENAI_TIMEOUT_SECONDS", 120)
 
@@ -64,6 +65,7 @@ def main() -> None:
             account_ids=group["account_ids"],
             limit=limit,
             max_output_tokens=max_output_tokens,
+            report_depth=report_depth,
         )
         subject = _default_subject(
             report_type=report_type,
@@ -405,6 +407,13 @@ def _platform_label(platform: str) -> str:
 def _default_subject(report_type: str, account_group_name: str, period_start_date: str) -> str:
     report_type_label = "週報" if report_type == "weekly" else "月報"
     return f"OudSeed 廣告成效{report_type_label}｜{account_group_name}｜{period_start_date}"
+
+
+def _report_depth(value: str) -> str:
+    """Validate report depth."""
+    if value not in {"brief", "standard", "deep"}:
+        raise ValueError("AI_REPORT_DEPTH must be 'brief', 'standard', or 'deep'.")
+    return value
 
 
 def _destination_from_config(config: dict[str, Any]) -> BigQueryDestination:
