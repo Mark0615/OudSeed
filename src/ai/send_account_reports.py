@@ -48,7 +48,7 @@ def main() -> None:
 
     openai_client = OpenAITextClient(
         api_key=_required_env("OPENAI_API_KEY"),
-        model=os.getenv("OPENAI_MODEL", "gpt-5.4 mini"),
+        model=os.getenv("OPENAI_MODEL", "gpt-5.2"),
         reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium"),
         timeout_seconds=openai_timeout_seconds,
     )
@@ -156,6 +156,7 @@ def format_html_email(
     for platform in _platforms(context):
         sections.append(f"<h2>{html.escape(_platform_label(platform))}</h2>")
         sections.append(_campaign_table_html(context, platform))
+        sections.append(_diagnostics_html(context, platform))
         sections.append("<h3>Insight</h3>")
     sections.append(_render_report_text_html(report_text))
 
@@ -204,6 +205,151 @@ def _campaign_table_html(context: dict[str, Any], platform: str) -> str:
   <tbody>{body}</tbody>
 </table>
 </div>"""
+
+
+def _diagnostics_html(context: dict[str, Any], platform: str) -> str:
+    """Render deterministic diagnostics before the model-written insight."""
+    diagnostics = context.get("diagnostics")
+    if not isinstance(diagnostics, dict):
+        return ""
+
+    parts = [
+        "<h3 style='font-size:18px;line-height:1.35;margin:18px 0 10px;color:#111827;font-weight:800;'>"
+        "診斷重點</h3>"
+    ]
+    metric_table = _diagnostic_metric_table_html(diagnostics)
+    if metric_table:
+        parts.append(metric_table)
+
+    anomalies = _platform_rows(diagnostics.get("anomalies"), platform)
+    if anomalies:
+        parts.append(_diagnostic_warning_html(anomalies[:4]))
+
+    contribution_rows = _diagnostic_contribution_rows(diagnostics, platform)
+    if contribution_rows:
+        parts.append(_diagnostic_contribution_table_html(contribution_rows[:6]))
+
+    if len(parts) == 1:
+        return ""
+    return "\n".join(parts)
+
+
+def _diagnostic_metric_table_html(diagnostics: dict[str, Any]) -> str:
+    metric_changes = diagnostics.get("metric_changes")
+    if not isinstance(metric_changes, dict):
+        return ""
+
+    rows = []
+    for metric, label in (("cpc", "CPC"), ("cpa", "CPA"), ("roas", "ROAS")):
+        change = metric_changes.get(metric)
+        if not isinstance(change, dict):
+            continue
+        current = change.get("current")
+        previous = change.get("previous")
+        delta = change.get("delta")
+        rows.append(
+            "<tr>"
+            f"<td style='{_td()}'>{label}</td>"
+            f"<td style='{_td_num()}'>{_diagnostic_value(metric, current)}</td>"
+            f"<td style='{_td_num()}'>{_diagnostic_value(metric, previous)}</td>"
+            f"<td style='{_td_num()}'>{_diagnostic_delta(metric, delta)}</td>"
+            f"<td style='{_td()}'>{html.escape(_likely_cause_label(change.get('likely_cause')))}</td>"
+            "</tr>"
+        )
+    if not rows:
+        return ""
+
+    return (
+        "<div style='overflow-x:auto;width:100%;margin:8px 0 16px;'>"
+        "<table style='border-collapse:collapse;width:100%;min-width:720px;font-size:13px;background:#fff;'>"
+        "<thead><tr style='background:#f3f4f6;'>"
+        f"<th style='{_th()}'>指標</th>"
+        f"<th style='{_th()}'>本期</th>"
+        f"<th style='{_th()}'>前期</th>"
+        f"<th style='{_th()}'>變化</th>"
+        f"<th style='{_th()}'>可能原因</th>"
+        "</tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table></div>"
+    )
+
+
+def _diagnostic_warning_html(anomalies: list[dict[str, Any]]) -> str:
+    items = []
+    for anomaly in anomalies:
+        label = _diagnostic_object_name(anomaly)
+        items.append(
+            "<div style='background:#fff7ed;border-left:4px solid #f97316;color:#7c2d12;"
+            "padding:10px 12px;margin:8px 0;font-size:13px;line-height:1.55;'>"
+            f"<strong>⚠️ {html.escape(_anomaly_label(str(anomaly.get('kind') or 'warning')))}</strong>"
+            f"｜{html.escape(label)}"
+            f"｜花費 {_money(anomaly.get('spend'))}"
+            f"｜轉換 {_count(anomaly.get('conversions'))}"
+            f"｜ROAS {_ratio(anomaly.get('roas'))}"
+            "</div>"
+        )
+    return "".join(items)
+
+
+def _diagnostic_contribution_rows(
+    diagnostics: dict[str, Any],
+    platform: str,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    detail_contributions = diagnostics.get("detail_contributions")
+    if isinstance(detail_contributions, dict):
+        for section in ("search_terms", "keywords", "ad_groups", "ads"):
+            rows.extend(_platform_rows(detail_contributions.get(section), platform))
+
+    campaign_contributions = diagnostics.get("campaign_contributions")
+    if isinstance(campaign_contributions, dict):
+        rows.extend(_platform_rows(campaign_contributions.get("weaker_campaigns"), platform))
+        rows.extend(_platform_rows(campaign_contributions.get("stronger_campaigns"), platform))
+
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for row in rows:
+        key = (
+            row.get("campaign_name"),
+            row.get("ad_group_name"),
+            row.get("ad_name"),
+            row.get("keyword_text"),
+            row.get("search_term"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(row)
+    return sorted(deduped, key=lambda row: _num(row.get("spend")), reverse=True)
+
+
+def _diagnostic_contribution_table_html(rows: list[dict[str, Any]]) -> str:
+    body = []
+    for row in rows:
+        body.append(
+            "<tr>"
+            f"<td style='{_td()}'>{html.escape(_diagnostic_object_name(row))}</td>"
+            f"<td style='{_td()}'>{html.escape(_diagnostic_label(row))}</td>"
+            f"<td style='{_td_num()}'>{_money(row.get('spend'))}</td>"
+            f"<td style='{_td_num()}'>{_percent(row.get('spend_share'))}</td>"
+            f"<td style='{_td_num()}'>{_count(row.get('conversions'))}</td>"
+            f"<td style='{_td_num()}'>{_money(row.get('cpa'))}</td>"
+            f"<td style='{_td_num()}'>{_ratio(row.get('roas'))}</td>"
+            "</tr>"
+        )
+    return (
+        "<div style='overflow-x:auto;width:100%;margin:10px 0 20px;'>"
+        "<table style='border-collapse:collapse;width:100%;min-width:860px;font-size:13px;background:#fff;'>"
+        "<thead><tr style='background:#f3f4f6;'>"
+        f"<th style='{_th()}'>對象</th>"
+        f"<th style='{_th()}'>診斷</th>"
+        f"<th style='{_th()}'>花費</th>"
+        f"<th style='{_th()}'>花費占比</th>"
+        f"<th style='{_th()}'>轉換</th>"
+        f"<th style='{_th()}'>CPA</th>"
+        f"<th style='{_th()}'>ROAS</th>"
+        "</tr></thead>"
+        f"<tbody>{''.join(body)}</tbody></table></div>"
+    )
 
 
 def _campaign_table_row_html(row: dict[str, Any], is_total: bool = False) -> str:
@@ -448,6 +594,12 @@ def _ratio(value: Any) -> str:
     return f"{float(value):,.2f}"
 
 
+def _percent(value: Any) -> str:
+    if value is None:
+        return "-"
+    return f"{float(value) * 100:,.2f}%"
+
+
 def _num(value: Any) -> float:
     if value is None:
         return 0.0
@@ -458,6 +610,94 @@ def _safe_divide(numerator: float, denominator: float) -> float | None:
     if denominator == 0:
         return None
     return numerator / denominator
+
+
+def _diagnostic_value(metric: str, value: Any) -> str:
+    if metric in {"cpc", "cpa"}:
+        return _money(value, decimals=2 if metric == "cpc" else 0)
+    return _ratio(value)
+
+
+def _diagnostic_delta(metric: str, value: Any) -> str:
+    if value is None:
+        return "-"
+    number = float(value)
+    if metric in {"cpc", "cpa"}:
+        decimals = 2 if metric == "cpc" else 0
+        sign = "+" if number > 0 else "-" if number < 0 else ""
+        return f"{sign}${abs(number):,.{decimals}f}"
+    sign = "+" if number > 0 else ""
+    return f"{sign}{number:,.2f}"
+
+
+def _diagnostic_object_name(row: dict[str, Any]) -> str:
+    for key, prefix in (
+        ("search_term", "搜尋字詞"),
+        ("keyword_text", "關鍵字"),
+        ("ad_name", "廣告"),
+        ("ad_group_name", "廣告組合"),
+        ("campaign_name", "活動"),
+    ):
+        value = row.get(key)
+        if value:
+            return f"{prefix}: {value}"
+    return "-"
+
+
+def _platform_rows(value: Any, platform: str) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [row for row in value if isinstance(row, dict) and row.get("platform") == platform]
+
+
+def _anomaly_label(kind: str) -> str:
+    return {
+        "high_spend_zero_conversions": "高花費但零轉換",
+        "low_roas_high_spend_share": "高花費占比但 ROAS 偏低",
+        "sharp_cpc_increase": "CPC 明顯上升",
+        "sharp_cpa_increase": "CPA 明顯上升",
+        "sharp_roas_decline": "ROAS 明顯下滑",
+    }.get(kind, kind)
+
+
+def _likely_cause_label(value: Any) -> str:
+    if value is None:
+        return "-"
+    raw = str(value)
+    labels = {
+        "insufficient_previous_period_data": "前期資料不足，無法拆解變化原因",
+        "spend_increased_while_link_clicks_did_not": "花費增加，但連結點擊沒有同步增加",
+        "spend_fell_or_flat_while_link_clicks_increased": "花費持平或下降，但連結點擊增加",
+        "spend_moved_more_than_link_clicks": "花費變動幅度大於連結點擊，推動 CPC 變化",
+        "link_clicks_moved_more_than_spend": "連結點擊變動幅度大於花費，推動 CPC 變化",
+        "spend_increased_while_conversions_did_not": "花費增加，但轉換沒有同步增加",
+        "spend_fell_or_flat_while_conversions_increased": "花費持平或下降，但轉換增加",
+        "spend_moved_more_than_conversions": "花費變動幅度大於轉換，推動 CPA 變化",
+        "conversions_moved_more_than_spend": "轉換變動幅度大於花費，推動 CPA 變化",
+        "conversion_value_increased_while_spend_did_not": "轉換價值增加，且花費沒有同步增加",
+        "conversion_value_fell_or_flat_while_spend_increased": "轉換價值持平或下降，但花費增加",
+        "conversion_value_moved_more_than_spend": "轉換價值變動幅度大於花費，推動 ROAS 變化",
+        "spend_moved_more_than_conversion_value": "花費變動幅度大於轉換價值，推動 ROAS 變化",
+    }
+    return labels.get(raw, raw.replace("_", " "))
+
+
+def _diagnostic_label(row: dict[str, Any]) -> str:
+    value = row.get("action_bias") or row.get("diagnostic_note")
+    if value is None:
+        return "-"
+    raw = str(value)
+    labels = {
+        "scale_or_protect": "表現具放大或保護價值",
+        "reduce_pause_or_exclude": "高花費低回收，建議降預算、暫停或排除",
+        "optimize_bid_budget_or_landing_page": "已有轉換，建議優化出價、預算或落地頁",
+        "monitor": "持續觀察，等更多資料再判斷",
+        "improving_efficiency_or_value": "效率或轉換價值正在改善",
+        "spend_efficiency_worsened_without_conversion_growth": "花費效率變差，轉換沒有同步成長",
+        "spend_without_conversions": "已有花費但沒有轉換",
+        "monitor_against_account_average": "需和帳戶平均表現一起觀察",
+    }
+    return labels.get(raw, raw.replace("_", " "))
 
 
 def _th() -> str:

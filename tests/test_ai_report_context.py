@@ -66,15 +66,32 @@ def sample_weekly_rows() -> list[dict]:
             "roas": 3.0,
             "previous_spend": 1000.0,
             "previous_link_clicks": 80,
+            "previous_conversions": 8.0,
+            "previous_cpc": 12.5,
+            "previous_cpa": 125.0,
+            "previous_roas": 4.2,
             "spend_delta": 200.0,
             "link_clicks_delta": 20,
+            "conversions_delta": -2.0,
+            "cpc_delta": -0.5,
+            "cpa_delta": 75.0,
+            "roas_delta": -1.2,
             "spend_delta_rate": 0.2,
             "link_clicks_delta_rate": 0.25,
+            "conversions_delta_rate": -0.25,
+            "cpc_delta_rate": -0.04,
+            "cpa_delta_rate": 0.6,
+            "roas_delta_rate": -0.2857142857,
             "total_impressions": 1500,
             "total_link_clicks": 150,
             "total_spend": 1500.0,
             "total_conversions": 9.0,
             "total_conversion_value": 4800.0,
+            "total_previous_spend": 1400.0,
+            "total_previous_link_clicks": 120,
+            "total_previous_conversions": 10.0,
+            "total_previous_add_to_cart": 0,
+            "total_previous_purchase": 0,
         },
         {
             "period_start_date": date(2025, 3, 24),
@@ -96,15 +113,32 @@ def sample_weekly_rows() -> list[dict]:
             "roas": 4.0,
             "previous_spend": 400.0,
             "previous_link_clicks": 40,
+            "previous_conversions": 2.0,
+            "previous_cpc": 10.0,
+            "previous_cpa": 200.0,
+            "previous_roas": 2.0,
             "spend_delta": -100.0,
             "link_clicks_delta": 10,
+            "conversions_delta": 1.0,
+            "cpc_delta": -4.0,
+            "cpa_delta": -100.0,
+            "roas_delta": 2.0,
             "spend_delta_rate": -0.25,
             "link_clicks_delta_rate": 0.25,
+            "conversions_delta_rate": 0.5,
+            "cpc_delta_rate": -0.4,
+            "cpa_delta_rate": -0.5,
+            "roas_delta_rate": 1.0,
             "total_impressions": 1500,
             "total_link_clicks": 150,
             "total_spend": 1500.0,
             "total_conversions": 9.0,
             "total_conversion_value": 4800.0,
+            "total_previous_spend": 1400.0,
+            "total_previous_link_clicks": 120,
+            "total_previous_conversions": 10.0,
+            "total_previous_add_to_cart": 0,
+            "total_previous_purchase": 0,
         },
     ]
 
@@ -132,6 +166,13 @@ def test_build_weekly_report_context_queries_weekly_view() -> None:
     assert context["totals"]["link_clicks"] == 150
     assert context["totals"]["cpc"] == 10.0
     assert context["campaigns"][0]["campaign_name"] == "Prospecting"
+    assert "metric_changes" in context["diagnostics"]
+    assert (
+        context["diagnostics"]["campaign_contributions"]["weaker_campaigns"][0][
+            "campaign_name"
+        ]
+        == "Prospecting"
+    )
 
 
 def test_build_monthly_report_context_queries_monthly_view() -> None:
@@ -236,6 +277,145 @@ def test_build_report_context_rejects_invalid_limit() -> None:
         )
 
 
+def test_report_context_adds_detail_diagnostics() -> None:
+    """Diagnostics annotate ad group, keyword, and search term contribution rows."""
+    current_rows = [
+        {
+            "period_start_date": date(2026, 4, 1),
+            "period_end_date": date(2026, 4, 30),
+            "platform": "google_ads",
+            "account_id": "google_123",
+            "account_name": "Demo Google",
+            "campaign_id": "campaign_001",
+            "campaign_name": "Search Brand",
+            "impressions": 1000,
+            "link_clicks": 100,
+            "spend": 1000.0,
+            "conversions": 10.0,
+            "conversion_value": 3000.0,
+            "cpc": 10.0,
+            "cpa": 100.0,
+            "roas": 3.0,
+            "previous_spend": 800.0,
+            "previous_link_clicks": 100,
+            "previous_conversions": 16.0,
+            "previous_cpc": 8.0,
+            "previous_cpa": 50.0,
+            "previous_roas": 5.0,
+            "cpc_delta_rate": 0.25,
+            "cpa_delta_rate": 1.0,
+            "roas_delta_rate": -0.4,
+            "total_impressions": 1000,
+            "total_link_clicks": 100,
+            "total_spend": 1000.0,
+            "total_conversions": 10.0,
+            "total_conversion_value": 3000.0,
+            "total_previous_spend": 800.0,
+            "total_previous_link_clicks": 100,
+            "total_previous_conversions": 16.0,
+            "total_previous_add_to_cart": 0,
+            "total_previous_purchase": 0,
+        }
+    ]
+    previous_total_rows = [
+        {
+            "impressions": 1000,
+            "link_clicks": 100,
+            "spend": 800.0,
+            "conversions": 16.0,
+            "conversion_value": 4000.0,
+            "add_to_cart": 0,
+            "purchase": 0,
+            "purchase_value": 0,
+        }
+    ]
+    ad_group_rows = [
+        {
+            "platform": "google_ads",
+            "account_id": "google_123",
+            "campaign_id": "campaign_001",
+            "campaign_name": "Search Brand",
+            "ad_group_id": "adgroup_001",
+            "ad_group_name": "Booking Terms",
+            "spend": 700.0,
+            "link_clicks": 70,
+            "conversions": 0.0,
+            "conversion_value": 0.0,
+            "cpc": 10.0,
+            "cpa": None,
+            "roas": 0.0,
+        }
+    ]
+    keyword_rows = [
+        {
+            "platform": "google_ads",
+            "account_id": "google_123",
+            "campaign_id": "campaign_001",
+            "campaign_name": "Search Brand",
+            "ad_group_id": "adgroup_001",
+            "ad_group_name": "Booking Terms",
+            "criterion_id": "kw_001",
+            "keyword_text": "expensive booking",
+            "keyword_match_type": "PHRASE",
+            "spend": 400.0,
+            "link_clicks": 40,
+            "conversions": 0.0,
+            "conversion_value": 0.0,
+            "cpc": 10.0,
+            "cpa": None,
+            "roas": 0.0,
+        }
+    ]
+    search_term_rows = [
+        {
+            "platform": "google_ads",
+            "account_id": "google_123",
+            "campaign_id": "campaign_001",
+            "campaign_name": "Search Brand",
+            "ad_group_id": "adgroup_001",
+            "ad_group_name": "Booking Terms",
+            "search_term": "free booking template",
+            "spend": 300.0,
+            "link_clicks": 30,
+            "conversions": 0.0,
+            "conversion_value": 0.0,
+            "cpc": 10.0,
+            "cpa": None,
+            "roas": 0.0,
+        }
+    ]
+    destination = QueueDestination(
+        [
+            current_rows,
+            previous_total_rows,
+            ad_group_rows,
+            [],
+            keyword_rows,
+            search_term_rows,
+        ]
+    )
+
+    context = build_report_context(
+        destination=destination,
+        report_type="monthly",
+        workspace_id="mark_internal",
+        client_id="demo_client_001",
+        period_start_date="2026-04-01",
+        account_id="google_123",
+    )
+
+    diagnostics = context["diagnostics"]
+    assert diagnostics["detail_contributions"]["keywords"][0]["keyword_text"] == "expensive booking"
+    assert (
+        diagnostics["detail_contributions"]["search_terms"][0]["action_bias"]
+        == "reduce_pause_or_exclude"
+    )
+    assert any(
+        anomaly["kind"] == "high_spend_zero_conversions"
+        for anomaly in diagnostics["anomalies"]
+    )
+
+
 def test_render_performance_report_prompt_includes_context() -> None:
     """Prompt template includes instructions and the context JSON."""
     context = {
@@ -257,6 +437,7 @@ def test_render_performance_report_prompt_includes_context() -> None:
     assert "search terms" in prompt
     assert "Report depth: deep" in prompt
     assert "consultant-style" in prompt
+    assert "diagnostics" in prompt
 
 
 def test_build_report_prompt_returns_context_and_prompt() -> None:
@@ -274,5 +455,6 @@ def test_build_report_prompt_returns_context_and_prompt() -> None:
 
     assert result["context"]["totals"]["spend"] == 1500.0
     assert result["context"]["report_depth"] == "brief"
+    assert "diagnostics" in result["context"]
     assert "Report depth: brief" in result["prompt"]
     assert "Prospecting" in result["prompt"]

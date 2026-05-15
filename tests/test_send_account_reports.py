@@ -72,6 +72,60 @@ def test_format_html_email_renders_table_and_bold_without_markdown_stars() -> No
                 "roas": 1.622,
             }
         ],
+        "diagnostics": {
+            "metric_changes": {
+                "cpc": {
+                    "current": 2.54,
+                    "previous": 1.9,
+                    "delta": 0.64,
+                    "likely_cause": "spend_moved_more_than_link_clicks",
+                },
+                "cpa": {
+                    "current": 4108,
+                    "previous": 3200,
+                    "delta": 908,
+                    "likely_cause": "spend_increased_while_conversions_did_not",
+                },
+                "roas": {
+                    "current": 1.62,
+                    "previous": 2.4,
+                    "delta": -0.78,
+                    "likely_cause": "spend_moved_more_than_conversion_value",
+                },
+            },
+            "anomalies": [
+                {
+                    "kind": "sharp_cpa_increase",
+                    "platform": "meta_ads",
+                    "campaign_name": "Campaign A",
+                    "spend": 12324,
+                    "conversions": 3,
+                    "roas": 1.622,
+                }
+            ],
+            "detail_contributions": {
+                "ad_groups": [
+                    {
+                        "platform": "meta_ads",
+                        "campaign_name": "Campaign A",
+                        "ad_group_name": "Ad Set A",
+                        "action_bias": "reduce_pause_or_exclude",
+                        "spend": 8000,
+                        "spend_share": 0.6491,
+                        "conversions": 0,
+                        "cpa": None,
+                        "roas": 0,
+                    }
+                ],
+                "ads": [],
+                "keywords": [],
+                "search_terms": [],
+            },
+            "campaign_contributions": {
+                "weaker_campaigns": [],
+                "stronger_campaigns": [],
+            },
+        },
     }
 
     html = format_html_email(
@@ -104,6 +158,17 @@ def test_format_html_email_renders_table_and_bold_without_markdown_stars() -> No
     assert "2,973" in html
     assert "1,358" in html
     assert "border-left:4px solid #f97316" in html
+    assert "診斷重點" in html
+    assert "花費變動幅度大於連結點擊，推動 CPC 變化" in html
+    assert "spend_moved_more_than_link_clicks" not in html
+    assert "高花費但零轉換" not in html
+    assert "CPA 明顯上升" in html
+    assert "廣告組合: Ad Set A" in html
+    assert "高花費低回收，建議降預算、暫停或排除" in html
+    assert "reduce_pause_or_exclude" not in html
+    assert "可能原因" in html
+    assert "花費占比" in html
+    assert "64.91%" in html
     assert "總計" in html
     assert "<strong>本月 Summary</strong>" in html
     assert "**" not in html
