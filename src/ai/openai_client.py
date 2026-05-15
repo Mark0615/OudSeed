@@ -16,7 +16,7 @@ class OpenAITextClient:
     def __init__(
         self,
         api_key: str,
-        model: str = "gpt-5.4 mini",
+        model: str = "gpt-5.2",
         reasoning_effort: str = "medium",
         timeout_seconds: int = 60,
         session: requests.Session | None = None,

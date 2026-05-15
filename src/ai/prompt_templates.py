@@ -35,6 +35,10 @@ In this project, cpc is calculated from spend / link_clicks, so treat it as
 link-click CPC. Do not say link-click CPC is unavailable when cpc is present.
 When totals.previous and totals.delta exist, summarize the overall {comparison}
 change before campaign-level observations.
+Use the `diagnostics` object as precomputed analytical context. It contains
+CPA/CPC/ROAS change causes, campaign/ad group/ad/keyword/search term
+contribution shares, anomaly checks, and data limitations. Treat it as guidance
+for prioritization, but still cite the underlying metric values from the JSON.
 Every {comparison} metric sentence should use this pattern when previous values
 exist: `Spend：$13,006（較上月 $13,601 下降 $594）`. Use the analogous
 weekly wording for weekly reports. Apply the same pattern consistently for all
@@ -84,11 +88,18 @@ Required output structure:
    - Mention the strongest campaigns, ad sets, or ads by name.
    - Explain the metric basis, such as low CPA, high ROAS, low CPC, high CTR,
      or stronger conversion volume.
+   - Prefer items listed in `diagnostics.campaign_contributions.stronger_campaigns`
+     and detail rows with `action_bias = scale_or_protect` when they exist.
    - Recommend how to maintain or scale the performance.
 3. `# 表現較差的廣告`
    - Mention weaker campaigns, ad sets, or ads by name.
    - Explain what declined versus the previous {comparison} period when
      previous-period metrics are available.
+   - Use `diagnostics.metric_changes` to explain whether CPC, CPA, or ROAS
+     moved because spend, clicks, conversions, or conversion value changed.
+   - Prioritize warning items from `diagnostics.anomalies`, especially high
+     spend with zero conversions, sharply rising CPC/CPA, or sharply falling
+     ROAS.
    - Recommend whether to improve, reduce spend, or pause.
    - For Google Ads, use keyword and search_terms context when available. Name
      the specific keywords or search terms that should be paused, reduced, or
@@ -112,8 +123,8 @@ Required output structure:
      landing page changes, target CPA, or target ROAS.
 6. `# 資料限制`
    - Mention missing previous-period metrics, zero conversion data, missing
-     creative metrics, missing search term/breakdown data, or unavailable
-     objective data.
+     creative metrics, missing search term/breakdown data, unavailable
+     objective data, and items listed in `diagnostics.data_limitations`.
 
 JSON context:
 {context_json}

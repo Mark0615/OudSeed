@@ -9,6 +9,7 @@ from typing import Any, Literal
 from google.cloud import bigquery
 
 from src.destinations.bigquery import BigQueryDestination
+from src.ai.report_diagnostics import build_report_diagnostics
 
 
 ReportType = Literal["weekly", "monthly"]
@@ -27,10 +28,21 @@ class ReportMetricConfig:
     previous_conversions_field: str
     previous_add_to_cart_field: str
     previous_purchase_field: str
+    previous_cpc_field: str
+    previous_cpa_field: str
+    previous_roas_field: str
     spend_delta_field: str
     clicks_delta_field: str
+    conversions_delta_field: str
+    cpc_delta_field: str
+    cpa_delta_field: str
+    roas_delta_field: str
     spend_rate_field: str
     clicks_rate_field: str
+    conversions_rate_field: str
+    cpc_rate_field: str
+    cpa_rate_field: str
+    roas_rate_field: str
 
 
 REPORT_CONFIGS: dict[ReportType, ReportMetricConfig] = {
@@ -44,10 +56,21 @@ REPORT_CONFIGS: dict[ReportType, ReportMetricConfig] = {
         previous_conversions_field="previous_week_conversions",
         previous_add_to_cart_field="previous_week_add_to_cart",
         previous_purchase_field="previous_week_purchase",
+        previous_cpc_field="previous_week_cpc",
+        previous_cpa_field="previous_week_cpa",
+        previous_roas_field="previous_week_roas",
         spend_delta_field="spend_wow",
         clicks_delta_field="link_clicks_wow",
+        conversions_delta_field="conversions_wow",
+        cpc_delta_field="cpc_wow",
+        cpa_delta_field="cpa_wow",
+        roas_delta_field="roas_wow",
         spend_rate_field="spend_wow_rate",
         clicks_rate_field="link_clicks_wow_rate",
+        conversions_rate_field="conversions_wow_rate",
+        cpc_rate_field="cpc_wow_rate",
+        cpa_rate_field="cpa_wow_rate",
+        roas_rate_field="roas_wow_rate",
     ),
     "monthly": ReportMetricConfig(
         view_name="vw_looker_ads_campaign_monthly",
@@ -59,10 +82,21 @@ REPORT_CONFIGS: dict[ReportType, ReportMetricConfig] = {
         previous_conversions_field="previous_month_conversions",
         previous_add_to_cart_field="previous_month_add_to_cart",
         previous_purchase_field="previous_month_purchase",
+        previous_cpc_field="previous_month_cpc",
+        previous_cpa_field="previous_month_cpa",
+        previous_roas_field="previous_month_roas",
         spend_delta_field="spend_mom",
         clicks_delta_field="link_clicks_mom",
+        conversions_delta_field="conversions_mom",
+        cpc_delta_field="cpc_mom",
+        cpa_delta_field="cpa_mom",
+        roas_delta_field="roas_mom",
         spend_rate_field="spend_mom_rate",
         clicks_rate_field="link_clicks_mom_rate",
+        conversions_rate_field="conversions_mom_rate",
+        cpc_rate_field="cpc_mom_rate",
+        cpa_rate_field="cpa_mom_rate",
+        roas_rate_field="roas_mom_rate",
     ),
 }
 
@@ -146,10 +180,21 @@ def build_report_context(
         {config.previous_conversions_field} AS previous_conversions,
         {config.previous_add_to_cart_field} AS previous_add_to_cart,
         {config.previous_purchase_field} AS previous_purchase,
+        {config.previous_cpc_field} AS previous_cpc,
+        {config.previous_cpa_field} AS previous_cpa,
+        {config.previous_roas_field} AS previous_roas,
         {config.spend_delta_field} AS spend_delta,
         {config.clicks_delta_field} AS link_clicks_delta,
+        {config.conversions_delta_field} AS conversions_delta,
+        {config.cpc_delta_field} AS cpc_delta,
+        {config.cpa_delta_field} AS cpa_delta,
+        {config.roas_delta_field} AS roas_delta,
         {config.spend_rate_field} AS spend_delta_rate,
-        {config.clicks_rate_field} AS link_clicks_delta_rate
+        {config.clicks_rate_field} AS link_clicks_delta_rate,
+        {config.conversions_rate_field} AS conversions_delta_rate,
+        {config.cpc_rate_field} AS cpc_delta_rate,
+        {config.cpa_rate_field} AS cpa_delta_rate,
+        {config.roas_rate_field} AS roas_delta_rate
       FROM `{view_id}`
       WHERE {" AND ".join(filters)}
     )
@@ -201,7 +246,7 @@ def build_report_context(
         limit=limit,
     )
 
-    return {
+    context = {
         "report_type": report_type,
         "comparison": config.comparison_label,
         "workspace_id": workspace_id,
@@ -217,6 +262,8 @@ def build_report_context(
         "keywords": details["keywords"],
         "search_terms": details["search_terms"],
     }
+    context["diagnostics"] = build_report_diagnostics(context)
+    return context
 
 
 def _fetch_performance_details(
@@ -697,10 +744,21 @@ def _normalize_campaign(row: dict[str, Any]) -> dict[str, Any]:
         "previous_conversions": _to_number(row.get("previous_conversions")),
         "previous_add_to_cart": _to_number(row.get("previous_add_to_cart")),
         "previous_purchase": _to_number(row.get("previous_purchase")),
+        "previous_cpc": _to_number(row.get("previous_cpc")),
+        "previous_cpa": _to_number(row.get("previous_cpa")),
+        "previous_roas": _to_number(row.get("previous_roas")),
         "spend_delta": _to_number(row.get("spend_delta")),
         "link_clicks_delta": _to_number(row.get("link_clicks_delta")),
+        "conversions_delta": _to_number(row.get("conversions_delta")),
+        "cpc_delta": _to_number(row.get("cpc_delta")),
+        "cpa_delta": _to_number(row.get("cpa_delta")),
+        "roas_delta": _to_number(row.get("roas_delta")),
         "spend_delta_rate": _to_number(row.get("spend_delta_rate")),
         "link_clicks_delta_rate": _to_number(row.get("link_clicks_delta_rate")),
+        "conversions_delta_rate": _to_number(row.get("conversions_delta_rate")),
+        "cpc_delta_rate": _to_number(row.get("cpc_delta_rate")),
+        "cpa_delta_rate": _to_number(row.get("cpa_delta_rate")),
+        "roas_delta_rate": _to_number(row.get("roas_delta_rate")),
     }
 
 

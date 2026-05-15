@@ -46,14 +46,14 @@ def main() -> None:
     print(
         "starting_ai_report_generation="
         f"true report_type={report_type} client_id={client_id} "
-        f"period_start_date={period_start_date} model={os.getenv('OPENAI_MODEL', 'gpt-5.4 mini')} "
+        f"period_start_date={period_start_date} model={os.getenv('OPENAI_MODEL', 'gpt-5.2')} "
         f"report_depth={report_depth} timeout_seconds={openai_timeout_seconds}"
     )
 
     destination = BigQueryDestination(project_id=project_id, dataset_id=dataset_id)
     openai_client = OpenAITextClient(
         api_key=_required_env("OPENAI_API_KEY"),
-        model=os.getenv("OPENAI_MODEL", "gpt-5.4 mini"),
+        model=os.getenv("OPENAI_MODEL", "gpt-5.2"),
         reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium"),
         timeout_seconds=openai_timeout_seconds,
     )
