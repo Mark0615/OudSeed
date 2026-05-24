@@ -319,7 +319,7 @@ def _diagnostic_contribution_rows(
             continue
         seen.add(key)
         deduped.append(row)
-    return sorted(deduped, key=lambda row: _num(row.get("spend")), reverse=True)
+    return sorted(deduped, key=_diagnostic_sort_value, reverse=True)
 
 
 def _diagnostic_contribution_table_html(rows: list[dict[str, Any]]) -> str:
@@ -330,10 +330,15 @@ def _diagnostic_contribution_table_html(rows: list[dict[str, Any]]) -> str:
             f"<td style='{_td()}'>{html.escape(_diagnostic_object_name(row))}</td>"
             f"<td style='{_td()}'>{html.escape(_diagnostic_label(row))}</td>"
             f"<td style='{_td_num()}'>{_money(row.get('spend'))}</td>"
+            f"<td style='{_td_num()}'>{_money(_nested_value(row, 'previous', 'spend'))}</td>"
+            f"<td style='{_td_num()}'>{_diagnostic_delta('cpa', _nested_value(row, 'delta', 'spend'))}</td>"
             f"<td style='{_td_num()}'>{_percent(row.get('spend_share'))}</td>"
             f"<td style='{_td_num()}'>{_count(row.get('conversions'))}</td>"
+            f"<td style='{_td_num()}'>{_count(_nested_value(row, 'previous', 'conversions'))}</td>"
             f"<td style='{_td_num()}'>{_money(row.get('cpa'))}</td>"
+            f"<td style='{_td_num()}'>{_diagnostic_delta('cpa', _nested_value(row, 'delta', 'cpa'))}</td>"
             f"<td style='{_td_num()}'>{_ratio(row.get('roas'))}</td>"
+            f"<td style='{_td_num()}'>{_diagnostic_delta('roas', _nested_value(row, 'delta', 'roas'))}</td>"
             "</tr>"
         )
     return (
@@ -342,11 +347,16 @@ def _diagnostic_contribution_table_html(rows: list[dict[str, Any]]) -> str:
         "<thead><tr style='background:#f3f4f6;'>"
         f"<th style='{_th()}'>對象</th>"
         f"<th style='{_th()}'>診斷</th>"
-        f"<th style='{_th()}'>花費</th>"
+        f"<th style='{_th()}'>本期花費</th>"
+        f"<th style='{_th()}'>前期花費</th>"
+        f"<th style='{_th()}'>花費變化</th>"
         f"<th style='{_th()}'>花費占比</th>"
-        f"<th style='{_th()}'>轉換</th>"
+        f"<th style='{_th()}'>本期轉換</th>"
+        f"<th style='{_th()}'>前期轉換</th>"
         f"<th style='{_th()}'>CPA</th>"
+        f"<th style='{_th()}'>CPA 變化</th>"
         f"<th style='{_th()}'>ROAS</th>"
+        f"<th style='{_th()}'>ROAS 變化</th>"
         "</tr></thead>"
         f"<tbody>{''.join(body)}</tbody></table></div>"
     )
@@ -630,6 +640,20 @@ def _diagnostic_delta(metric: str, value: Any) -> str:
     return f"{sign}{number:,.2f}"
 
 
+def _diagnostic_sort_value(row: dict[str, Any]) -> float:
+    spend = _num(row.get("spend"))
+    previous_spend = _num(_nested_value(row, "previous", "spend"))
+    spend_delta = abs(_num(_nested_value(row, "delta", "spend")))
+    return max(spend, previous_spend, spend_delta)
+
+
+def _nested_value(row: dict[str, Any], parent_key: str, child_key: str) -> Any:
+    parent = row.get(parent_key)
+    if not isinstance(parent, dict):
+        return None
+    return parent.get(child_key)
+
+
 def _diagnostic_object_name(row: dict[str, Any]) -> str:
     for key, prefix in (
         ("search_term", "搜尋字詞"),
@@ -690,11 +714,18 @@ def _diagnostic_label(row: dict[str, Any]) -> str:
     labels = {
         "scale_or_protect": "表現具放大或保護價值",
         "reduce_pause_or_exclude": "高花費低回收，建議降預算、暫停或排除",
+        "review_stopped_or_missing_item": "前期有花費，本期已停止或資料缺失，請確認是否為刻意調整",
+        "recover_lost_conversions_or_reduce": "前期有轉換但本期流失，建議修復或降低投入",
         "optimize_bid_budget_or_landing_page": "已有轉換，建議優化出價、預算或落地頁",
         "monitor": "持續觀察，等更多資料再判斷",
         "improving_efficiency_or_value": "效率或轉換價值正在改善",
         "spend_efficiency_worsened_without_conversion_growth": "花費效率變差，轉換沒有同步成長",
         "spend_without_conversions": "已有花費但沒有轉換",
+        "detail_spend_stopped_or_missing_current_period": "前期有花費，本期已停止或資料缺失",
+        "detail_new_spend_this_period": "本期新增花費，需觀察是否建立穩定轉換",
+        "detail_cpa_worsened": "CPA 較前期惡化",
+        "detail_roas_declined": "ROAS 較前期下滑",
+        "detail_conversion_growth_with_stable_efficiency": "轉換成長且效率大致穩定",
         "monitor_against_account_average": "需和帳戶平均表現一起觀察",
     }
     return labels.get(raw, raw.replace("_", " "))

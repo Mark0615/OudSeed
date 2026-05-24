@@ -37,8 +37,9 @@ When totals.previous and totals.delta exist, summarize the overall {comparison}
 change before campaign-level observations.
 Use the `diagnostics` object as precomputed analytical context. It contains
 CPA/CPC/ROAS change causes, campaign/ad group/ad/keyword/search term
-contribution shares, anomaly checks, and data limitations. Treat it as guidance
-for prioritization, but still cite the underlying metric values from the JSON.
+contribution shares, previous-period detail comparisons, anomaly checks, and
+data limitations. Treat it as guidance for prioritization, but still cite the
+underlying metric values from the JSON.
 Every {comparison} metric sentence should use this pattern when previous values
 exist: `Spend：$13,006（較上月 $13,601 下降 $594）`. Use the analogous
 weekly wording for weekly reports. Apply the same pattern consistently for all
@@ -107,7 +108,8 @@ Required output structure:
      ROAS are weak. Avoid generic advice like "avoid CPC rising" unless it is
      tied to a specific campaign, ad group, keyword, or search term.
    - For Google Ads, explain campaign-level changes by tying them to ad group,
-     keyword, or search term rows. Example style:
+     keyword, or search term rows, including current-vs-previous detail deltas
+     from `diagnostics.detail_contributions` when available. Example style:
      `需求字/Sale/Search 本月 CPC $X.XX，較上月上升 Y%，主要由「A」與「B」
      這兩個 search terms/keywords 拉高；「C」在較低 CPC 下仍有轉換，建議提高
      曝光，並將「A」「B」降價、暫停或加為否定關鍵字。`

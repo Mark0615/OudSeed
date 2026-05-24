@@ -156,6 +156,66 @@ def _annotate_campaign(row: dict[str, Any], totals: dict[str, Any]) -> dict[str,
 def _annotate_detail(row: dict[str, Any], totals: dict[str, Any], section: str) -> dict[str, Any]:
     annotated = _base_annotation(row, totals)
     annotated["section"] = section
+    previous_spend = _to_float(row.get("previous_spend"))
+    previous_clicks = _to_float(row.get("previous_link_clicks"))
+    previous_conversions = _to_float(row.get("previous_conversions"))
+    previous_conversion_value = _to_float(row.get("previous_conversion_value"))
+    previous_cpc = _to_float(row.get("previous_cpc"))
+    previous_cpa = _to_float(row.get("previous_cpa"))
+    previous_roas = _to_float(row.get("previous_roas"))
+    current_cpc = _to_float(row.get("cpc"))
+    current_cpa = _to_float(row.get("cpa"))
+    current_roas = _to_float(row.get("roas"))
+    annotated.update(
+        {
+            "previous": {
+                "spend": previous_spend,
+                "link_clicks": previous_clicks,
+                "conversions": previous_conversions,
+                "conversion_value": previous_conversion_value,
+                "cpc": previous_cpc,
+                "cpa": previous_cpa,
+                "roas": previous_roas,
+            },
+            "delta": {
+                "spend": _coalesced_subtract(_to_float(row.get("spend")), previous_spend),
+                "link_clicks": _coalesced_subtract(_to_float(row.get("link_clicks")), previous_clicks),
+                "conversions": _coalesced_subtract(_to_float(row.get("conversions")), previous_conversions),
+                "conversion_value": _coalesced_subtract(
+                    _to_float(row.get("conversion_value")),
+                    previous_conversion_value,
+                ),
+                "cpc": _subtract(current_cpc, previous_cpc),
+                "cpa": _subtract(current_cpa, previous_cpa),
+                "roas": _subtract(current_roas, previous_roas),
+            },
+        }
+    )
+    annotated["spend_delta_rate"] = _to_float(row.get("spend_delta_rate")) or _rate(
+        annotated["delta"]["spend"],
+        previous_spend,
+    )
+    annotated["link_clicks_delta_rate"] = _to_float(row.get("link_clicks_delta_rate")) or _rate(
+        annotated["delta"]["link_clicks"],
+        previous_clicks,
+    )
+    annotated["conversions_delta_rate"] = _to_float(row.get("conversions_delta_rate")) or _rate(
+        annotated["delta"]["conversions"],
+        previous_conversions,
+    )
+    annotated["cpc_delta_rate"] = _to_float(row.get("cpc_delta_rate")) or _rate(
+        annotated["delta"]["cpc"],
+        previous_cpc,
+    )
+    annotated["cpa_delta_rate"] = _to_float(row.get("cpa_delta_rate")) or _rate(
+        annotated["delta"]["cpa"],
+        previous_cpa,
+    )
+    annotated["roas_delta_rate"] = _to_float(row.get("roas_delta_rate")) or _rate(
+        annotated["delta"]["roas"],
+        previous_roas,
+    )
+    annotated["diagnostic_note"] = _detail_note(annotated)
     annotated["action_bias"] = _action_bias(annotated)
     return annotated
 
@@ -230,15 +290,43 @@ def _campaign_note(row: dict[str, Any]) -> str:
     return "monitor_against_account_average"
 
 
+def _detail_note(row: dict[str, Any]) -> str:
+    spend = _to_float(row.get("spend")) or 0.0
+    previous_spend = _to_float(row.get("previous", {}).get("spend")) or 0.0
+    conversions = _to_float(row.get("conversions")) or 0.0
+    previous_conversions = _to_float(row.get("previous", {}).get("conversions")) or 0.0
+    cpa_delta_rate = _to_float(row.get("cpa_delta_rate"))
+    roas_delta_rate = _to_float(row.get("roas_delta_rate"))
+    if spend == 0 and previous_spend > 0:
+        return "detail_spend_stopped_or_missing_current_period"
+    if spend > 0 and previous_spend == 0:
+        return "detail_new_spend_this_period"
+    if cpa_delta_rate is not None and cpa_delta_rate > 0.25:
+        return "detail_cpa_worsened"
+    if roas_delta_rate is not None and roas_delta_rate < -0.25:
+        return "detail_roas_declined"
+    if conversions > previous_conversions and (roas_delta_rate is None or roas_delta_rate >= 0):
+        return "detail_conversion_growth_with_stable_efficiency"
+    return "monitor_against_account_average"
+
+
 def _action_bias(row: dict[str, Any]) -> str:
     conversions = _to_float(row.get("conversions")) or 0.0
     spend_share = _to_float(row.get("spend_share")) or 0.0
     roas = _to_float(row.get("roas"))
     cpa = _to_float(row.get("cpa"))
+    spend = _to_float(row.get("spend")) or 0.0
+    previous = row.get("previous") if isinstance(row.get("previous"), dict) else {}
+    previous_spend = _to_float(previous.get("spend")) or 0.0
+    previous_conversions = _to_float(previous.get("conversions")) or 0.0
+    if spend == 0 and previous_spend > 0:
+        return "review_stopped_or_missing_item"
     if conversions > 0 and roas is not None and roas >= 2:
         return "scale_or_protect"
     if spend_share >= 0.1 and conversions == 0:
         return "reduce_pause_or_exclude"
+    if previous_conversions > 0 and conversions == 0 and spend > 0:
+        return "recover_lost_conversions_or_reduce"
     if cpa is not None and conversions > 0:
         return "optimize_bid_budget_or_landing_page"
     return "monitor"
@@ -327,6 +415,12 @@ def _subtract(value: float | None, previous_value: float | None) -> float | None
     if value is None or previous_value is None:
         return None
     return value - previous_value
+
+
+def _coalesced_subtract(value: float | None, previous_value: float | None) -> float | None:
+    if value is None and previous_value is None:
+        return None
+    return (value or 0.0) - (previous_value or 0.0)
 
 
 def _rate(delta: float | None, previous_value: float | None) -> float | None:

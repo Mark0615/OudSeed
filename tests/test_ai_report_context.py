@@ -344,6 +344,19 @@ def test_report_context_adds_detail_diagnostics() -> None:
             "cpc": 10.0,
             "cpa": None,
             "roas": 0.0,
+            "previous_spend": 500.0,
+            "previous_link_clicks": 50,
+            "previous_conversions": 5.0,
+            "previous_conversion_value": 1500.0,
+            "previous_cpc": 10.0,
+            "previous_cpa": 100.0,
+            "previous_roas": 3.0,
+            "spend_delta": 200.0,
+            "link_clicks_delta": 20,
+            "conversions_delta": -5.0,
+            "conversion_value_delta": -1500.0,
+            "cpa_delta_rate": None,
+            "roas_delta_rate": -1.0,
         }
     ]
     keyword_rows = [
@@ -364,6 +377,19 @@ def test_report_context_adds_detail_diagnostics() -> None:
             "cpc": 10.0,
             "cpa": None,
             "roas": 0.0,
+            "previous_spend": 100.0,
+            "previous_link_clicks": 20,
+            "previous_conversions": 1.0,
+            "previous_conversion_value": 500.0,
+            "previous_cpc": 5.0,
+            "previous_cpa": 100.0,
+            "previous_roas": 5.0,
+            "spend_delta": 300.0,
+            "link_clicks_delta": 20,
+            "conversions_delta": -1.0,
+            "conversion_value_delta": -500.0,
+            "cpc_delta_rate": 1.0,
+            "roas_delta_rate": -1.0,
         }
     ]
     search_term_rows = [
@@ -382,6 +408,13 @@ def test_report_context_adds_detail_diagnostics() -> None:
             "cpc": 10.0,
             "cpa": None,
             "roas": 0.0,
+            "previous_spend": 0.0,
+            "previous_link_clicks": 0,
+            "previous_conversions": 0.0,
+            "previous_conversion_value": 0.0,
+            "spend_delta": 300.0,
+            "link_clicks_delta": 30,
+            "conversions_delta": 0.0,
         }
     ]
     destination = QueueDestination(
@@ -406,10 +439,14 @@ def test_report_context_adds_detail_diagnostics() -> None:
 
     diagnostics = context["diagnostics"]
     assert diagnostics["detail_contributions"]["keywords"][0]["keyword_text"] == "expensive booking"
+    assert diagnostics["detail_contributions"]["keywords"][0]["previous"]["spend"] == 100.0
+    assert diagnostics["detail_contributions"]["keywords"][0]["delta"]["spend"] == 300.0
+    assert diagnostics["detail_contributions"]["ad_groups"][0]["delta"]["conversions"] == -5.0
     assert (
         diagnostics["detail_contributions"]["search_terms"][0]["action_bias"]
         == "reduce_pause_or_exclude"
     )
+    assert "previous_period_start_date" in destination.queries[2]
     assert any(
         anomaly["kind"] == "high_spend_zero_conversions"
         for anomaly in diagnostics["anomalies"]
