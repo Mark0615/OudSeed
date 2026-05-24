@@ -32,6 +32,7 @@ def main() -> None:
     client_id = os.getenv("AI_REPORT_CLIENT_ID") or _first_enabled_client_id(config)
     recipient = _required_env("AI_REPORT_EMAIL_TO")
     limit = _positive_int_env("AI_REPORT_LIMIT", 50)
+    account_group_limit = _optional_positive_int_env("AI_REPORT_ACCOUNT_GROUP_LIMIT")
     report_depth = _report_depth(os.getenv("AI_REPORT_DEPTH", "standard"))
     max_output_tokens = _positive_int_env("OPENAI_MAX_OUTPUT_TOKENS", 5000)
     openai_timeout_seconds = _positive_int_env("OPENAI_TIMEOUT_SECONDS", 120)
@@ -45,6 +46,7 @@ def main() -> None:
     )
     if not groups:
         raise ValueError("No account groups found for the requested report period.")
+    groups = _limit_report_groups(groups, account_group_limit)
 
     openai_client = OpenAITextClient(
         api_key=_required_env("OPENAI_API_KEY"),
@@ -142,6 +144,16 @@ def discover_account_report_groups(
         for row in rows
         if row.get("account_ids")
     ]
+
+
+def _limit_report_groups(
+    groups: list[dict[str, Any]],
+    limit: int | None,
+) -> list[dict[str, Any]]:
+    """Return at most limit account groups for safe one-off test sends."""
+    if limit is None:
+        return groups
+    return groups[:limit]
 
 
 def format_html_email(
@@ -754,6 +766,16 @@ def _positive_int_env(name: str, default: int) -> int:
     raw_value = os.getenv(name)
     if raw_value in {None, ""}:
         return default
+    value = int(raw_value)
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer.")
+    return value
+
+
+def _optional_positive_int_env(name: str) -> int | None:
+    raw_value = os.getenv(name)
+    if raw_value in {None, ""}:
+        return None
     value = int(raw_value)
     if value <= 0:
         raise ValueError(f"{name} must be a positive integer.")
