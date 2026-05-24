@@ -3,6 +3,7 @@
 import pytest
 
 from src.ai.send_account_reports import (
+    _filter_report_groups,
     _limit_report_groups,
     _optional_positive_int_env,
     discover_account_report_groups,
@@ -66,6 +67,20 @@ def test_limit_report_groups_supports_one_off_test_sends() -> None:
 
     assert _limit_report_groups(groups, None) == groups
     assert _limit_report_groups(groups, 1) == [groups[0]]
+
+
+def test_filter_report_groups_matches_explicit_account_group_name() -> None:
+    """Account-group sends can target one named group for test emails."""
+    groups = [
+        {"account_group_name": "JK貓舍", "account_ids": ["1"]},
+        {"account_group_name": "Miniware TW", "account_ids": ["2"]},
+    ]
+
+    assert _filter_report_groups(groups, None) == groups
+    assert _filter_report_groups(groups, "Miniware TW") == [groups[1]]
+
+    with pytest.raises(ValueError, match="No account group matched"):
+        _filter_report_groups(groups, "Missing Account")
 
 
 def test_optional_positive_int_env(monkeypatch) -> None:
