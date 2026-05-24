@@ -1,6 +1,13 @@
 """Tests for account-grouped report emails."""
 
-from src.ai.send_account_reports import discover_account_report_groups, format_html_email
+import pytest
+
+from src.ai.send_account_reports import (
+    _limit_report_groups,
+    _optional_positive_int_env,
+    discover_account_report_groups,
+    format_html_email,
+)
 
 
 class FakeDestination:
@@ -48,6 +55,33 @@ def test_discover_account_report_groups_uses_account_name() -> None:
 
     assert "vw_looker_ads_campaign_monthly" in destination.queries[0]
     assert [group["account_group_name"] for group in groups] == ["JK貓舍", "Miniware TW"]
+
+
+def test_limit_report_groups_supports_one_off_test_sends() -> None:
+    """Account-group sends can be capped for safe test emails."""
+    groups = [
+        {"account_group_name": "A", "account_ids": ["1"]},
+        {"account_group_name": "B", "account_ids": ["2"]},
+    ]
+
+    assert _limit_report_groups(groups, None) == groups
+    assert _limit_report_groups(groups, 1) == [groups[0]]
+
+
+def test_optional_positive_int_env(monkeypatch) -> None:
+    """Optional positive integer env helper supports unset test-send limits."""
+    monkeypatch.delenv("AI_REPORT_ACCOUNT_GROUP_LIMIT", raising=False)
+    assert _optional_positive_int_env("AI_REPORT_ACCOUNT_GROUP_LIMIT") is None
+
+    monkeypatch.setenv("AI_REPORT_ACCOUNT_GROUP_LIMIT", "")
+    assert _optional_positive_int_env("AI_REPORT_ACCOUNT_GROUP_LIMIT") is None
+
+    monkeypatch.setenv("AI_REPORT_ACCOUNT_GROUP_LIMIT", "1")
+    assert _optional_positive_int_env("AI_REPORT_ACCOUNT_GROUP_LIMIT") == 1
+
+    monkeypatch.setenv("AI_REPORT_ACCOUNT_GROUP_LIMIT", "0")
+    with pytest.raises(ValueError, match="positive integer"):
+        _optional_positive_int_env("AI_REPORT_ACCOUNT_GROUP_LIMIT")
 
 
 def test_format_html_email_renders_table_and_bold_without_markdown_stars() -> None:
