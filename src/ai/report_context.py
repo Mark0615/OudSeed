@@ -9,6 +9,7 @@ from typing import Any, Literal
 from google.cloud import bigquery
 
 from src.destinations.bigquery import BigQueryDestination
+from src.ai.report_diagnostics import build_report_diagnostics
 
 
 ReportType = Literal["weekly", "monthly"]
@@ -27,10 +28,21 @@ class ReportMetricConfig:
     previous_conversions_field: str
     previous_add_to_cart_field: str
     previous_purchase_field: str
+    previous_cpc_field: str
+    previous_cpa_field: str
+    previous_roas_field: str
     spend_delta_field: str
     clicks_delta_field: str
+    conversions_delta_field: str
+    cpc_delta_field: str
+    cpa_delta_field: str
+    roas_delta_field: str
     spend_rate_field: str
     clicks_rate_field: str
+    conversions_rate_field: str
+    cpc_rate_field: str
+    cpa_rate_field: str
+    roas_rate_field: str
 
 
 REPORT_CONFIGS: dict[ReportType, ReportMetricConfig] = {
@@ -44,10 +56,21 @@ REPORT_CONFIGS: dict[ReportType, ReportMetricConfig] = {
         previous_conversions_field="previous_week_conversions",
         previous_add_to_cart_field="previous_week_add_to_cart",
         previous_purchase_field="previous_week_purchase",
+        previous_cpc_field="previous_week_cpc",
+        previous_cpa_field="previous_week_cpa",
+        previous_roas_field="previous_week_roas",
         spend_delta_field="spend_wow",
         clicks_delta_field="link_clicks_wow",
+        conversions_delta_field="conversions_wow",
+        cpc_delta_field="cpc_wow",
+        cpa_delta_field="cpa_wow",
+        roas_delta_field="roas_wow",
         spend_rate_field="spend_wow_rate",
         clicks_rate_field="link_clicks_wow_rate",
+        conversions_rate_field="conversions_wow_rate",
+        cpc_rate_field="cpc_wow_rate",
+        cpa_rate_field="cpa_wow_rate",
+        roas_rate_field="roas_wow_rate",
     ),
     "monthly": ReportMetricConfig(
         view_name="vw_looker_ads_campaign_monthly",
@@ -59,10 +82,21 @@ REPORT_CONFIGS: dict[ReportType, ReportMetricConfig] = {
         previous_conversions_field="previous_month_conversions",
         previous_add_to_cart_field="previous_month_add_to_cart",
         previous_purchase_field="previous_month_purchase",
+        previous_cpc_field="previous_month_cpc",
+        previous_cpa_field="previous_month_cpa",
+        previous_roas_field="previous_month_roas",
         spend_delta_field="spend_mom",
         clicks_delta_field="link_clicks_mom",
+        conversions_delta_field="conversions_mom",
+        cpc_delta_field="cpc_mom",
+        cpa_delta_field="cpa_mom",
+        roas_delta_field="roas_mom",
         spend_rate_field="spend_mom_rate",
         clicks_rate_field="link_clicks_mom_rate",
+        conversions_rate_field="conversions_mom_rate",
+        cpc_rate_field="cpc_mom_rate",
+        cpa_rate_field="cpa_mom_rate",
+        roas_rate_field="roas_mom_rate",
     ),
 }
 
@@ -146,10 +180,21 @@ def build_report_context(
         {config.previous_conversions_field} AS previous_conversions,
         {config.previous_add_to_cart_field} AS previous_add_to_cart,
         {config.previous_purchase_field} AS previous_purchase,
+        {config.previous_cpc_field} AS previous_cpc,
+        {config.previous_cpa_field} AS previous_cpa,
+        {config.previous_roas_field} AS previous_roas,
         {config.spend_delta_field} AS spend_delta,
         {config.clicks_delta_field} AS link_clicks_delta,
+        {config.conversions_delta_field} AS conversions_delta,
+        {config.cpc_delta_field} AS cpc_delta,
+        {config.cpa_delta_field} AS cpa_delta,
+        {config.roas_delta_field} AS roas_delta,
         {config.spend_rate_field} AS spend_delta_rate,
-        {config.clicks_rate_field} AS link_clicks_delta_rate
+        {config.clicks_rate_field} AS link_clicks_delta_rate,
+        {config.conversions_rate_field} AS conversions_delta_rate,
+        {config.cpc_rate_field} AS cpc_delta_rate,
+        {config.cpa_rate_field} AS cpa_delta_rate,
+        {config.roas_rate_field} AS roas_delta_rate
       FROM `{view_id}`
       WHERE {" AND ".join(filters)}
     )
@@ -198,10 +243,12 @@ def build_report_context(
         account_ids=scoped_account_ids,
         period_start_date=period_start_date,
         period_end_date=period_end_date,
+        previous_period_start_date=previous_totals.get("period_start_date") if previous_totals else None,
+        previous_period_end_date=previous_totals.get("period_end_date") if previous_totals else None,
         limit=limit,
     )
 
-    return {
+    context = {
         "report_type": report_type,
         "comparison": config.comparison_label,
         "workspace_id": workspace_id,
@@ -217,6 +264,8 @@ def build_report_context(
         "keywords": details["keywords"],
         "search_terms": details["search_terms"],
     }
+    context["diagnostics"] = build_report_diagnostics(context)
+    return context
 
 
 def _fetch_performance_details(
@@ -227,6 +276,8 @@ def _fetch_performance_details(
     account_ids: list[str],
     period_start_date: str,
     period_end_date: str | None,
+    previous_period_start_date: str | None,
+    previous_period_end_date: str | None,
     limit: int,
 ) -> dict[str, list[dict[str, Any]]]:
     """Fetch ad group, ad, and keyword details for AI recommendations."""
@@ -236,7 +287,7 @@ def _fetch_performance_details(
         "keywords": [],
         "search_terms": [],
     }
-    if not period_end_date:
+    if not period_end_date or not previous_period_start_date or not previous_period_end_date:
         return empty_details
 
     return {
@@ -248,6 +299,8 @@ def _fetch_performance_details(
             account_ids=account_ids,
             period_start_date=period_start_date,
             period_end_date=period_end_date,
+            previous_period_start_date=previous_period_start_date,
+            previous_period_end_date=previous_period_end_date,
             limit=limit,
         ),
         "ads": _fetch_ad_breakdown(
@@ -258,6 +311,8 @@ def _fetch_performance_details(
             account_ids=account_ids,
             period_start_date=period_start_date,
             period_end_date=period_end_date,
+            previous_period_start_date=previous_period_start_date,
+            previous_period_end_date=previous_period_end_date,
             limit=limit,
         ),
         "keywords": _fetch_google_keyword_breakdown(
@@ -268,6 +323,8 @@ def _fetch_performance_details(
             account_ids=account_ids,
             period_start_date=period_start_date,
             period_end_date=period_end_date,
+            previous_period_start_date=previous_period_start_date,
+            previous_period_end_date=previous_period_end_date,
             limit=limit,
         ),
         "search_terms": _fetch_google_search_term_breakdown(
@@ -278,6 +335,8 @@ def _fetch_performance_details(
             account_ids=account_ids,
             period_start_date=period_start_date,
             period_end_date=period_end_date,
+            previous_period_start_date=previous_period_start_date,
+            previous_period_end_date=previous_period_end_date,
             limit=limit,
         ),
     }
@@ -291,50 +350,133 @@ def _fetch_ad_group_breakdown(
     account_ids: list[str],
     period_start_date: str,
     period_end_date: str,
+    previous_period_start_date: str,
+    previous_period_end_date: str,
     limit: int,
 ) -> list[dict[str, Any]]:
     """Return top ad group rows for the report period."""
-    filters, parameters = _detail_filters(
+    current_filters, previous_filters, parameters = _detail_period_filters(
         workspace_id=workspace_id,
         client_id=client_id,
         account_id=account_id,
         account_ids=account_ids,
         period_start_date=period_start_date,
         period_end_date=period_end_date,
+        previous_period_start_date=previous_period_start_date,
+        previous_period_end_date=previous_period_end_date,
         limit=limit,
     )
     query = f"""
+    WITH current_rows AS (
+      SELECT
+        platform,
+        account_id,
+        ANY_VALUE(account_name) AS account_name,
+        campaign_id,
+        ANY_VALUE(campaign_name) AS campaign_name,
+        ad_group_id,
+        ANY_VALUE(ad_group_name) AS ad_group_name,
+        SUM(impressions) AS impressions,
+        SUM(link_clicks) AS link_clicks,
+        SUM(spend) AS spend,
+        SUM(conversions) AS conversions,
+        SUM(conversion_value) AS conversion_value,
+        SUM(add_to_cart) AS add_to_cart,
+        SUM(purchase) AS purchase,
+        SUM(purchase_value) AS purchase_value,
+        SAFE_DIVIDE(SUM(link_clicks), SUM(impressions)) AS ctr,
+        SAFE_DIVIDE(SUM(spend), SUM(link_clicks)) AS cpc,
+        SAFE_DIVIDE(SUM(spend) * 1000, SUM(impressions)) AS cpm,
+        SAFE_DIVIDE(SUM(spend), SUM(conversions)) AS cpa,
+        SAFE_DIVIDE(SUM(conversion_value), SUM(spend)) AS roas,
+        SUM(post_engagement) AS post_engagement,
+        SUM(post_reactions) AS post_reactions,
+        SUM(post_comments) AS post_comments,
+        SUM(post_saves) AS post_saves,
+        SUM(post_shares) AS post_shares
+      FROM `{destination._table_id("vw_looker_ads_ad_daily")}`
+      WHERE {" AND ".join(current_filters)}
+        AND ad_group_id IS NOT NULL
+      GROUP BY platform, account_id, campaign_id, ad_group_id
+    ),
+    previous_rows AS (
+      SELECT
+        platform,
+        account_id,
+        ANY_VALUE(account_name) AS account_name,
+        campaign_id,
+        ANY_VALUE(campaign_name) AS campaign_name,
+        ad_group_id,
+        ANY_VALUE(ad_group_name) AS ad_group_name,
+        SUM(impressions) AS previous_impressions,
+        SUM(link_clicks) AS previous_link_clicks,
+        SUM(spend) AS previous_spend,
+        SUM(conversions) AS previous_conversions,
+        SUM(conversion_value) AS previous_conversion_value,
+        SAFE_DIVIDE(SUM(link_clicks), SUM(impressions)) AS previous_ctr,
+        SAFE_DIVIDE(SUM(spend), SUM(link_clicks)) AS previous_cpc,
+        SAFE_DIVIDE(SUM(spend), SUM(conversions)) AS previous_cpa,
+        SAFE_DIVIDE(SUM(conversion_value), SUM(spend)) AS previous_roas
+      FROM `{destination._table_id("vw_looker_ads_ad_daily")}`
+      WHERE {" AND ".join(previous_filters)}
+        AND ad_group_id IS NOT NULL
+      GROUP BY platform, account_id, campaign_id, ad_group_id
+    )
     SELECT
-      platform,
-      account_id,
-      ANY_VALUE(account_name) AS account_name,
-      campaign_id,
-      ANY_VALUE(campaign_name) AS campaign_name,
-      ad_group_id,
-      ANY_VALUE(ad_group_name) AS ad_group_name,
-      SUM(impressions) AS impressions,
-      SUM(link_clicks) AS link_clicks,
-      SUM(spend) AS spend,
-      SUM(conversions) AS conversions,
-      SUM(conversion_value) AS conversion_value,
-      SUM(add_to_cart) AS add_to_cart,
-      SUM(purchase) AS purchase,
-      SUM(purchase_value) AS purchase_value,
-      SAFE_DIVIDE(SUM(link_clicks), SUM(impressions)) AS ctr,
-      SAFE_DIVIDE(SUM(spend), SUM(link_clicks)) AS cpc,
-      SAFE_DIVIDE(SUM(spend) * 1000, SUM(impressions)) AS cpm,
-      SAFE_DIVIDE(SUM(spend), SUM(conversions)) AS cpa,
-      SAFE_DIVIDE(SUM(conversion_value), SUM(spend)) AS roas,
-      SUM(post_engagement) AS post_engagement,
-      SUM(post_reactions) AS post_reactions,
-      SUM(post_comments) AS post_comments,
-      SUM(post_saves) AS post_saves,
-      SUM(post_shares) AS post_shares
-    FROM `{destination._table_id("vw_looker_ads_ad_daily")}`
-    WHERE {" AND ".join(filters)}
-      AND ad_group_id IS NOT NULL
-    GROUP BY platform, account_id, campaign_id, ad_group_id
-    ORDER BY spend DESC
+      COALESCE(current_rows.platform, previous_rows.platform) AS platform,
+      COALESCE(current_rows.account_id, previous_rows.account_id) AS account_id,
+      COALESCE(current_rows.account_name, previous_rows.account_name) AS account_name,
+      COALESCE(current_rows.campaign_id, previous_rows.campaign_id) AS campaign_id,
+      COALESCE(current_rows.campaign_name, previous_rows.campaign_name) AS campaign_name,
+      COALESCE(current_rows.ad_group_id, previous_rows.ad_group_id) AS ad_group_id,
+      COALESCE(current_rows.ad_group_name, previous_rows.ad_group_name) AS ad_group_name,
+      current_rows.impressions,
+      current_rows.link_clicks,
+      current_rows.spend,
+      current_rows.conversions,
+      current_rows.conversion_value,
+      current_rows.add_to_cart,
+      current_rows.purchase,
+      current_rows.purchase_value,
+      current_rows.ctr,
+      current_rows.cpc,
+      current_rows.cpm,
+      current_rows.cpa,
+      current_rows.roas,
+      current_rows.post_engagement,
+      current_rows.post_reactions,
+      current_rows.post_comments,
+      current_rows.post_saves,
+      current_rows.post_shares,
+      previous_rows.previous_impressions,
+      previous_rows.previous_link_clicks,
+      previous_rows.previous_spend,
+      previous_rows.previous_conversions,
+      previous_rows.previous_conversion_value,
+      previous_rows.previous_ctr,
+      previous_rows.previous_cpc,
+      previous_rows.previous_cpa,
+      previous_rows.previous_roas,
+      IFNULL(current_rows.spend, 0) - IFNULL(previous_rows.previous_spend, 0) AS spend_delta,
+      IFNULL(current_rows.link_clicks, 0) - IFNULL(previous_rows.previous_link_clicks, 0) AS link_clicks_delta,
+      IFNULL(current_rows.conversions, 0) - IFNULL(previous_rows.previous_conversions, 0) AS conversions_delta,
+      IFNULL(current_rows.conversion_value, 0) - IFNULL(previous_rows.previous_conversion_value, 0) AS conversion_value_delta,
+      current_rows.cpc - previous_rows.previous_cpc AS cpc_delta,
+      current_rows.cpa - previous_rows.previous_cpa AS cpa_delta,
+      current_rows.roas - previous_rows.previous_roas AS roas_delta,
+      SAFE_DIVIDE(IFNULL(current_rows.spend, 0) - IFNULL(previous_rows.previous_spend, 0), previous_rows.previous_spend) AS spend_delta_rate,
+      SAFE_DIVIDE(IFNULL(current_rows.link_clicks, 0) - IFNULL(previous_rows.previous_link_clicks, 0), previous_rows.previous_link_clicks) AS link_clicks_delta_rate,
+      SAFE_DIVIDE(IFNULL(current_rows.conversions, 0) - IFNULL(previous_rows.previous_conversions, 0), previous_rows.previous_conversions) AS conversions_delta_rate,
+      SAFE_DIVIDE(current_rows.cpc - previous_rows.previous_cpc, previous_rows.previous_cpc) AS cpc_delta_rate,
+      SAFE_DIVIDE(current_rows.cpa - previous_rows.previous_cpa, previous_rows.previous_cpa) AS cpa_delta_rate,
+      SAFE_DIVIDE(current_rows.roas - previous_rows.previous_roas, previous_rows.previous_roas) AS roas_delta_rate
+    FROM current_rows
+    FULL OUTER JOIN previous_rows
+      ON current_rows.platform = previous_rows.platform
+      AND current_rows.account_id = previous_rows.account_id
+      AND current_rows.campaign_id = previous_rows.campaign_id
+      AND current_rows.ad_group_id = previous_rows.ad_group_id
+    ORDER BY GREATEST(IFNULL(current_rows.spend, 0), IFNULL(previous_rows.previous_spend, 0)) DESC
     LIMIT @limit
     """
     return [_normalize_detail_row(row) for row in destination.query_rows(query, parameters)]
@@ -348,52 +490,140 @@ def _fetch_ad_breakdown(
     account_ids: list[str],
     period_start_date: str,
     period_end_date: str,
+    previous_period_start_date: str,
+    previous_period_end_date: str,
     limit: int,
 ) -> list[dict[str, Any]]:
     """Return top ad/creative rows for the report period."""
-    filters, parameters = _detail_filters(
+    current_filters, previous_filters, parameters = _detail_period_filters(
         workspace_id=workspace_id,
         client_id=client_id,
         account_id=account_id,
         account_ids=account_ids,
         period_start_date=period_start_date,
         period_end_date=period_end_date,
+        previous_period_start_date=previous_period_start_date,
+        previous_period_end_date=previous_period_end_date,
         limit=limit,
     )
     query = f"""
+    WITH current_rows AS (
+      SELECT
+        platform,
+        account_id,
+        ANY_VALUE(account_name) AS account_name,
+        campaign_id,
+        ANY_VALUE(campaign_name) AS campaign_name,
+        ad_group_id,
+        ANY_VALUE(ad_group_name) AS ad_group_name,
+        ad_id,
+        ANY_VALUE(ad_name) AS ad_name,
+        SUM(impressions) AS impressions,
+        SUM(link_clicks) AS link_clicks,
+        SUM(spend) AS spend,
+        SUM(conversions) AS conversions,
+        SUM(conversion_value) AS conversion_value,
+        SUM(add_to_cart) AS add_to_cart,
+        SUM(purchase) AS purchase,
+        SUM(purchase_value) AS purchase_value,
+        SAFE_DIVIDE(SUM(link_clicks), SUM(impressions)) AS ctr,
+        SAFE_DIVIDE(SUM(spend), SUM(link_clicks)) AS cpc,
+        SAFE_DIVIDE(SUM(spend) * 1000, SUM(impressions)) AS cpm,
+        SAFE_DIVIDE(SUM(spend), SUM(conversions)) AS cpa,
+        SAFE_DIVIDE(SUM(conversion_value), SUM(spend)) AS roas,
+        SUM(post_engagement) AS post_engagement,
+        SUM(post_reactions) AS post_reactions,
+        SUM(post_comments) AS post_comments,
+        SUM(post_saves) AS post_saves,
+        SUM(post_shares) AS post_shares
+      FROM `{destination._table_id("vw_looker_ads_ad_daily")}`
+      WHERE {" AND ".join(current_filters)}
+        AND ad_id IS NOT NULL
+      GROUP BY platform, account_id, campaign_id, ad_group_id, ad_id
+    ),
+    previous_rows AS (
+      SELECT
+        platform,
+        account_id,
+        ANY_VALUE(account_name) AS account_name,
+        campaign_id,
+        ANY_VALUE(campaign_name) AS campaign_name,
+        ad_group_id,
+        ANY_VALUE(ad_group_name) AS ad_group_name,
+        ad_id,
+        ANY_VALUE(ad_name) AS ad_name,
+        SUM(impressions) AS previous_impressions,
+        SUM(link_clicks) AS previous_link_clicks,
+        SUM(spend) AS previous_spend,
+        SUM(conversions) AS previous_conversions,
+        SUM(conversion_value) AS previous_conversion_value,
+        SAFE_DIVIDE(SUM(link_clicks), SUM(impressions)) AS previous_ctr,
+        SAFE_DIVIDE(SUM(spend), SUM(link_clicks)) AS previous_cpc,
+        SAFE_DIVIDE(SUM(spend), SUM(conversions)) AS previous_cpa,
+        SAFE_DIVIDE(SUM(conversion_value), SUM(spend)) AS previous_roas
+      FROM `{destination._table_id("vw_looker_ads_ad_daily")}`
+      WHERE {" AND ".join(previous_filters)}
+        AND ad_id IS NOT NULL
+      GROUP BY platform, account_id, campaign_id, ad_group_id, ad_id
+    )
     SELECT
-      platform,
-      account_id,
-      ANY_VALUE(account_name) AS account_name,
-      campaign_id,
-      ANY_VALUE(campaign_name) AS campaign_name,
-      ad_group_id,
-      ANY_VALUE(ad_group_name) AS ad_group_name,
-      ad_id,
-      ANY_VALUE(ad_name) AS ad_name,
-      SUM(impressions) AS impressions,
-      SUM(link_clicks) AS link_clicks,
-      SUM(spend) AS spend,
-      SUM(conversions) AS conversions,
-      SUM(conversion_value) AS conversion_value,
-      SUM(add_to_cart) AS add_to_cart,
-      SUM(purchase) AS purchase,
-      SUM(purchase_value) AS purchase_value,
-      SAFE_DIVIDE(SUM(link_clicks), SUM(impressions)) AS ctr,
-      SAFE_DIVIDE(SUM(spend), SUM(link_clicks)) AS cpc,
-      SAFE_DIVIDE(SUM(spend) * 1000, SUM(impressions)) AS cpm,
-      SAFE_DIVIDE(SUM(spend), SUM(conversions)) AS cpa,
-      SAFE_DIVIDE(SUM(conversion_value), SUM(spend)) AS roas,
-      SUM(post_engagement) AS post_engagement,
-      SUM(post_reactions) AS post_reactions,
-      SUM(post_comments) AS post_comments,
-      SUM(post_saves) AS post_saves,
-      SUM(post_shares) AS post_shares
-    FROM `{destination._table_id("vw_looker_ads_ad_daily")}`
-    WHERE {" AND ".join(filters)}
-      AND ad_id IS NOT NULL
-    GROUP BY platform, account_id, campaign_id, ad_group_id, ad_id
-    ORDER BY spend DESC
+      COALESCE(current_rows.platform, previous_rows.platform) AS platform,
+      COALESCE(current_rows.account_id, previous_rows.account_id) AS account_id,
+      COALESCE(current_rows.account_name, previous_rows.account_name) AS account_name,
+      COALESCE(current_rows.campaign_id, previous_rows.campaign_id) AS campaign_id,
+      COALESCE(current_rows.campaign_name, previous_rows.campaign_name) AS campaign_name,
+      COALESCE(current_rows.ad_group_id, previous_rows.ad_group_id) AS ad_group_id,
+      COALESCE(current_rows.ad_group_name, previous_rows.ad_group_name) AS ad_group_name,
+      COALESCE(current_rows.ad_id, previous_rows.ad_id) AS ad_id,
+      COALESCE(current_rows.ad_name, previous_rows.ad_name) AS ad_name,
+      current_rows.impressions,
+      current_rows.link_clicks,
+      current_rows.spend,
+      current_rows.conversions,
+      current_rows.conversion_value,
+      current_rows.add_to_cart,
+      current_rows.purchase,
+      current_rows.purchase_value,
+      current_rows.ctr,
+      current_rows.cpc,
+      current_rows.cpm,
+      current_rows.cpa,
+      current_rows.roas,
+      current_rows.post_engagement,
+      current_rows.post_reactions,
+      current_rows.post_comments,
+      current_rows.post_saves,
+      current_rows.post_shares,
+      previous_rows.previous_impressions,
+      previous_rows.previous_link_clicks,
+      previous_rows.previous_spend,
+      previous_rows.previous_conversions,
+      previous_rows.previous_conversion_value,
+      previous_rows.previous_ctr,
+      previous_rows.previous_cpc,
+      previous_rows.previous_cpa,
+      previous_rows.previous_roas,
+      IFNULL(current_rows.spend, 0) - IFNULL(previous_rows.previous_spend, 0) AS spend_delta,
+      IFNULL(current_rows.link_clicks, 0) - IFNULL(previous_rows.previous_link_clicks, 0) AS link_clicks_delta,
+      IFNULL(current_rows.conversions, 0) - IFNULL(previous_rows.previous_conversions, 0) AS conversions_delta,
+      IFNULL(current_rows.conversion_value, 0) - IFNULL(previous_rows.previous_conversion_value, 0) AS conversion_value_delta,
+      current_rows.cpc - previous_rows.previous_cpc AS cpc_delta,
+      current_rows.cpa - previous_rows.previous_cpa AS cpa_delta,
+      current_rows.roas - previous_rows.previous_roas AS roas_delta,
+      SAFE_DIVIDE(IFNULL(current_rows.spend, 0) - IFNULL(previous_rows.previous_spend, 0), previous_rows.previous_spend) AS spend_delta_rate,
+      SAFE_DIVIDE(IFNULL(current_rows.link_clicks, 0) - IFNULL(previous_rows.previous_link_clicks, 0), previous_rows.previous_link_clicks) AS link_clicks_delta_rate,
+      SAFE_DIVIDE(IFNULL(current_rows.conversions, 0) - IFNULL(previous_rows.previous_conversions, 0), previous_rows.previous_conversions) AS conversions_delta_rate,
+      SAFE_DIVIDE(current_rows.cpc - previous_rows.previous_cpc, previous_rows.previous_cpc) AS cpc_delta_rate,
+      SAFE_DIVIDE(current_rows.cpa - previous_rows.previous_cpa, previous_rows.previous_cpa) AS cpa_delta_rate,
+      SAFE_DIVIDE(current_rows.roas - previous_rows.previous_roas, previous_rows.previous_roas) AS roas_delta_rate
+    FROM current_rows
+    FULL OUTER JOIN previous_rows
+      ON current_rows.platform = previous_rows.platform
+      AND current_rows.account_id = previous_rows.account_id
+      AND current_rows.campaign_id = previous_rows.campaign_id
+      AND current_rows.ad_group_id = previous_rows.ad_group_id
+      AND current_rows.ad_id = previous_rows.ad_id
+    ORDER BY GREATEST(IFNULL(current_rows.spend, 0), IFNULL(previous_rows.previous_spend, 0)) DESC
     LIMIT @limit
     """
     return [_normalize_detail_row(row) for row in destination.query_rows(query, parameters)]
@@ -407,60 +637,154 @@ def _fetch_google_keyword_breakdown(
     account_ids: list[str],
     period_start_date: str,
     period_end_date: str,
+    previous_period_start_date: str,
+    previous_period_end_date: str,
     limit: int,
 ) -> list[dict[str, Any]]:
     """Return top Google Ads keyword rows from raw keyword-level payloads."""
-    filters, parameters = _detail_filters(
+    current_filters, previous_filters, parameters = _detail_period_filters(
         workspace_id=workspace_id,
         client_id=client_id,
         account_id=account_id,
         account_ids=account_ids,
         period_start_date=period_start_date,
         period_end_date=period_end_date,
+        previous_period_start_date=previous_period_start_date,
+        previous_period_end_date=previous_period_end_date,
         limit=limit,
     )
-    filters.extend(["platform = 'google_ads'", "report_level = 'keyword'"])
+    current_filters.extend(["platform = 'google_ads'", "report_level = 'keyword'"])
+    previous_filters.extend(["platform = 'google_ads'", "report_level = 'keyword'"])
     query = f"""
+    WITH current_rows AS (
+      SELECT
+        platform,
+        account_id,
+        JSON_VALUE(raw_payload, '$.account_name') AS account_name,
+        JSON_VALUE(raw_payload, '$.campaign_id') AS campaign_id,
+        ANY_VALUE(JSON_VALUE(raw_payload, '$.campaign_name')) AS campaign_name,
+        JSON_VALUE(raw_payload, '$.ad_group_id') AS ad_group_id,
+        ANY_VALUE(JSON_VALUE(raw_payload, '$.ad_group_name')) AS ad_group_name,
+        JSON_VALUE(raw_payload, '$.criterion_id') AS criterion_id,
+        ANY_VALUE(JSON_VALUE(raw_payload, '$.keyword_text')) AS keyword_text,
+        ANY_VALUE(JSON_VALUE(raw_payload, '$.keyword_match_type')) AS keyword_match_type,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64)) AS impressions,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64)) AS link_clicks,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)) AS spend,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.conversions') AS FLOAT64)) AS conversions,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.conversion_value') AS FLOAT64)) AS conversion_value,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64)),
+          SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64))
+        ) AS ctr,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)),
+          SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64))
+        ) AS cpc,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)) * 1000,
+          SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64))
+        ) AS cpm,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)),
+          SUM(CAST(JSON_VALUE(raw_payload, '$.conversions') AS FLOAT64))
+        ) AS cpa,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.conversion_value') AS FLOAT64)),
+          SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64))
+        ) AS roas
+      FROM `{destination._table_id("raw_google_ads_daily")}`
+      WHERE {" AND ".join(current_filters)}
+      GROUP BY platform, account_id, account_name, campaign_id, ad_group_id, criterion_id
+    ),
+    previous_rows AS (
+      SELECT
+        platform,
+        account_id,
+        JSON_VALUE(raw_payload, '$.account_name') AS account_name,
+        JSON_VALUE(raw_payload, '$.campaign_id') AS campaign_id,
+        ANY_VALUE(JSON_VALUE(raw_payload, '$.campaign_name')) AS campaign_name,
+        JSON_VALUE(raw_payload, '$.ad_group_id') AS ad_group_id,
+        ANY_VALUE(JSON_VALUE(raw_payload, '$.ad_group_name')) AS ad_group_name,
+        JSON_VALUE(raw_payload, '$.criterion_id') AS criterion_id,
+        ANY_VALUE(JSON_VALUE(raw_payload, '$.keyword_text')) AS keyword_text,
+        ANY_VALUE(JSON_VALUE(raw_payload, '$.keyword_match_type')) AS keyword_match_type,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64)) AS previous_impressions,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64)) AS previous_link_clicks,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)) AS previous_spend,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.conversions') AS FLOAT64)) AS previous_conversions,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.conversion_value') AS FLOAT64)) AS previous_conversion_value,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64)),
+          SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64))
+        ) AS previous_ctr,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)),
+          SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64))
+        ) AS previous_cpc,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)),
+          SUM(CAST(JSON_VALUE(raw_payload, '$.conversions') AS FLOAT64))
+        ) AS previous_cpa,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.conversion_value') AS FLOAT64)),
+          SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64))
+        ) AS previous_roas
+      FROM `{destination._table_id("raw_google_ads_daily")}`
+      WHERE {" AND ".join(previous_filters)}
+      GROUP BY platform, account_id, account_name, campaign_id, ad_group_id, criterion_id
+    )
     SELECT
-      platform,
-      account_id,
-      JSON_VALUE(raw_payload, '$.account_name') AS account_name,
-      JSON_VALUE(raw_payload, '$.campaign_id') AS campaign_id,
-      ANY_VALUE(JSON_VALUE(raw_payload, '$.campaign_name')) AS campaign_name,
-      JSON_VALUE(raw_payload, '$.ad_group_id') AS ad_group_id,
-      ANY_VALUE(JSON_VALUE(raw_payload, '$.ad_group_name')) AS ad_group_name,
-      JSON_VALUE(raw_payload, '$.criterion_id') AS criterion_id,
-      ANY_VALUE(JSON_VALUE(raw_payload, '$.keyword_text')) AS keyword_text,
-      ANY_VALUE(JSON_VALUE(raw_payload, '$.keyword_match_type')) AS keyword_match_type,
-      SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64)) AS impressions,
-      SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64)) AS link_clicks,
-      SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)) AS spend,
-      SUM(CAST(JSON_VALUE(raw_payload, '$.conversions') AS FLOAT64)) AS conversions,
-      SUM(CAST(JSON_VALUE(raw_payload, '$.conversion_value') AS FLOAT64)) AS conversion_value,
-      SAFE_DIVIDE(
-        SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64)),
-        SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64))
-      ) AS ctr,
-      SAFE_DIVIDE(
-        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)),
-        SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64))
-      ) AS cpc,
-      SAFE_DIVIDE(
-        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)) * 1000,
-        SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64))
-      ) AS cpm,
-      SAFE_DIVIDE(
-        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)),
-        SUM(CAST(JSON_VALUE(raw_payload, '$.conversions') AS FLOAT64))
-      ) AS cpa,
-      SAFE_DIVIDE(
-        SUM(CAST(JSON_VALUE(raw_payload, '$.conversion_value') AS FLOAT64)),
-        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64))
-      ) AS roas
-    FROM `{destination._table_id("raw_google_ads_daily")}`
-    WHERE {" AND ".join(filters)}
-    GROUP BY platform, account_id, account_name, campaign_id, ad_group_id, criterion_id
-    ORDER BY spend DESC
+      COALESCE(current_rows.platform, previous_rows.platform) AS platform,
+      COALESCE(current_rows.account_id, previous_rows.account_id) AS account_id,
+      COALESCE(current_rows.account_name, previous_rows.account_name) AS account_name,
+      COALESCE(current_rows.campaign_id, previous_rows.campaign_id) AS campaign_id,
+      COALESCE(current_rows.campaign_name, previous_rows.campaign_name) AS campaign_name,
+      COALESCE(current_rows.ad_group_id, previous_rows.ad_group_id) AS ad_group_id,
+      COALESCE(current_rows.ad_group_name, previous_rows.ad_group_name) AS ad_group_name,
+      COALESCE(current_rows.criterion_id, previous_rows.criterion_id) AS criterion_id,
+      COALESCE(current_rows.keyword_text, previous_rows.keyword_text) AS keyword_text,
+      COALESCE(current_rows.keyword_match_type, previous_rows.keyword_match_type) AS keyword_match_type,
+      current_rows.impressions,
+      current_rows.link_clicks,
+      current_rows.spend,
+      current_rows.conversions,
+      current_rows.conversion_value,
+      current_rows.ctr,
+      current_rows.cpc,
+      current_rows.cpm,
+      current_rows.cpa,
+      current_rows.roas,
+      previous_rows.previous_impressions,
+      previous_rows.previous_link_clicks,
+      previous_rows.previous_spend,
+      previous_rows.previous_conversions,
+      previous_rows.previous_conversion_value,
+      previous_rows.previous_ctr,
+      previous_rows.previous_cpc,
+      previous_rows.previous_cpa,
+      previous_rows.previous_roas,
+      IFNULL(current_rows.spend, 0) - IFNULL(previous_rows.previous_spend, 0) AS spend_delta,
+      IFNULL(current_rows.link_clicks, 0) - IFNULL(previous_rows.previous_link_clicks, 0) AS link_clicks_delta,
+      IFNULL(current_rows.conversions, 0) - IFNULL(previous_rows.previous_conversions, 0) AS conversions_delta,
+      IFNULL(current_rows.conversion_value, 0) - IFNULL(previous_rows.previous_conversion_value, 0) AS conversion_value_delta,
+      current_rows.cpc - previous_rows.previous_cpc AS cpc_delta,
+      current_rows.cpa - previous_rows.previous_cpa AS cpa_delta,
+      current_rows.roas - previous_rows.previous_roas AS roas_delta,
+      SAFE_DIVIDE(IFNULL(current_rows.spend, 0) - IFNULL(previous_rows.previous_spend, 0), previous_rows.previous_spend) AS spend_delta_rate,
+      SAFE_DIVIDE(IFNULL(current_rows.link_clicks, 0) - IFNULL(previous_rows.previous_link_clicks, 0), previous_rows.previous_link_clicks) AS link_clicks_delta_rate,
+      SAFE_DIVIDE(IFNULL(current_rows.conversions, 0) - IFNULL(previous_rows.previous_conversions, 0), previous_rows.previous_conversions) AS conversions_delta_rate,
+      SAFE_DIVIDE(current_rows.cpc - previous_rows.previous_cpc, previous_rows.previous_cpc) AS cpc_delta_rate,
+      SAFE_DIVIDE(current_rows.cpa - previous_rows.previous_cpa, previous_rows.previous_cpa) AS cpa_delta_rate,
+      SAFE_DIVIDE(current_rows.roas - previous_rows.previous_roas, previous_rows.previous_roas) AS roas_delta_rate
+    FROM current_rows
+    FULL OUTER JOIN previous_rows
+      ON current_rows.platform = previous_rows.platform
+      AND current_rows.account_id = previous_rows.account_id
+      AND current_rows.campaign_id = previous_rows.campaign_id
+      AND current_rows.ad_group_id = previous_rows.ad_group_id
+      AND current_rows.criterion_id = previous_rows.criterion_id
+    ORDER BY GREATEST(IFNULL(current_rows.spend, 0), IFNULL(previous_rows.previous_spend, 0)) DESC
     LIMIT @limit
     """
     return [_normalize_detail_row(row) for row in destination.query_rows(query, parameters)]
@@ -474,97 +798,210 @@ def _fetch_google_search_term_breakdown(
     account_ids: list[str],
     period_start_date: str,
     period_end_date: str,
+    previous_period_start_date: str,
+    previous_period_end_date: str,
     limit: int,
 ) -> list[dict[str, Any]]:
     """Return top Google Ads search term rows from raw search-term payloads."""
-    filters, parameters = _detail_filters(
+    current_filters, previous_filters, parameters = _detail_period_filters(
         workspace_id=workspace_id,
         client_id=client_id,
         account_id=account_id,
         account_ids=account_ids,
         period_start_date=period_start_date,
         period_end_date=period_end_date,
+        previous_period_start_date=previous_period_start_date,
+        previous_period_end_date=previous_period_end_date,
         limit=limit,
     )
-    filters.extend(["platform = 'google_ads'", "report_level = 'search_term'"])
+    current_filters.extend(["platform = 'google_ads'", "report_level = 'search_term'"])
+    previous_filters.extend(["platform = 'google_ads'", "report_level = 'search_term'"])
     query = f"""
+    WITH current_rows AS (
+      SELECT
+        platform,
+        account_id,
+        JSON_VALUE(raw_payload, '$.account_name') AS account_name,
+        JSON_VALUE(raw_payload, '$.campaign_id') AS campaign_id,
+        ANY_VALUE(JSON_VALUE(raw_payload, '$.campaign_name')) AS campaign_name,
+        JSON_VALUE(raw_payload, '$.ad_group_id') AS ad_group_id,
+        ANY_VALUE(JSON_VALUE(raw_payload, '$.ad_group_name')) AS ad_group_name,
+        JSON_VALUE(raw_payload, '$.search_term') AS search_term,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64)) AS impressions,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64)) AS link_clicks,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)) AS spend,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.conversions') AS FLOAT64)) AS conversions,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.conversion_value') AS FLOAT64)) AS conversion_value,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64)),
+          SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64))
+        ) AS ctr,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)),
+          SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64))
+        ) AS cpc,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)) * 1000,
+          SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64))
+        ) AS cpm,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)),
+          SUM(CAST(JSON_VALUE(raw_payload, '$.conversions') AS FLOAT64))
+        ) AS cpa,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.conversion_value') AS FLOAT64)),
+          SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64))
+        ) AS roas
+      FROM `{destination._table_id("raw_google_ads_daily")}`
+      WHERE {" AND ".join(current_filters)}
+      GROUP BY platform, account_id, account_name, campaign_id, ad_group_id, search_term
+    ),
+    previous_rows AS (
+      SELECT
+        platform,
+        account_id,
+        JSON_VALUE(raw_payload, '$.account_name') AS account_name,
+        JSON_VALUE(raw_payload, '$.campaign_id') AS campaign_id,
+        ANY_VALUE(JSON_VALUE(raw_payload, '$.campaign_name')) AS campaign_name,
+        JSON_VALUE(raw_payload, '$.ad_group_id') AS ad_group_id,
+        ANY_VALUE(JSON_VALUE(raw_payload, '$.ad_group_name')) AS ad_group_name,
+        JSON_VALUE(raw_payload, '$.search_term') AS search_term,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64)) AS previous_impressions,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64)) AS previous_link_clicks,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)) AS previous_spend,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.conversions') AS FLOAT64)) AS previous_conversions,
+        SUM(CAST(JSON_VALUE(raw_payload, '$.conversion_value') AS FLOAT64)) AS previous_conversion_value,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64)),
+          SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64))
+        ) AS previous_ctr,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)),
+          SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64))
+        ) AS previous_cpc,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)),
+          SUM(CAST(JSON_VALUE(raw_payload, '$.conversions') AS FLOAT64))
+        ) AS previous_cpa,
+        SAFE_DIVIDE(
+          SUM(CAST(JSON_VALUE(raw_payload, '$.conversion_value') AS FLOAT64)),
+          SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64))
+        ) AS previous_roas
+      FROM `{destination._table_id("raw_google_ads_daily")}`
+      WHERE {" AND ".join(previous_filters)}
+      GROUP BY platform, account_id, account_name, campaign_id, ad_group_id, search_term
+    )
     SELECT
-      platform,
-      account_id,
-      JSON_VALUE(raw_payload, '$.account_name') AS account_name,
-      JSON_VALUE(raw_payload, '$.campaign_id') AS campaign_id,
-      ANY_VALUE(JSON_VALUE(raw_payload, '$.campaign_name')) AS campaign_name,
-      JSON_VALUE(raw_payload, '$.ad_group_id') AS ad_group_id,
-      ANY_VALUE(JSON_VALUE(raw_payload, '$.ad_group_name')) AS ad_group_name,
-      JSON_VALUE(raw_payload, '$.search_term') AS search_term,
-      SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64)) AS impressions,
-      SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64)) AS link_clicks,
-      SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)) AS spend,
-      SUM(CAST(JSON_VALUE(raw_payload, '$.conversions') AS FLOAT64)) AS conversions,
-      SUM(CAST(JSON_VALUE(raw_payload, '$.conversion_value') AS FLOAT64)) AS conversion_value,
-      SAFE_DIVIDE(
-        SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64)),
-        SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64))
-      ) AS ctr,
-      SAFE_DIVIDE(
-        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)),
-        SUM(CAST(JSON_VALUE(raw_payload, '$.clicks') AS INT64))
-      ) AS cpc,
-      SAFE_DIVIDE(
-        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)) * 1000,
-        SUM(CAST(JSON_VALUE(raw_payload, '$.impressions') AS INT64))
-      ) AS cpm,
-      SAFE_DIVIDE(
-        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64)),
-        SUM(CAST(JSON_VALUE(raw_payload, '$.conversions') AS FLOAT64))
-      ) AS cpa,
-      SAFE_DIVIDE(
-        SUM(CAST(JSON_VALUE(raw_payload, '$.conversion_value') AS FLOAT64)),
-        SUM(CAST(JSON_VALUE(raw_payload, '$.spend') AS FLOAT64))
-      ) AS roas
-    FROM `{destination._table_id("raw_google_ads_daily")}`
-    WHERE {" AND ".join(filters)}
-    GROUP BY platform, account_id, account_name, campaign_id, ad_group_id, search_term
-    ORDER BY spend DESC
+      COALESCE(current_rows.platform, previous_rows.platform) AS platform,
+      COALESCE(current_rows.account_id, previous_rows.account_id) AS account_id,
+      COALESCE(current_rows.account_name, previous_rows.account_name) AS account_name,
+      COALESCE(current_rows.campaign_id, previous_rows.campaign_id) AS campaign_id,
+      COALESCE(current_rows.campaign_name, previous_rows.campaign_name) AS campaign_name,
+      COALESCE(current_rows.ad_group_id, previous_rows.ad_group_id) AS ad_group_id,
+      COALESCE(current_rows.ad_group_name, previous_rows.ad_group_name) AS ad_group_name,
+      COALESCE(current_rows.search_term, previous_rows.search_term) AS search_term,
+      current_rows.impressions,
+      current_rows.link_clicks,
+      current_rows.spend,
+      current_rows.conversions,
+      current_rows.conversion_value,
+      current_rows.ctr,
+      current_rows.cpc,
+      current_rows.cpm,
+      current_rows.cpa,
+      current_rows.roas,
+      previous_rows.previous_impressions,
+      previous_rows.previous_link_clicks,
+      previous_rows.previous_spend,
+      previous_rows.previous_conversions,
+      previous_rows.previous_conversion_value,
+      previous_rows.previous_ctr,
+      previous_rows.previous_cpc,
+      previous_rows.previous_cpa,
+      previous_rows.previous_roas,
+      IFNULL(current_rows.spend, 0) - IFNULL(previous_rows.previous_spend, 0) AS spend_delta,
+      IFNULL(current_rows.link_clicks, 0) - IFNULL(previous_rows.previous_link_clicks, 0) AS link_clicks_delta,
+      IFNULL(current_rows.conversions, 0) - IFNULL(previous_rows.previous_conversions, 0) AS conversions_delta,
+      IFNULL(current_rows.conversion_value, 0) - IFNULL(previous_rows.previous_conversion_value, 0) AS conversion_value_delta,
+      current_rows.cpc - previous_rows.previous_cpc AS cpc_delta,
+      current_rows.cpa - previous_rows.previous_cpa AS cpa_delta,
+      current_rows.roas - previous_rows.previous_roas AS roas_delta,
+      SAFE_DIVIDE(IFNULL(current_rows.spend, 0) - IFNULL(previous_rows.previous_spend, 0), previous_rows.previous_spend) AS spend_delta_rate,
+      SAFE_DIVIDE(IFNULL(current_rows.link_clicks, 0) - IFNULL(previous_rows.previous_link_clicks, 0), previous_rows.previous_link_clicks) AS link_clicks_delta_rate,
+      SAFE_DIVIDE(IFNULL(current_rows.conversions, 0) - IFNULL(previous_rows.previous_conversions, 0), previous_rows.previous_conversions) AS conversions_delta_rate,
+      SAFE_DIVIDE(current_rows.cpc - previous_rows.previous_cpc, previous_rows.previous_cpc) AS cpc_delta_rate,
+      SAFE_DIVIDE(current_rows.cpa - previous_rows.previous_cpa, previous_rows.previous_cpa) AS cpa_delta_rate,
+      SAFE_DIVIDE(current_rows.roas - previous_rows.previous_roas, previous_rows.previous_roas) AS roas_delta_rate
+    FROM current_rows
+    FULL OUTER JOIN previous_rows
+      ON current_rows.platform = previous_rows.platform
+      AND current_rows.account_id = previous_rows.account_id
+      AND current_rows.campaign_id = previous_rows.campaign_id
+      AND current_rows.ad_group_id = previous_rows.ad_group_id
+      AND current_rows.search_term = previous_rows.search_term
+    ORDER BY GREATEST(IFNULL(current_rows.spend, 0), IFNULL(previous_rows.previous_spend, 0)) DESC
     LIMIT @limit
     """
     return [_normalize_detail_row(row) for row in destination.query_rows(query, parameters)]
 
 
-def _detail_filters(
+def _detail_period_filters(
     workspace_id: str,
     client_id: str,
     account_id: str | None,
     account_ids: list[str],
     period_start_date: str,
     period_end_date: str,
+    previous_period_start_date: str,
+    previous_period_end_date: str,
     limit: int,
-) -> tuple[list[str], list[bigquery.ScalarQueryParameter]]:
-    """Return shared filters and query parameters for detail breakdowns."""
-    filters = [
+) -> tuple[
+    list[str],
+    list[str],
+    list[bigquery.ScalarQueryParameter | bigquery.ArrayQueryParameter],
+]:
+    """Return current/previous filters and query parameters for detail breakdowns."""
+    current_filters = [
         "date BETWEEN @period_start_date AND @period_end_date",
         "workspace_id = @workspace_id",
         "client_id = @client_id",
     ]
-    parameters: list[bigquery.ScalarQueryParameter] = [
+    previous_filters = [
+        "date BETWEEN @previous_period_start_date AND @previous_period_end_date",
+        "workspace_id = @workspace_id",
+        "client_id = @client_id",
+    ]
+    parameters: list[bigquery.ScalarQueryParameter | bigquery.ArrayQueryParameter] = [
         bigquery.ScalarQueryParameter("period_start_date", "DATE", period_start_date),
         bigquery.ScalarQueryParameter("period_end_date", "DATE", period_end_date),
+        bigquery.ScalarQueryParameter(
+            "previous_period_start_date",
+            "DATE",
+            previous_period_start_date,
+        ),
+        bigquery.ScalarQueryParameter(
+            "previous_period_end_date",
+            "DATE",
+            previous_period_end_date,
+        ),
         bigquery.ScalarQueryParameter("workspace_id", "STRING", workspace_id),
         bigquery.ScalarQueryParameter("client_id", "STRING", client_id),
         bigquery.ScalarQueryParameter("limit", "INT64", limit),
     ]
     scoped_account_ids = _normalize_account_ids(account_id, account_ids)
     if len(scoped_account_ids) == 1:
-        filters.append("account_id = @account_id")
+        current_filters.append("account_id = @account_id")
+        previous_filters.append("account_id = @account_id")
         parameters.append(
             bigquery.ScalarQueryParameter("account_id", "STRING", scoped_account_ids[0])
         )
     elif scoped_account_ids:
-        filters.append("account_id IN UNNEST(@account_ids)")
+        current_filters.append("account_id IN UNNEST(@account_ids)")
+        previous_filters.append("account_id IN UNNEST(@account_ids)")
         parameters.append(
             bigquery.ArrayQueryParameter("account_ids", "STRING", scoped_account_ids)
         )
-    return filters, parameters
+    return current_filters, previous_filters, parameters
 
 
 def _normalize_account_ids(
@@ -591,6 +1028,11 @@ def _fetch_previous_period_totals(
     """Fetch complete previous-period totals independent of current campaigns."""
     previous_start_date = _previous_period_start_date(
         period_start_date=period_start_date,
+        start_field=config.start_field,
+    )
+    previous_end_date = _previous_period_end_date(
+        period_start_date=period_start_date,
+        previous_start_date=previous_start_date,
         start_field=config.start_field,
     )
     filters = [
@@ -629,6 +1071,8 @@ def _fetch_previous_period_totals(
 
     row = rows[0]
     previous = {
+        "period_start_date": previous_start_date,
+        "period_end_date": previous_end_date,
         "impressions": _or_zero(_to_number(row.get("impressions"))),
         "link_clicks": _or_zero(_to_number(row.get("link_clicks"))),
         "spend": _or_zero(_to_number(row.get("spend"))),
@@ -658,6 +1102,18 @@ def _previous_period_start_date(period_start_date: str, start_field: str) -> str
     first_of_current_month = current.replace(day=1)
     last_day_previous_month = first_of_current_month - timedelta(days=1)
     return last_day_previous_month.replace(day=1).isoformat()
+
+
+def _previous_period_end_date(
+    period_start_date: str,
+    previous_start_date: str,
+    start_field: str,
+) -> str:
+    """Return previous week/month end date for detail comparison queries."""
+    previous_start = date.fromisoformat(previous_start_date)
+    if start_field == "week_start_date":
+        return (previous_start + timedelta(days=6)).isoformat()
+    return (date.fromisoformat(period_start_date) - timedelta(days=1)).isoformat()
 
 
 def _normalize_campaign(row: dict[str, Any]) -> dict[str, Any]:
@@ -697,10 +1153,21 @@ def _normalize_campaign(row: dict[str, Any]) -> dict[str, Any]:
         "previous_conversions": _to_number(row.get("previous_conversions")),
         "previous_add_to_cart": _to_number(row.get("previous_add_to_cart")),
         "previous_purchase": _to_number(row.get("previous_purchase")),
+        "previous_cpc": _to_number(row.get("previous_cpc")),
+        "previous_cpa": _to_number(row.get("previous_cpa")),
+        "previous_roas": _to_number(row.get("previous_roas")),
         "spend_delta": _to_number(row.get("spend_delta")),
         "link_clicks_delta": _to_number(row.get("link_clicks_delta")),
+        "conversions_delta": _to_number(row.get("conversions_delta")),
+        "cpc_delta": _to_number(row.get("cpc_delta")),
+        "cpa_delta": _to_number(row.get("cpa_delta")),
+        "roas_delta": _to_number(row.get("roas_delta")),
         "spend_delta_rate": _to_number(row.get("spend_delta_rate")),
         "link_clicks_delta_rate": _to_number(row.get("link_clicks_delta_rate")),
+        "conversions_delta_rate": _to_number(row.get("conversions_delta_rate")),
+        "cpc_delta_rate": _to_number(row.get("cpc_delta_rate")),
+        "cpa_delta_rate": _to_number(row.get("cpa_delta_rate")),
+        "roas_delta_rate": _to_number(row.get("roas_delta_rate")),
     }
 
 
@@ -733,6 +1200,28 @@ def _normalize_detail_row(row: dict[str, Any]) -> dict[str, Any]:
         "cpm": _to_number(row.get("cpm")),
         "cpa": _to_number(row.get("cpa")),
         "roas": _to_number(row.get("roas")),
+        "previous_impressions": _to_number(row.get("previous_impressions")),
+        "previous_link_clicks": _to_number(row.get("previous_link_clicks")),
+        "previous_spend": _to_number(row.get("previous_spend")),
+        "previous_conversions": _to_number(row.get("previous_conversions")),
+        "previous_conversion_value": _to_number(row.get("previous_conversion_value")),
+        "previous_ctr": _to_number(row.get("previous_ctr")),
+        "previous_cpc": _to_number(row.get("previous_cpc")),
+        "previous_cpa": _to_number(row.get("previous_cpa")),
+        "previous_roas": _to_number(row.get("previous_roas")),
+        "spend_delta": _to_number(row.get("spend_delta")),
+        "link_clicks_delta": _to_number(row.get("link_clicks_delta")),
+        "conversions_delta": _to_number(row.get("conversions_delta")),
+        "conversion_value_delta": _to_number(row.get("conversion_value_delta")),
+        "cpc_delta": _to_number(row.get("cpc_delta")),
+        "cpa_delta": _to_number(row.get("cpa_delta")),
+        "roas_delta": _to_number(row.get("roas_delta")),
+        "spend_delta_rate": _to_number(row.get("spend_delta_rate")),
+        "link_clicks_delta_rate": _to_number(row.get("link_clicks_delta_rate")),
+        "conversions_delta_rate": _to_number(row.get("conversions_delta_rate")),
+        "cpc_delta_rate": _to_number(row.get("cpc_delta_rate")),
+        "cpa_delta_rate": _to_number(row.get("cpa_delta_rate")),
+        "roas_delta_rate": _to_number(row.get("roas_delta_rate")),
         "post_engagement": _to_number(row.get("post_engagement")),
         "post_reactions": _to_number(row.get("post_reactions")),
         "post_comments": _to_number(row.get("post_comments")),

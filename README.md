@@ -254,7 +254,7 @@ Required environment values:
 
 ```bash
 OPENAI_API_KEY=your-openai-api-key
-OPENAI_MODEL=gpt-5.4 mini
+OPENAI_MODEL=gpt-5.2
 OPENAI_REASONING_EFFORT=medium
 OPENAI_TIMEOUT_SECONDS=60
 AI_REPORT_TYPE=monthly
@@ -302,6 +302,22 @@ AI_REPORT_TYPE=weekly \
 AI_REPORT_PERIOD_START_DATE=2026-05-04 \
 .venv/bin/python -m src.ai.send_report_email
 ```
+
+Generate and email account-name grouped HTML reports:
+
+```bash
+AI_REPORT_EMAIL_TO=recipient@example.com \
+AI_REPORT_TYPE=monthly \
+AI_REPORT_PERIOD_START_DATE=2026-04-01 \
+AI_REPORT_DEPTH=deep \
+.venv/bin/python -m src.ai.send_account_reports
+```
+
+Account-grouped HTML reports include the campaign table, AI-written insight,
+and deterministic diagnostics from the report context. The diagnostics section
+renders CPC/CPA/ROAS change causes, warning callouts for anomalies such as high
+spend with weak results, and contribution rows for campaign, ad group, ad,
+keyword, or search term data when available.
 
 Email delivery requires SMTP settings:
 
@@ -355,8 +371,9 @@ Looker Studio can read generated report output from:
 oudseed.ads_pipeline.vw_looker_ai_report_logs
 ```
 
-The current AI report output is stored in BigQuery. Email and LINE delivery are
-future delivery channels and are not sent automatically yet.
+The current AI report output is stored in BigQuery. Account-grouped HTML email
+delivery is available through `src.ai.send_account_reports`, while LINE delivery
+remains a future channel.
 
 Preview recent AI reports:
 

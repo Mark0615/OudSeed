@@ -56,6 +56,21 @@ def test_openai_text_client_posts_to_responses_api() -> None:
     assert request.kwargs["timeout"] == 60
 
 
+def test_openai_text_client_defaults_to_valid_model_name() -> None:
+    """Default model name is an API-ready id without display-name spaces."""
+    response = Mock()
+    response.status_code = 200
+    response.json.return_value = {"output_text": "Report text"}
+    session = Mock()
+    session.post.return_value = response
+    client = OpenAITextClient(api_key="test-key", session=session)
+
+    client.generate_text("Prompt")
+
+    request = session.post.call_args
+    assert request.kwargs["json"]["model"] == "gpt-5.2"
+
+
 def test_openai_text_client_uses_configured_reasoning_effort() -> None:
     """Client includes configured reasoning effort in Responses API payload."""
     response = Mock()
