@@ -3,7 +3,9 @@
 import pytest
 
 from src.ai.send_account_reports import (
+    _bool_env,
     _filter_report_groups,
+    _format_report_group_lines,
     _limit_report_groups,
     _optional_positive_int_env,
     discover_account_report_groups,
@@ -83,6 +85,32 @@ def test_filter_report_groups_matches_explicit_account_group_name() -> None:
         _filter_report_groups(groups, "Missing Account")
 
 
+def test_format_report_group_lines_hides_account_ids() -> None:
+    """List mode prints group metadata without leaking real account ids."""
+    groups = [
+        {
+            "account_group_name": "Miniware TW",
+            "account_ids": ["act_123", "act_456"],
+            "platforms": ["meta_ads"],
+        }
+    ]
+
+    lines = _format_report_group_lines(
+        groups=groups,
+        report_type="monthly",
+        period_start_date="2026-04-01",
+    )
+    output = "\n".join(lines)
+
+    assert "account_report_groups=true" in output
+    assert "group_count=1" in output
+    assert "name=Miniware TW" in output
+    assert "platforms=meta_ads" in output
+    assert "account_count=2" in output
+    assert "act_123" not in output
+    assert "act_456" not in output
+
+
 def test_optional_positive_int_env(monkeypatch) -> None:
     """Optional positive integer env helper supports unset test-send limits."""
     monkeypatch.delenv("AI_REPORT_ACCOUNT_GROUP_LIMIT", raising=False)
@@ -97,6 +125,22 @@ def test_optional_positive_int_env(monkeypatch) -> None:
     monkeypatch.setenv("AI_REPORT_ACCOUNT_GROUP_LIMIT", "0")
     with pytest.raises(ValueError, match="positive integer"):
         _optional_positive_int_env("AI_REPORT_ACCOUNT_GROUP_LIMIT")
+
+
+def test_bool_env(monkeypatch) -> None:
+    """Boolean env helper accepts common true/false values."""
+    monkeypatch.delenv("AI_REPORT_LIST_ACCOUNT_GROUPS", raising=False)
+    assert _bool_env("AI_REPORT_LIST_ACCOUNT_GROUPS") is False
+
+    monkeypatch.setenv("AI_REPORT_LIST_ACCOUNT_GROUPS", "true")
+    assert _bool_env("AI_REPORT_LIST_ACCOUNT_GROUPS") is True
+
+    monkeypatch.setenv("AI_REPORT_LIST_ACCOUNT_GROUPS", "0")
+    assert _bool_env("AI_REPORT_LIST_ACCOUNT_GROUPS") is False
+
+    monkeypatch.setenv("AI_REPORT_LIST_ACCOUNT_GROUPS", "maybe")
+    with pytest.raises(ValueError, match="boolean"):
+        _bool_env("AI_REPORT_LIST_ACCOUNT_GROUPS")
 
 
 def test_format_html_email_renders_table_and_bold_without_markdown_stars() -> None:
