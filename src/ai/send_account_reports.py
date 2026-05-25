@@ -32,6 +32,7 @@ def main() -> None:
     client_id = os.getenv("AI_REPORT_CLIENT_ID") or _first_enabled_client_id(config)
     recipient = _required_env("AI_REPORT_EMAIL_TO")
     limit = _positive_int_env("AI_REPORT_LIMIT", 50)
+    account_group_name = os.getenv("AI_REPORT_ACCOUNT_GROUP_NAME")
     account_group_limit = _optional_positive_int_env("AI_REPORT_ACCOUNT_GROUP_LIMIT")
     report_depth = _report_depth(os.getenv("AI_REPORT_DEPTH", "standard"))
     max_output_tokens = _positive_int_env("OPENAI_MAX_OUTPUT_TOKENS", 5000)
@@ -46,6 +47,7 @@ def main() -> None:
     )
     if not groups:
         raise ValueError("No account groups found for the requested report period.")
+    groups = _filter_report_groups(groups, account_group_name)
     groups = _limit_report_groups(groups, account_group_limit)
 
     openai_client = OpenAITextClient(
@@ -154,6 +156,28 @@ def _limit_report_groups(
     if limit is None:
         return groups
     return groups[:limit]
+
+
+def _filter_report_groups(
+    groups: list[dict[str, Any]],
+    account_group_name: str | None,
+) -> list[dict[str, Any]]:
+    """Return account groups matching an explicit account-group name."""
+    if not account_group_name:
+        return groups
+
+    matches = [
+        group
+        for group in groups
+        if group.get("account_group_name") == account_group_name
+    ]
+    if not matches:
+        available = ", ".join(str(group.get("account_group_name")) for group in groups)
+        raise ValueError(
+            "No account group matched AI_REPORT_ACCOUNT_GROUP_NAME="
+            f"{account_group_name!r}. Available account groups: {available}"
+        )
+    return matches
 
 
 def format_html_email(

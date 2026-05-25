@@ -330,6 +330,18 @@ AI_REPORT_DEPTH=deep \
 .venv/bin/python -m src.ai.send_account_reports
 ```
 
+To test a specific account group, match the account-group name discovered from
+the report period:
+
+```bash
+AI_REPORT_ACCOUNT_GROUP_NAME="Miniware TW" \
+AI_REPORT_EMAIL_TO=recipient@example.com \
+AI_REPORT_TYPE=monthly \
+AI_REPORT_PERIOD_START_DATE=2026-04-01 \
+AI_REPORT_DEPTH=deep \
+.venv/bin/python -m src.ai.send_account_reports
+```
+
 Email delivery requires SMTP settings:
 
 ```bash
