@@ -319,6 +319,15 @@ renders CPC/CPA/ROAS change causes, warning callouts for anomalies such as high
 spend with weak results, and contribution rows for campaign, ad group, ad,
 keyword, or search term data when available.
 
+List account groups for a report period without calling OpenAI or sending email:
+
+```bash
+AI_REPORT_LIST_ACCOUNT_GROUPS=true \
+AI_REPORT_TYPE=monthly \
+AI_REPORT_PERIOD_START_DATE=2026-04-01 \
+.venv/bin/python -m src.ai.send_account_reports
+```
+
 For a one-account test send, cap the number of account groups:
 
 ```bash

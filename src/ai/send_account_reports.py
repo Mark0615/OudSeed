@@ -30,10 +30,10 @@ def main() -> None:
         timezone=os.getenv("AI_REPORT_TIMEZONE", timezone_name),
     )
     client_id = os.getenv("AI_REPORT_CLIENT_ID") or _first_enabled_client_id(config)
-    recipient = _required_env("AI_REPORT_EMAIL_TO")
     limit = _positive_int_env("AI_REPORT_LIMIT", 50)
     account_group_name = os.getenv("AI_REPORT_ACCOUNT_GROUP_NAME")
     account_group_limit = _optional_positive_int_env("AI_REPORT_ACCOUNT_GROUP_LIMIT")
+    list_account_groups = _bool_env("AI_REPORT_LIST_ACCOUNT_GROUPS", False)
     report_depth = _report_depth(os.getenv("AI_REPORT_DEPTH", "standard"))
     max_output_tokens = _positive_int_env("OPENAI_MAX_OUTPUT_TOKENS", 5000)
     openai_timeout_seconds = _positive_int_env("OPENAI_TIMEOUT_SECONDS", 120)
@@ -49,7 +49,16 @@ def main() -> None:
         raise ValueError("No account groups found for the requested report period.")
     groups = _filter_report_groups(groups, account_group_name)
     groups = _limit_report_groups(groups, account_group_limit)
+    if list_account_groups:
+        for line in _format_report_group_lines(
+            groups=groups,
+            report_type=report_type,
+            period_start_date=period_start_date,
+        ):
+            print(line)
+        return
 
+    recipient = _required_env("AI_REPORT_EMAIL_TO")
     openai_client = OpenAITextClient(
         api_key=_required_env("OPENAI_API_KEY"),
         model=os.getenv("OPENAI_MODEL", "gpt-5.2"),
@@ -178,6 +187,28 @@ def _filter_report_groups(
             f"{account_group_name!r}. Available account groups: {available}"
         )
     return matches
+
+
+def _format_report_group_lines(
+    groups: list[dict[str, Any]],
+    report_type: str,
+    period_start_date: str,
+) -> list[str]:
+    """Return printable account-group summary lines without exposing account ids."""
+    lines = [
+        "account_report_groups=true "
+        f"report_type={report_type} period_start_date={period_start_date} "
+        f"group_count={len(groups)}"
+    ]
+    for index, group in enumerate(groups, start=1):
+        platforms = ",".join(str(platform) for platform in group.get("platforms", []))
+        lines.append(
+            "account_report_group="
+            f"{index} name={group.get('account_group_name')} "
+            f"platforms={platforms or '-'} "
+            f"account_count={len(group.get('account_ids', []))}"
+        )
+    return lines
 
 
 def format_html_email(
@@ -804,6 +835,18 @@ def _optional_positive_int_env(name: str) -> int | None:
     if value <= 0:
         raise ValueError(f"{name} must be a positive integer.")
     return value
+
+
+def _bool_env(name: str, default: bool = False) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value in {None, ""}:
+        return default
+    value = raw_value.strip().lower()
+    if value in {"1", "true", "yes", "y", "on"}:
+        return True
+    if value in {"0", "false", "no", "n", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean value.")
 
 
 if __name__ == "__main__":
