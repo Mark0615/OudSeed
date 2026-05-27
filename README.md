@@ -492,6 +492,17 @@ Deploy the weekly AI report job with:
 OPENAI_MODEL=gpt-5.2 bash deploy/deploy_weekly_ai_report_job.sh
 ```
 
+Deploy scheduled account-grouped HTML email reports with:
+
+```bash
+AI_REPORT_SCHEDULE_ID=monthly_email_default \
+bash deploy/deploy_account_ai_report_job.sh
+```
+
+This uses `src.ai.send_account_reports` as the Cloud Run Job module. SMTP
+settings are read from the environment or `.env`; `SMTP_PASSWORD` is stored in
+Secret Manager when provided.
+
 Default weekly deployment settings:
 
 ```text

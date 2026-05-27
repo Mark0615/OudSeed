@@ -17,8 +17,11 @@ CLIENTS_CONFIG_FILE="${CLIENTS_CONFIG_FILE:-config/clients.yaml}"
 RUNTIME_SERVICE_ACCOUNT_NAME="${RUNTIME_SERVICE_ACCOUNT_NAME:-oudseed-ads-pipeline-runner}"
 OPENAI_SECRET_NAME="${OPENAI_SECRET_NAME:-oudseed-openai-api-key}"
 CLIENTS_CONFIG_SECRET_NAME="${CLIENTS_CONFIG_SECRET_NAME:-oudseed-clients-yaml}"
+SMTP_PASSWORD_SECRET_NAME="${SMTP_PASSWORD_SECRET_NAME:-oudseed-smtp-password}"
+AI_REPORT_MODULE="${AI_REPORT_MODULE:-src.ai.generate_report}"
 AI_REPORT_TYPE="${AI_REPORT_TYPE:-monthly}"
 AI_REPORT_LIMIT="${AI_REPORT_LIMIT:-10}"
+AI_REPORT_DEPTH="${AI_REPORT_DEPTH:-standard}"
 OPENAI_MODEL="${OPENAI_MODEL:-gpt-5.2}"
 OPENAI_REASONING_EFFORT="${OPENAI_REASONING_EFFORT:-medium}"
 OPENAI_MAX_OUTPUT_TOKENS="${OPENAI_MAX_OUTPUT_TOKENS:-1800}"
@@ -87,6 +90,9 @@ upsert_secret_from_stdin() {
 
 printf "%s" "${OPENAI_API_KEY}" | upsert_secret_from_stdin "${OPENAI_SECRET_NAME}" >/dev/null
 upsert_secret_from_stdin "${CLIENTS_CONFIG_SECRET_NAME}" < "${CLIENTS_CONFIG_FILE}" >/dev/null
+if [[ -n "${SMTP_PASSWORD:-}" ]]; then
+  printf "%s" "${SMTP_PASSWORD}" | upsert_secret_from_stdin "${SMTP_PASSWORD_SECRET_NAME}" >/dev/null
+fi
 
 for secret_name in "${OPENAI_SECRET_NAME}" "${CLIENTS_CONFIG_SECRET_NAME}"; do
   gcloud secrets add-iam-policy-binding "${secret_name}" \
@@ -94,6 +100,36 @@ for secret_name in "${OPENAI_SECRET_NAME}" "${CLIENTS_CONFIG_SECRET_NAME}"; do
     --role="roles/secretmanager.secretAccessor" \
     --quiet >/dev/null
 done
+if [[ -n "${SMTP_PASSWORD:-}" ]]; then
+  gcloud secrets add-iam-policy-binding "${SMTP_PASSWORD_SECRET_NAME}" \
+    --member="serviceAccount:${RUNTIME_SERVICE_ACCOUNT}" \
+    --role="roles/secretmanager.secretAccessor" \
+    --quiet >/dev/null
+fi
+
+ENV_VARS="GCP_PROJECT_ID=${PROJECT_ID},BIGQUERY_DATASET=${BIGQUERY_DATASET},AI_REPORT_TYPE=${AI_REPORT_TYPE},AI_REPORT_LIMIT=${AI_REPORT_LIMIT},AI_REPORT_DEPTH=${AI_REPORT_DEPTH},AI_REPORT_TIMEZONE=${TIME_ZONE},OPENAI_MODEL=${OPENAI_MODEL},OPENAI_REASONING_EFFORT=${OPENAI_REASONING_EFFORT},OPENAI_MAX_OUTPUT_TOKENS=${OPENAI_MAX_OUTPUT_TOKENS},OPENAI_TIMEOUT_SECONDS=${OPENAI_TIMEOUT_SECONDS}"
+append_env_var() {
+  local name="$1"
+  local value="${!name:-}"
+  if [[ -n "${value}" ]]; then
+    ENV_VARS="${ENV_VARS},${name}=${value}"
+  fi
+}
+
+append_env_var "AI_REPORT_SCHEDULE_ID"
+append_env_var "AI_REPORT_EMAIL_TO"
+append_env_var "AI_REPORT_ACCOUNT_GROUP_NAME"
+append_env_var "AI_REPORT_ACCOUNT_GROUP_LIMIT"
+append_env_var "SMTP_HOST"
+append_env_var "SMTP_PORT"
+append_env_var "SMTP_USERNAME"
+append_env_var "SMTP_FROM_EMAIL"
+append_env_var "SMTP_USE_TLS"
+
+SECRETS="OPENAI_API_KEY=${OPENAI_SECRET_NAME}:latest,CLIENTS_CONFIG_YAML=${CLIENTS_CONFIG_SECRET_NAME}:latest"
+if [[ -n "${SMTP_PASSWORD:-}" ]]; then
+  SECRETS="${SECRETS},SMTP_PASSWORD=${SMTP_PASSWORD_SECRET_NAME}:latest"
+fi
 
 gcloud builds submit \
   --config=deploy/cloudbuild.yaml \
@@ -108,9 +144,9 @@ gcloud run jobs deploy "${JOB_NAME}" \
   --max-retries=1 \
   --task-timeout=900s \
   --command=python \
-  --args="-m,src.ai.generate_report" \
-  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},BIGQUERY_DATASET=${BIGQUERY_DATASET},AI_REPORT_TYPE=${AI_REPORT_TYPE},AI_REPORT_LIMIT=${AI_REPORT_LIMIT},AI_REPORT_TIMEZONE=${TIME_ZONE},OPENAI_MODEL=${OPENAI_MODEL},OPENAI_REASONING_EFFORT=${OPENAI_REASONING_EFFORT},OPENAI_MAX_OUTPUT_TOKENS=${OPENAI_MAX_OUTPUT_TOKENS},OPENAI_TIMEOUT_SECONDS=${OPENAI_TIMEOUT_SECONDS}" \
-  --set-secrets="OPENAI_API_KEY=${OPENAI_SECRET_NAME}:latest,CLIENTS_CONFIG_YAML=${CLIENTS_CONFIG_SECRET_NAME}:latest"
+  --args="-m,${AI_REPORT_MODULE}" \
+  --set-env-vars="${ENV_VARS}" \
+  --set-secrets="${SECRETS}"
 
 gcloud run jobs add-iam-policy-binding "${JOB_NAME}" \
   --region="${REGION}" \
@@ -139,5 +175,6 @@ fi
 
 echo "Cloud Run Job deployed: ${JOB_NAME}"
 echo "Cloud Scheduler trigger configured: ${SCHEDULER_JOB_NAME} (${SCHEDULE}, ${TIME_ZONE})"
+echo "AI report module: ${AI_REPORT_MODULE}"
 echo "Run manually with:"
 echo "gcloud run jobs execute ${JOB_NAME} --region ${REGION} --wait"
