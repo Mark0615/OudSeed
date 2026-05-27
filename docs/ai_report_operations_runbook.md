@@ -9,6 +9,7 @@ ad account IDs.
 Use this workflow for:
 
 - listing account groups for a report period
+- listing configured report schedules
 - sending one account-group test report
 - sending a capped batch
 - sending the full account-grouped HTML report batch
@@ -62,7 +63,18 @@ For scheduled jobs, leave `AI_REPORT_PERIOD_START_DATE` empty. Monthly reports
 default to the previous complete month. Weekly reports default to the previous
 complete Monday-starting week.
 
-## 1. List Account Groups
+## 1. List Report Schedules
+
+List schedules first when `config/clients.yaml` contains `report_schedules`.
+This confirms schedule ids, cadence, delivery day, depth, enabled state, and
+whether a recipient is configured without printing recipient emails.
+
+```bash
+AI_REPORT_LIST_SCHEDULES=true \
+.venv/bin/python -m src.ai.send_account_reports
+```
+
+## 2. List Account Groups
 
 List mode confirms which account-group names exist for the selected period. It
 does not call OpenAI and does not send email.
@@ -77,7 +89,7 @@ AI_REPORT_PERIOD_START_DATE=2026-04-01 \
 Expected output includes only the group name, platforms, and account count. Do
 not add real account IDs to runbook notes, screenshots, or committed files.
 
-## 2. Send One Test Report
+## 3. Send One Test Report
 
 Send one specific account group to an internal recipient first:
 
@@ -99,7 +111,7 @@ Review the email for:
 - no visible Markdown artifacts such as raw `**`
 - no exposed secrets, tokens, or real account IDs
 
-## 3. Send a Capped Batch
+## 4. Send a Capped Batch
 
 Use a capped batch when validating a new period, recipient, or model setting:
 
@@ -115,7 +127,7 @@ AI_REPORT_DEPTH=standard \
 Increase `AI_REPORT_ACCOUNT_GROUP_LIMIT` gradually if multiple account groups
 need internal review before a full send.
 
-## 4. Send the Full Batch
+## 5. Send the Full Batch
 
 After list mode and at least one test send pass review, remove
 `AI_REPORT_ACCOUNT_GROUP_NAME`, `AI_REPORT_ACCOUNT_GROUP_LIMIT`, and
@@ -131,7 +143,7 @@ AI_REPORT_DEPTH=standard \
 
 The command sends one HTML email per account group.
 
-## 5. Verify Logs
+## 6. Verify Logs
 
 After a send, verify that each account group wrote a row to `ai_report_logs`.
 Use placeholders in saved queries and docs:
@@ -160,6 +172,7 @@ Expected results:
 
 | Symptom | Likely Cause | Action |
 |---|---|---|
+| Schedule id not found | Wrong `AI_REPORT_SCHEDULE_ID` or config not deployed | Run `AI_REPORT_LIST_SCHEDULES=true` locally and confirm Secret Manager config |
 | No account groups found | No summary data for the period or wrong client | Confirm `AI_REPORT_TYPE`, `AI_REPORT_PERIOD_START_DATE`, and `AI_REPORT_CLIENT_ID` |
 | Account group filter fails | Name does not exactly match list mode output | Re-run list mode and copy the group name exactly |
 | Email not received | SMTP or recipient issue | Confirm SMTP env vars and test with an internal recipient |
@@ -181,6 +194,5 @@ Before sending client-visible reports:
 
 ## Next Productization Step
 
-Move the manual env-var workflow into account-level report schedule config. The
-config should define cadence, delivery day, recipient, channel, default depth,
-and optional account-group override without changing report generation logic.
+Deploy schedule-based account reports to Cloud Run Job variants so monthly and
+weekly sends can use `AI_REPORT_SCHEDULE_ID` instead of long env-var overrides.

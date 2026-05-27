@@ -12,7 +12,12 @@ from google.cloud import bigquery
 
 from src.ai.generate_report import _first_enabled_client_id, _load_runtime_config, _report_type
 from src.ai.openai_client import OpenAITextClient
-from src.ai.report_schedules import ReportSchedule, find_report_schedule
+from src.ai.report_schedules import (
+    ReportSchedule,
+    find_report_schedule,
+    format_report_schedule_lines,
+    list_report_schedules,
+)
 from src.ai.report_generator import generate_and_log_report
 from src.destinations.bigquery import BigQueryDestination
 from src.notifications.email_delivery import SMTPEmailSender, load_smtp_email_config_from_env
@@ -23,6 +28,11 @@ def main() -> None:
     """Generate account-grouped reports and send one email per account group."""
     load_dotenv()
     config = _load_runtime_config()
+    if _bool_env("AI_REPORT_LIST_SCHEDULES", False):
+        for line in format_report_schedule_lines(list_report_schedules(config)):
+            print(line)
+        return
+
     destination = _destination_from_config(config)
     schedule = find_report_schedule(config, os.getenv("AI_REPORT_SCHEDULE_ID"))
     report_type = _report_type(
