@@ -319,6 +319,10 @@ renders CPC/CPA/ROAS change causes, warning callouts for anomalies such as high
 spend with weak results, and contribution rows for campaign, ad group, ad,
 keyword, or search term data when available.
 
+For the repeatable operator workflow, including list mode, one-account test
+sends, capped batches, full sends, and log verification, see
+`docs/ai_report_operations_runbook.md`.
+
 List account groups for a report period without calling OpenAI or sending email:
 
 ```bash
