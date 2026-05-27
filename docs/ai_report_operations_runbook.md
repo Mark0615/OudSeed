@@ -29,6 +29,10 @@ Confirm these inputs before a send:
 | Report depth | Operator decision | `standard` for client-ready reports, `deep` for diagnostic review |
 | Account group | BigQuery account names | Use list mode to discover available names |
 
+When a client has `report_schedules` configured in `config/clients.yaml`, set
+`AI_REPORT_SCHEDULE_ID` instead of repeating report type, delivery day,
+recipient, depth, and account-group defaults in every command.
+
 ## Environment Checklist
 
 Set these values locally or in the Cloud Run Job environment:
@@ -39,6 +43,7 @@ OPENAI_MODEL=gpt-5.2
 OPENAI_REASONING_EFFORT=medium
 OPENAI_TIMEOUT_SECONDS=60
 AI_REPORT_TYPE=monthly
+AI_REPORT_SCHEDULE_ID=monthly_email_default
 AI_REPORT_PERIOD_START_DATE=2026-04-01
 AI_REPORT_CLIENT_ID=your-client-id
 AI_REPORT_LIMIT=50

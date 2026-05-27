@@ -20,6 +20,7 @@ def test_load_config_reads_example_config() -> None:
     assert config["workspace_id"] == "mark_internal"
     assert config["clients"][0]["client_id"] == "demo_client_001"
     assert config["clients"][0]["platforms"]["meta_ads"]["enabled"] is True
+    assert config["clients"][0]["report_schedules"][0]["schedule_id"] == "monthly_email_default"
 
 
 def test_load_config_from_yaml_reads_yaml_text() -> None:
@@ -97,4 +98,68 @@ def test_load_config_raises_for_empty_clients(tmp_path: Path) -> None:
     write_yaml(config_path, {"workspace_id": "mark_internal", "clients": []})
 
     with pytest.raises(ValueError, match="config.clients must be a non-empty list"):
+        load_config(str(config_path))
+
+
+def test_load_config_raises_for_invalid_report_schedule_depth(tmp_path: Path) -> None:
+    """Report schedule depth is product-controlled."""
+    config_path = tmp_path / "clients.yaml"
+    write_yaml(
+        config_path,
+        {
+            "workspace_id": "mark_internal",
+            "clients": [
+                {
+                    "client_id": "demo_client_001",
+                    "platforms": {},
+                    "destinations": {},
+                    "report_schedules": [
+                        {
+                            "schedule_id": "monthly_email_default",
+                            "report_type": "monthly",
+                            "delivery_day": 1,
+                            "channel": "email",
+                            "email_to": "recipient@example.com",
+                            "depth": "verbose",
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+
+    with pytest.raises(ValueError, match="depth"):
+        load_config(str(config_path))
+
+
+def test_load_config_raises_for_duplicate_report_schedule_id(tmp_path: Path) -> None:
+    """Schedule ids must be unique within a client."""
+    config_path = tmp_path / "clients.yaml"
+    write_yaml(
+        config_path,
+        {
+            "workspace_id": "mark_internal",
+            "clients": [
+                {
+                    "client_id": "demo_client_001",
+                    "platforms": {},
+                    "destinations": {},
+                    "report_schedules": [
+                        {
+                            "schedule_id": "monthly_email_default",
+                            "report_type": "monthly",
+                            "delivery_day": 1,
+                        },
+                        {
+                            "schedule_id": "monthly_email_default",
+                            "report_type": "monthly",
+                            "delivery_day": 10,
+                        },
+                    ],
+                }
+            ],
+        },
+    )
+
+    with pytest.raises(ValueError, match="Duplicate report schedule id"):
         load_config(str(config_path))

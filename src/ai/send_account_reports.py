@@ -12,10 +12,11 @@ from google.cloud import bigquery
 
 from src.ai.generate_report import _first_enabled_client_id, _load_runtime_config, _report_type
 from src.ai.openai_client import OpenAITextClient
+from src.ai.report_schedules import ReportSchedule, find_report_schedule
 from src.ai.report_generator import generate_and_log_report
 from src.destinations.bigquery import BigQueryDestination
 from src.notifications.email_delivery import SMTPEmailSender, load_smtp_email_config_from_env
-from src.utils.date_utils import get_default_report_period_start
+from src.utils.date_utils import get_default_report_period_start, get_scheduled_report_period_start
 
 
 def main() -> None:
@@ -23,18 +24,28 @@ def main() -> None:
     load_dotenv()
     config = _load_runtime_config()
     destination = _destination_from_config(config)
-    report_type = _report_type(os.getenv("AI_REPORT_TYPE", "monthly"))
-    timezone_name = config.get("defaults", {}).get("timezone", "Asia/Taipei")
-    period_start_date = os.getenv("AI_REPORT_PERIOD_START_DATE") or get_default_report_period_start(
-        report_type=report_type,
-        timezone=os.getenv("AI_REPORT_TIMEZONE", timezone_name),
+    schedule = find_report_schedule(config, os.getenv("AI_REPORT_SCHEDULE_ID"))
+    report_type = _report_type(
+        _schedule_value(schedule, "report_type") or os.getenv("AI_REPORT_TYPE") or "monthly"
     )
-    client_id = os.getenv("AI_REPORT_CLIENT_ID") or _first_enabled_client_id(config)
+    timezone_name = (
+        _schedule_value(schedule, "timezone")
+        or os.getenv("AI_REPORT_TIMEZONE")
+        or config.get("defaults", {}).get("timezone", "Asia/Taipei")
+    )
+    period_start_date = os.getenv("AI_REPORT_PERIOD_START_DATE") or _default_period_start(
+        report_type=report_type,
+        timezone=timezone_name,
+        schedule=schedule,
+    )
+    client_id = _schedule_value(schedule, "client_id") or os.getenv("AI_REPORT_CLIENT_ID") or _first_enabled_client_id(config)
     limit = _positive_int_env("AI_REPORT_LIMIT", 50)
-    account_group_name = os.getenv("AI_REPORT_ACCOUNT_GROUP_NAME")
+    account_group_name = os.getenv("AI_REPORT_ACCOUNT_GROUP_NAME") or _schedule_value(schedule, "account_group_name")
     account_group_limit = _optional_positive_int_env("AI_REPORT_ACCOUNT_GROUP_LIMIT")
+    if account_group_limit is None:
+        account_group_limit = _schedule_value(schedule, "account_group_limit")
     list_account_groups = _bool_env("AI_REPORT_LIST_ACCOUNT_GROUPS", False)
-    report_depth = _report_depth(os.getenv("AI_REPORT_DEPTH", "standard"))
+    report_depth = _report_depth(os.getenv("AI_REPORT_DEPTH") or _schedule_value(schedule, "depth") or "standard")
     max_output_tokens = _positive_int_env("OPENAI_MAX_OUTPUT_TOKENS", 5000)
     openai_timeout_seconds = _positive_int_env("OPENAI_TIMEOUT_SECONDS", 120)
 
@@ -58,7 +69,9 @@ def main() -> None:
             print(line)
         return
 
-    recipient = _required_env("AI_REPORT_EMAIL_TO")
+    recipient = os.getenv("AI_REPORT_EMAIL_TO") or _schedule_value(schedule, "email_to")
+    if not recipient:
+        raise ValueError("Missing required environment variable or schedule value: AI_REPORT_EMAIL_TO")
     openai_client = OpenAITextClient(
         api_key=_required_env("OPENAI_API_KEY"),
         model=os.getenv("OPENAI_MODEL", "gpt-5.2"),
@@ -630,6 +643,28 @@ def _platform_label(platform: str) -> str:
 def _default_subject(report_type: str, account_group_name: str, period_start_date: str) -> str:
     report_type_label = "週報" if report_type == "weekly" else "月報"
     return f"OudSeed 廣告成效{report_type_label}｜{account_group_name}｜{period_start_date}"
+
+
+def _default_period_start(
+    report_type: str,
+    timezone: str,
+    schedule: ReportSchedule | None,
+) -> str:
+    """Return the report period start from schedule cadence or legacy defaults."""
+    if schedule is None:
+        return get_default_report_period_start(report_type=report_type, timezone=timezone)
+    return get_scheduled_report_period_start(
+        report_type=report_type,
+        delivery_day=schedule.delivery_day,
+        timezone=timezone,
+    )
+
+
+def _schedule_value(schedule: ReportSchedule | None, name: str) -> Any:
+    """Read an optional field from a resolved schedule."""
+    if schedule is None:
+        return None
+    return getattr(schedule, name)
 
 
 def _report_depth(value: str) -> str:
