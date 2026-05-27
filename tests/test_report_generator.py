@@ -2,7 +2,11 @@
 
 import pytest
 
-from src.ai.report_generator import AI_REPORT_LOGS_TABLE, generate_and_log_report
+from src.ai.report_generator import (
+    AI_REPORT_LOGS_TABLE,
+    generate_and_log_report,
+    log_report_delivery_failure,
+)
 
 
 class FakeDestination:
@@ -122,3 +126,30 @@ def test_generate_and_log_report_writes_failed_log() -> None:
     assert log_row["status"] == "failed"
     assert log_row["error_message"] == "model error"
     assert log_row["report_text"] is None
+
+
+def test_log_report_delivery_failure_writes_failed_log() -> None:
+    """Email delivery failures are logged with the original report id."""
+    destination = FakeDestination()
+
+    log_report_delivery_failure(
+        destination=destination,
+        report_id="report-1",
+        workspace_id="mark_internal",
+        client_id="demo_client_001",
+        report_type="monthly",
+        context={
+            "period_start_date": "2025-03-01",
+            "period_end_date": "2025-03-31",
+        },
+        report_text="AI report text",
+        model_name="gpt-test",
+        error_message="smtp error",
+    )
+
+    log_row = destination.inserted_rows[0]
+    assert log_row["report_id"] == "report-1"
+    assert log_row["status"] == "failed"
+    assert log_row["report_text"] == "AI report text"
+    assert log_row["error_message"] == "email_delivery_failed: smtp error"
+    assert '"delivery_status": "failed"' in log_row["prompt_payload"]

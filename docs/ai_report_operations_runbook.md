@@ -165,7 +165,9 @@ ORDER BY created_at DESC;
 Expected results:
 
 - successful sends have `status = 'success'`
-- failed generation or delivery attempts have `status = 'failed'`
+- failed generation attempts have `status = 'failed'`
+- failed email delivery attempts add a second row for the same `report_id` with
+  `status = 'failed'` and `error_message` prefixed by `email_delivery_failed:`
 - failed rows include an actionable `error_message`
 
 ## Troubleshooting
