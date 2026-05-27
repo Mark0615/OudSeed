@@ -196,3 +196,10 @@ Before sending client-visible reports:
 
 Deploy schedule-based account reports to Cloud Run Job variants so monthly and
 weekly sends can use `AI_REPORT_SCHEDULE_ID` instead of long env-var overrides.
+
+Example deployment:
+
+```bash
+AI_REPORT_SCHEDULE_ID=monthly_email_default \
+bash deploy/deploy_account_ai_report_job.sh
+```

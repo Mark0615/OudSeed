@@ -172,6 +172,18 @@ SCHEDULE="0 5 * * 1" \
 bash deploy/deploy_ai_report_job.sh
 ```
 
+Deploy scheduled account-grouped HTML email reports:
+
+```bash
+AI_REPORT_SCHEDULE_ID=monthly_email_default \
+bash deploy/deploy_account_ai_report_job.sh
+```
+
+This deploys the same image but runs `src.ai.send_account_reports`. The script
+passes `AI_REPORT_SCHEDULE_ID` to the job, reads client schedules from
+`CLIENTS_CONFIG_YAML`, and stores `SMTP_PASSWORD` in Secret Manager when the
+value is present in the environment or `.env`.
+
 ## Notes
 
 - The Cloud Run Job reads `CLIENTS_CONFIG_YAML` from Secret Manager.
