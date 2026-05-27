@@ -18,7 +18,7 @@ from src.ai.report_schedules import (
     format_report_schedule_lines,
     list_report_schedules,
 )
-from src.ai.report_generator import generate_and_log_report
+from src.ai.report_generator import generate_and_log_report, log_report_delivery_failure
 from src.destinations.bigquery import BigQueryDestination
 from src.notifications.email_delivery import SMTPEmailSender, load_smtp_email_config_from_env
 from src.utils.date_utils import get_default_report_period_start, get_scheduled_report_period_start
@@ -121,7 +121,16 @@ def main() -> None:
             report_text=result["report_text"],
             account_group_name=group["account_group_name"],
         )
-        sender.send(
+        _send_account_report_email(
+            sender=sender,
+            destination=destination,
+            report_id=result["report_id"],
+            workspace_id=config["workspace_id"],
+            client_id=client_id,
+            report_type=report_type,
+            context=result["context"],
+            report_text=result["report_text"],
+            model_name=openai_client.model,
             recipient=recipient,
             subject=subject,
             body=body,
@@ -232,6 +241,50 @@ def _format_report_group_lines(
             f"account_count={len(group.get('account_ids', []))}"
         )
     return lines
+
+
+def _send_account_report_email(
+    sender: SMTPEmailSender,
+    destination: BigQueryDestination,
+    report_id: str,
+    workspace_id: str,
+    client_id: str,
+    report_type: str,
+    context: dict[str, Any],
+    report_text: str,
+    model_name: str,
+    recipient: str,
+    subject: str,
+    body: str,
+    html_body: str,
+) -> None:
+    """Send one account report email and log delivery failures."""
+    try:
+        sender.send(
+            recipient=recipient,
+            subject=subject,
+            body=body,
+            html_body=html_body,
+        )
+    except Exception as exc:
+        try:
+            log_report_delivery_failure(
+                destination=destination,
+                report_id=report_id,
+                workspace_id=workspace_id,
+                client_id=client_id,
+                report_type=report_type,
+                context=context,
+                report_text=report_text,
+                model_name=model_name,
+                error_message=str(exc),
+            )
+        except Exception as log_exc:
+            print(
+                "account_report_email_delivery_failure_log_failed=true "
+                f"report_id={report_id} error_type={type(log_exc).__name__}"
+            )
+        raise
 
 
 def format_html_email(

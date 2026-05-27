@@ -88,6 +88,34 @@ def generate_and_log_report(
         raise
 
 
+def log_report_delivery_failure(
+    destination: BigQueryDestination,
+    report_id: str,
+    workspace_id: str,
+    client_id: str,
+    report_type: ReportType,
+    context: dict[str, Any],
+    report_text: str | None,
+    model_name: str,
+    error_message: str,
+) -> None:
+    """Write a failed delivery row to ai_report_logs."""
+    log_row = _build_report_log(
+        report_id=report_id,
+        workspace_id=workspace_id,
+        client_id=client_id,
+        report_type=report_type,
+        context=context,
+        prompt="",
+        model_name=model_name,
+        status="failed",
+        report_text=report_text,
+        error_message=f"email_delivery_failed: {error_message}",
+        raw_response={"delivery_status": "failed"},
+    )
+    destination.insert_rows(AI_REPORT_LOGS_TABLE, [log_row])
+
+
 def _build_report_log(
     report_id: str,
     workspace_id: str,

@@ -9,6 +9,7 @@ from src.ai.send_account_reports import (
     _format_report_group_lines,
     _limit_report_groups,
     _optional_positive_int_env,
+    _send_account_report_email,
     discover_account_report_groups,
     format_html_email,
 )
@@ -31,6 +32,30 @@ class FakeDestination:
     def query_rows(self, sql: str, query_parameters: list | None = None) -> list[dict]:
         self.queries.append(sql)
         return self.rows
+
+    def insert_rows(self, table_name: str, rows: list[dict]) -> int:
+        self.rows.extend(rows)
+        return len(rows)
+
+
+class FakeSender:
+    """Fake email sender for delivery tests."""
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+        self.sent: list[dict] = []
+
+    def send(self, recipient: str, subject: str, body: str, html_body: str | None = None) -> None:
+        if self.error:
+            raise self.error
+        self.sent.append(
+            {
+                "recipient": recipient,
+                "subject": subject,
+                "body": body,
+                "html_body": html_body,
+            }
+        )
 
 
 def test_discover_account_report_groups_uses_account_name() -> None:
@@ -181,6 +206,36 @@ def test_default_period_start_uses_schedule_delivery_day(monkeypatch) -> None:
         "delivery_day": 10,
         "timezone": "Asia/Taipei",
     }
+
+
+def test_send_account_report_email_logs_delivery_failure() -> None:
+    """SMTP failures write a failed delivery log row before bubbling up."""
+    destination = FakeDestination(rows=[])
+    sender = FakeSender(error=RuntimeError("smtp error"))
+
+    with pytest.raises(RuntimeError, match="smtp error"):
+        _send_account_report_email(
+            sender=sender,
+            destination=destination,
+            report_id="report-1",
+            workspace_id="mark_internal",
+            client_id="demo_client_001",
+            report_type="monthly",
+            context={
+                "period_start_date": "2026-04-01",
+                "period_end_date": "2026-04-30",
+            },
+            report_text="AI report text",
+            model_name="gpt-test",
+            recipient="recipient@example.com",
+            subject="Report",
+            body="Plain body",
+            html_body="<strong>HTML body</strong>",
+        )
+
+    assert destination.rows[0]["status"] == "failed"
+    assert destination.rows[0]["report_id"] == "report-1"
+    assert destination.rows[0]["error_message"] == "email_delivery_failed: smtp error"
 
 
 def test_format_html_email_renders_table_and_bold_without_markdown_stars() -> None:
