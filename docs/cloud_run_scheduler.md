@@ -153,6 +153,9 @@ Default settings:
 
 The scheduled job does not need `AI_REPORT_PERIOD_START_DATE`. Monthly reports default to the previous complete month. Weekly reports default to the previous complete Monday-starting week.
 
+For account-grouped report operations, including list mode, test sends, capped
+batches, and log verification, see `docs/ai_report_operations_runbook.md`.
+
 Run the AI report job manually:
 
 ```bash
