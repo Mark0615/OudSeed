@@ -329,6 +329,13 @@ For the repeatable operator workflow, including list mode, one-account test
 sends, capped batches, full sends, and log verification, see
 `docs/ai_report_operations_runbook.md`.
 
+List configured report schedules without calling BigQuery, OpenAI, or SMTP:
+
+```bash
+AI_REPORT_LIST_SCHEDULES=true \
+.venv/bin/python -m src.ai.send_account_reports
+```
+
 List account groups for a report period without calling OpenAI or sending email:
 
 ```bash

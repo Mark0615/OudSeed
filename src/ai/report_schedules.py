@@ -49,6 +49,40 @@ def find_report_schedule(config: dict[str, Any], schedule_id: str | None) -> Rep
     return schedule
 
 
+def list_report_schedules(config: dict[str, Any]) -> list[ReportSchedule]:
+    """Return all configured client-level report schedules."""
+    schedules: list[ReportSchedule] = []
+    for client in config.get("clients", []):
+        if not isinstance(client, dict):
+            continue
+        client_id = client.get("client_id")
+        for raw_schedule in client.get("report_schedules", []) or []:
+            if isinstance(raw_schedule, dict):
+                schedules.append(_resolve_schedule(client_id=client_id, raw_schedule=raw_schedule))
+    return schedules
+
+
+def format_report_schedule_lines(schedules: list[ReportSchedule]) -> list[str]:
+    """Return printable schedule metadata without exposing recipients."""
+    lines = [f"ai_report_schedules=true schedule_count={len(schedules)}"]
+    for index, schedule in enumerate(schedules, start=1):
+        lines.append(
+            "ai_report_schedule="
+            f"{index} schedule_id={schedule.schedule_id} "
+            f"client_id={schedule.client_id} "
+            f"enabled={str(schedule.enabled).lower()} "
+            f"report_type={schedule.report_type} "
+            f"delivery_day={schedule.delivery_day} "
+            f"timezone={schedule.timezone or '-'} "
+            f"channel={schedule.channel} "
+            f"depth={schedule.depth} "
+            f"account_group_name={schedule.account_group_name or '-'} "
+            f"account_group_limit={schedule.account_group_limit or '-'} "
+            f"has_email_to={str(bool(schedule.email_to)).lower()}"
+        )
+    return lines
+
+
 def _resolve_schedule(client_id: str, raw_schedule: dict[str, Any]) -> ReportSchedule:
     """Build a typed schedule object from config data."""
     return ReportSchedule(
