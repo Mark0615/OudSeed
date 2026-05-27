@@ -8,6 +8,7 @@ import pytest
 from src.utils.date_utils import (
     _get_default_report_period_start_for_now,
     _get_default_sync_range_for_now,
+    _get_scheduled_report_period_start_for_now,
     _today_in_timezone,
     get_default_report_period_start,
     get_default_sync_range,
@@ -72,6 +73,42 @@ def test_get_default_monthly_report_period_start() -> None:
 
     assert _get_default_report_period_start_for_now(
         report_type="monthly",
+        timezone="Asia/Taipei",
+        now=now,
+    ) == "2026-04-01"
+
+
+def test_get_scheduled_weekly_report_period_start_uses_delivery_day() -> None:
+    """Weekly schedule periods end the day before the latest configured delivery day."""
+    now = datetime(2026, 5, 27, 10, 0, tzinfo=ZoneInfo("Asia/Taipei"))
+
+    assert _get_scheduled_report_period_start_for_now(
+        report_type="weekly",
+        delivery_day="wednesday",
+        timezone="Asia/Taipei",
+        now=now,
+    ) == "2026-05-20"
+
+
+def test_get_scheduled_monthly_report_period_start_waits_for_delivery_day() -> None:
+    """Monthly schedule periods advance only after the configured delivery day."""
+    now = datetime(2026, 5, 5, 10, 0, tzinfo=ZoneInfo("Asia/Taipei"))
+
+    assert _get_scheduled_report_period_start_for_now(
+        report_type="monthly",
+        delivery_day=10,
+        timezone="Asia/Taipei",
+        now=now,
+    ) == "2026-03-01"
+
+
+def test_get_scheduled_monthly_report_period_start_after_delivery_day() -> None:
+    """Monthly schedule periods use the previous complete month after delivery day."""
+    now = datetime(2026, 5, 27, 10, 0, tzinfo=ZoneInfo("Asia/Taipei"))
+
+    assert _get_scheduled_report_period_start_for_now(
+        report_type="monthly",
+        delivery_day=10,
         timezone="Asia/Taipei",
         now=now,
     ) == "2026-04-01"

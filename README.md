@@ -262,6 +262,12 @@ AI_REPORT_PERIOD_START_DATE=2025-03-01
 AI_REPORT_CLIENT_ID=your-client-id
 ```
 
+For scheduled account-grouped sends, `AI_REPORT_SCHEDULE_ID` can read defaults
+from `config/clients.yaml` under `clients[].report_schedules[]`, including
+report type, delivery day, recipient, depth, and optional account-group safety
+controls. `AI_REPORT_PERIOD_START_DATE`, recipient, depth, and account-group
+environment variables can still be used for one-off tests.
+
 Generate one report locally:
 
 ```bash

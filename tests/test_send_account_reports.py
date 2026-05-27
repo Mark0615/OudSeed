@@ -4,6 +4,7 @@ import pytest
 
 from src.ai.send_account_reports import (
     _bool_env,
+    _default_period_start,
     _filter_report_groups,
     _format_report_group_lines,
     _limit_report_groups,
@@ -11,6 +12,7 @@ from src.ai.send_account_reports import (
     discover_account_report_groups,
     format_html_email,
 )
+from src.ai.report_schedules import ReportSchedule
 
 
 class FakeDestination:
@@ -141,6 +143,44 @@ def test_bool_env(monkeypatch) -> None:
     monkeypatch.setenv("AI_REPORT_LIST_ACCOUNT_GROUPS", "maybe")
     with pytest.raises(ValueError, match="boolean"):
         _bool_env("AI_REPORT_LIST_ACCOUNT_GROUPS")
+
+
+def test_default_period_start_uses_schedule_delivery_day(monkeypatch) -> None:
+    """Schedule-based sends derive the period from the configured delivery day."""
+    calls = {}
+
+    def fake_get_scheduled_report_period_start(report_type: str, delivery_day: object, timezone: str) -> str:
+        calls["report_type"] = report_type
+        calls["delivery_day"] = delivery_day
+        calls["timezone"] = timezone
+        return "2026-04-01"
+
+    monkeypatch.setattr(
+        "src.ai.send_account_reports.get_scheduled_report_period_start",
+        fake_get_scheduled_report_period_start,
+    )
+    schedule = ReportSchedule(
+        schedule_id="monthly_email_default",
+        client_id="demo_client_001",
+        report_type="monthly",
+        delivery_day=10,
+        timezone="Asia/Taipei",
+        email_to="recipient@example.com",
+    )
+
+    assert (
+        _default_period_start(
+            report_type="monthly",
+            timezone="Asia/Taipei",
+            schedule=schedule,
+        )
+        == "2026-04-01"
+    )
+    assert calls == {
+        "report_type": "monthly",
+        "delivery_day": 10,
+        "timezone": "Asia/Taipei",
+    }
 
 
 def test_format_html_email_renders_table_and_bold_without_markdown_stars() -> None:

@@ -55,6 +55,48 @@ def _validate_config(config: dict[str, Any]) -> None:
         _require_mapping_key(client, "client_id", location)
         _require_mapping_key(client, "platforms", location)
         _require_mapping_key(client, "destinations", location)
+        _validate_report_schedules(client, location)
+
+
+def _validate_report_schedules(client: dict[str, Any], location: str) -> None:
+    """Validate optional client-level AI report schedules."""
+    schedules = client.get("report_schedules")
+    if schedules is None:
+        return
+    if not isinstance(schedules, list):
+        raise ValueError(f"{location}.report_schedules must be a list.")
+
+    seen_schedule_ids: set[str] = set()
+    for index, schedule in enumerate(schedules):
+        schedule_location = f"{location}.report_schedules[{index}]"
+        if not isinstance(schedule, dict):
+            raise ValueError(f"{schedule_location} must be a mapping/object.")
+
+        schedule_id = _require_mapping_key(schedule, "schedule_id", schedule_location)
+        if schedule_id in seen_schedule_ids:
+            raise ValueError(f"Duplicate report schedule id: {schedule_id}")
+        seen_schedule_ids.add(schedule_id)
+
+        report_type = _require_mapping_key(schedule, "report_type", schedule_location)
+        if report_type not in {"weekly", "monthly"}:
+            raise ValueError(f"{schedule_location}.report_type must be 'weekly' or 'monthly'.")
+
+        _require_mapping_key(schedule, "delivery_day", schedule_location)
+        channel = schedule.get("channel", "email")
+        if channel != "email":
+            raise ValueError(f"{schedule_location}.channel must be 'email'.")
+
+        depth = schedule.get("depth", "standard")
+        if depth not in {"brief", "standard", "deep"}:
+            raise ValueError(f"{schedule_location}.depth must be 'brief', 'standard', or 'deep'.")
+
+        if "email_to" in schedule:
+            _require_mapping_key(schedule, "email_to", schedule_location)
+
+        if "account_group_limit" in schedule:
+            limit = schedule["account_group_limit"]
+            if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
+                raise ValueError(f"{schedule_location}.account_group_limit must be a positive integer.")
 
 
 def _require_mapping_key(mapping: dict[str, Any], key: str, location: str) -> Any:

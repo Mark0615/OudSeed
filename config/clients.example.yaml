@@ -21,6 +21,24 @@ clients:
     client_name: Demo Client
     enabled: true
 
+    report_schedules:
+      - schedule_id: monthly_email_default
+        enabled: true
+        report_type: monthly
+        delivery_day: 1
+        timezone: Asia/Taipei
+        channel: email
+        email_to: recipient@example.com
+        depth: standard
+      - schedule_id: weekly_email_default
+        enabled: false
+        report_type: weekly
+        delivery_day: monday
+        timezone: Asia/Taipei
+        channel: email
+        email_to: recipient@example.com
+        depth: standard
+
     platforms:
       meta_ads:
         enabled: true
