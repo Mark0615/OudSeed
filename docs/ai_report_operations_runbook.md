@@ -42,7 +42,7 @@ Set these values locally or in the Cloud Run Job environment:
 OPENAI_API_KEY=your-openai-api-key
 OPENAI_MODEL=gpt-5.2
 OPENAI_REASONING_EFFORT=medium
-OPENAI_TIMEOUT_SECONDS=60
+OPENAI_TIMEOUT_SECONDS=180
 AI_REPORT_TYPE=monthly
 AI_REPORT_SCHEDULE_ID=monthly_email_default
 AI_REPORT_PERIOD_START_DATE=2026-04-01
@@ -62,6 +62,11 @@ SMTP_USE_TLS=true
 For scheduled jobs, leave `AI_REPORT_PERIOD_START_DATE` empty. Monthly reports
 default to the previous complete month. Weekly reports default to the previous
 complete Monday-starting week.
+
+Use `AI_REPORT_PREFLIGHT=true` to verify a scheduled account report without
+calling OpenAI or sending email. Preflight prints resolved report settings,
+group count, and account group names while hiding recipient emails and account
+IDs.
 
 ## 1. List Report Schedules
 
@@ -204,4 +209,26 @@ Example deployment:
 ```bash
 AI_REPORT_SCHEDULE_ID=monthly_email_default \
 bash deploy/deploy_account_ai_report_job.sh
+```
+
+Account-report deployments default to `OPENAI_TIMEOUT_SECONDS=180`,
+`OPENAI_MAX_OUTPUT_TOKENS=5000`, and `JOB_MAX_RETRIES=0` for production email
+sends. The longer timeout gives the Responses API enough room for account-level
+HTML reports, and zero job-level retries avoids duplicate emails after a partial
+send.
+
+Safe Cloud Run verification:
+
+```bash
+gcloud run jobs update oudseed-account-ai-report \
+  --region asia-east1 \
+  --update-env-vars=AI_REPORT_PREFLIGHT=true
+
+gcloud run jobs execute oudseed-account-ai-report \
+  --region asia-east1 \
+  --wait
+
+gcloud run jobs update oudseed-account-ai-report \
+  --region asia-east1 \
+  --remove-env-vars=AI_REPORT_PREFLIGHT
 ```
