@@ -182,7 +182,9 @@ bash deploy/deploy_account_ai_report_job.sh
 This deploys the same image but runs `src.ai.send_account_reports`. The script
 passes `AI_REPORT_SCHEDULE_ID` to the job, reads client schedules from
 `CLIENTS_CONFIG_YAML`, and stores `SMTP_PASSWORD` in Secret Manager when the
-value is present in the environment or `.env`.
+value is present in the environment or `.env`. Account-report jobs default to
+`OPENAI_MAX_OUTPUT_TOKENS=5000` and `JOB_MAX_RETRIES=0` to reduce incomplete AI
+responses and avoid duplicate email sends after a partial failure.
 
 ## Notes
 
