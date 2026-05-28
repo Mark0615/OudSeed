@@ -90,57 +90,20 @@ def main() -> None:
     )
     sender = SMTPEmailSender(load_smtp_email_config_from_env())
 
-    for group in groups:
-        result = generate_and_log_report(
-            destination=destination,
-            openai_client=openai_client,
-            report_type=report_type,
-            workspace_id=config["workspace_id"],
-            client_id=client_id,
-            period_start_date=period_start_date,
-            account_ids=group["account_ids"],
-            limit=limit,
-            max_output_tokens=max_output_tokens,
-            report_depth=report_depth,
-        )
-        subject = _default_subject(
-            report_type=report_type,
-            account_group_name=group["account_group_name"],
-            period_start_date=period_start_date,
-        )
-        body = _format_text_email(
-            report_id=result["report_id"],
-            client_id=client_id,
-            context=result["context"],
-            report_text=result["report_text"],
-        )
-        html_body = format_html_email(
-            report_id=result["report_id"],
-            client_id=client_id,
-            context=result["context"],
-            report_text=result["report_text"],
-            account_group_name=group["account_group_name"],
-        )
-        _send_account_report_email(
-            sender=sender,
-            destination=destination,
-            report_id=result["report_id"],
-            workspace_id=config["workspace_id"],
-            client_id=client_id,
-            report_type=report_type,
-            context=result["context"],
-            report_text=result["report_text"],
-            model_name=openai_client.model,
-            recipient=recipient,
-            subject=subject,
-            body=body,
-            html_body=html_body,
-        )
-        print(
-            "account_report_email_sent=true "
-            f"report_id={result['report_id']} account_group={group['account_group_name']} "
-            f"recipient={recipient}"
-        )
+    _generate_and_send_account_group_reports(
+        groups=groups,
+        destination=destination,
+        openai_client=openai_client,
+        sender=sender,
+        report_type=report_type,
+        workspace_id=config["workspace_id"],
+        client_id=client_id,
+        period_start_date=period_start_date,
+        limit=limit,
+        max_output_tokens=max_output_tokens,
+        report_depth=report_depth,
+        recipient=recipient,
+    )
 
 
 def discover_account_report_groups(
@@ -241,6 +204,101 @@ def _format_report_group_lines(
             f"account_count={len(group.get('account_ids', []))}"
         )
     return lines
+
+
+def _generate_and_send_account_group_reports(
+    groups: list[dict[str, Any]],
+    destination: BigQueryDestination,
+    openai_client: OpenAITextClient,
+    sender: SMTPEmailSender,
+    report_type: str,
+    workspace_id: str,
+    client_id: str,
+    period_start_date: str,
+    limit: int,
+    max_output_tokens: int,
+    report_depth: str,
+    recipient: str,
+) -> None:
+    """Generate and send reports while isolating failures by account group."""
+    failures: list[dict[str, str]] = []
+    for group in groups:
+        account_group_name = str(group["account_group_name"])
+        try:
+            result = generate_and_log_report(
+                destination=destination,
+                openai_client=openai_client,
+                report_type=report_type,
+                workspace_id=workspace_id,
+                client_id=client_id,
+                period_start_date=period_start_date,
+                account_ids=group["account_ids"],
+                limit=limit,
+                max_output_tokens=max_output_tokens,
+                report_depth=report_depth,
+            )
+            subject = _default_subject(
+                report_type=report_type,
+                account_group_name=account_group_name,
+                period_start_date=period_start_date,
+            )
+            body = _format_text_email(
+                report_id=result["report_id"],
+                client_id=client_id,
+                context=result["context"],
+                report_text=result["report_text"],
+            )
+            html_body = format_html_email(
+                report_id=result["report_id"],
+                client_id=client_id,
+                context=result["context"],
+                report_text=result["report_text"],
+                account_group_name=account_group_name,
+            )
+            _send_account_report_email(
+                sender=sender,
+                destination=destination,
+                report_id=result["report_id"],
+                workspace_id=workspace_id,
+                client_id=client_id,
+                report_type=report_type,
+                context=result["context"],
+                report_text=result["report_text"],
+                model_name=openai_client.model,
+                recipient=recipient,
+                subject=subject,
+                body=body,
+                html_body=html_body,
+            )
+            print(
+                "account_report_email_sent=true "
+                f"report_id={result['report_id']} account_group={account_group_name} "
+                f"recipient={recipient}"
+            )
+        except Exception as exc:
+            failures.append(
+                {
+                    "account_group_name": account_group_name,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                }
+            )
+            print(
+                "account_report_email_failed=true "
+                f"account_group={account_group_name} error_type={type(exc).__name__}"
+            )
+
+    if failures:
+        raise RuntimeError(_format_group_failure_summary(failures))
+
+
+def _format_group_failure_summary(failures: list[dict[str, str]]) -> str:
+    """Return a compact account-group failure summary."""
+    failed_groups = ", ".join(
+        f"{failure['account_group_name']} ({failure['error_type']})"
+        for failure in failures
+    )
+    return f"Account report failed for {len(failures)} account group(s): {failed_groups}"
 
 
 def _send_account_report_email(

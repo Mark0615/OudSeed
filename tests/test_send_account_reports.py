@@ -7,6 +7,7 @@ from src.ai.send_account_reports import (
     _default_period_start,
     _filter_report_groups,
     _format_report_group_lines,
+    _generate_and_send_account_group_reports,
     _limit_report_groups,
     _optional_positive_int_env,
     _send_account_report_email,
@@ -56,6 +57,12 @@ class FakeSender:
                 "html_body": html_body,
             }
         )
+
+
+class FakeOpenAIClient:
+    """Fake OpenAI client for account-group processing tests."""
+
+    model = "gpt-test"
 
 
 def test_discover_account_report_groups_uses_account_name() -> None:
@@ -236,6 +243,69 @@ def test_send_account_report_email_logs_delivery_failure() -> None:
     assert destination.rows[0]["status"] == "failed"
     assert destination.rows[0]["report_id"] == "report-1"
     assert destination.rows[0]["error_message"] == "email_delivery_failed: smtp error"
+
+
+def test_generate_and_send_account_group_reports_continues_after_group_failure(
+    monkeypatch,
+    capsys,
+) -> None:
+    """One failed account group does not block later groups."""
+    calls: list[str] = []
+    sent_report_ids: list[str] = []
+
+    def fake_generate_and_log_report(**kwargs):
+        account_id = kwargs["account_ids"][0]
+        calls.append(account_id)
+        if account_id == "2":
+            raise RuntimeError("model error")
+        return {
+            "report_id": f"report-{account_id}",
+            "report_text": "AI report text",
+            "context": {
+                "period_start_date": "2026-04-01",
+                "period_end_date": "2026-04-30",
+                "campaigns": [],
+            },
+        }
+
+    def fake_send_account_report_email(**kwargs) -> None:
+        sent_report_ids.append(kwargs["report_id"])
+
+    monkeypatch.setattr(
+        "src.ai.send_account_reports.generate_and_log_report",
+        fake_generate_and_log_report,
+    )
+    monkeypatch.setattr(
+        "src.ai.send_account_reports._send_account_report_email",
+        fake_send_account_report_email,
+    )
+
+    with pytest.raises(RuntimeError, match="1 account group"):
+        _generate_and_send_account_group_reports(
+            groups=[
+                {"account_group_name": "A", "account_ids": ["1"]},
+                {"account_group_name": "B", "account_ids": ["2"]},
+                {"account_group_name": "C", "account_ids": ["3"]},
+            ],
+            destination=FakeDestination(rows=[]),
+            openai_client=FakeOpenAIClient(),
+            sender=FakeSender(),
+            report_type="monthly",
+            workspace_id="mark_internal",
+            client_id="demo_client_001",
+            period_start_date="2026-04-01",
+            limit=10,
+            max_output_tokens=5000,
+            report_depth="standard",
+            recipient="recipient@example.com",
+        )
+
+    assert calls == ["1", "2", "3"]
+    assert sent_report_ids == ["report-1", "report-3"]
+    output = capsys.readouterr().out
+    assert "account_report_email_sent=true report_id=report-1 account_group=A" in output
+    assert "account_report_email_failed=true account_group=B error_type=RuntimeError" in output
+    assert "account_report_email_sent=true report_id=report-3 account_group=C" in output
 
 
 def test_format_html_email_renders_table_and_bold_without_markdown_stars() -> None:
