@@ -26,6 +26,7 @@ OPENAI_MODEL="${OPENAI_MODEL:-gpt-5.2}"
 OPENAI_REASONING_EFFORT="${OPENAI_REASONING_EFFORT:-medium}"
 OPENAI_MAX_OUTPUT_TOKENS="${OPENAI_MAX_OUTPUT_TOKENS:-1800}"
 OPENAI_TIMEOUT_SECONDS="${OPENAI_TIMEOUT_SECONDS:-60}"
+JOB_MAX_RETRIES="${JOB_MAX_RETRIES:-1}"
 
 if [[ -f "${ENV_FILE}" ]]; then
   set -a
@@ -141,7 +142,7 @@ gcloud run jobs deploy "${JOB_NAME}" \
   --region="${REGION}" \
   --service-account="${RUNTIME_SERVICE_ACCOUNT}" \
   --tasks=1 \
-  --max-retries=1 \
+  --max-retries="${JOB_MAX_RETRIES}" \
   --task-timeout=900s \
   --command=python \
   --args="-m,${AI_REPORT_MODULE}" \

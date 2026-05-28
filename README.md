@@ -501,7 +501,9 @@ bash deploy/deploy_account_ai_report_job.sh
 
 This uses `src.ai.send_account_reports` as the Cloud Run Job module. SMTP
 settings are read from the environment or `.env`; `SMTP_PASSWORD` is stored in
-Secret Manager when provided.
+Secret Manager when provided. Account-report jobs default to
+`OPENAI_MAX_OUTPUT_TOKENS=5000` and `JOB_MAX_RETRIES=0` to reduce incomplete AI
+responses and avoid duplicate email sends after a partial failure.
 
 Default weekly deployment settings:
 
