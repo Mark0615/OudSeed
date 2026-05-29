@@ -183,8 +183,14 @@ This deploys the same image but runs `src.ai.send_account_reports`. The script
 passes `AI_REPORT_SCHEDULE_ID` to the job, reads client schedules from
 `CLIENTS_CONFIG_YAML`, and stores `SMTP_PASSWORD` in Secret Manager when the
 value is present in the environment or `.env`. Account-report jobs default to
-`OPENAI_MAX_OUTPUT_TOKENS=5000` and `JOB_MAX_RETRIES=0` to reduce incomplete AI
-responses and avoid duplicate email sends after a partial failure.
+`OPENAI_MAX_OUTPUT_TOKENS=5000`, `OPENAI_TIMEOUT_SECONDS=180`, and
+`JOB_MAX_RETRIES=0` to reduce incomplete AI responses and avoid duplicate email
+sends after a partial failure.
+
+For deployment verification without sending email, run the job once with
+`AI_REPORT_PREFLIGHT=true`. This validates the resolved schedule, period,
+account group count, report depth, and timeout without calling OpenAI or
+printing recipient emails/account IDs.
 
 ## Notes
 

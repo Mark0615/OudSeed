@@ -55,6 +55,7 @@ def main() -> None:
     if account_group_limit is None:
         account_group_limit = _schedule_value(schedule, "account_group_limit")
     list_account_groups = _bool_env("AI_REPORT_LIST_ACCOUNT_GROUPS", False)
+    preflight = _bool_env("AI_REPORT_PREFLIGHT", False)
     report_depth = _report_depth(os.getenv("AI_REPORT_DEPTH") or _schedule_value(schedule, "depth") or "standard")
     max_output_tokens = _positive_int_env("OPENAI_MAX_OUTPUT_TOKENS", 5000)
     openai_timeout_seconds = _positive_int_env("OPENAI_TIMEOUT_SECONDS", 120)
@@ -82,6 +83,19 @@ def main() -> None:
     recipient = os.getenv("AI_REPORT_EMAIL_TO") or _schedule_value(schedule, "email_to")
     if not recipient:
         raise ValueError("Missing required environment variable or schedule value: AI_REPORT_EMAIL_TO")
+    if preflight:
+        for line in _format_preflight_lines(
+            groups=groups,
+            report_type=report_type,
+            period_start_date=period_start_date,
+            report_depth=report_depth,
+            max_output_tokens=max_output_tokens,
+            openai_timeout_seconds=openai_timeout_seconds,
+            recipient=recipient,
+        ):
+            print(line)
+        return
+
     openai_client = OpenAITextClient(
         api_key=_required_env("OPENAI_API_KEY"),
         model=os.getenv("OPENAI_MODEL", "gpt-5.2"),
@@ -206,6 +220,34 @@ def _format_report_group_lines(
     return lines
 
 
+def _format_preflight_lines(
+    groups: list[dict[str, Any]],
+    report_type: str,
+    period_start_date: str,
+    report_depth: str,
+    max_output_tokens: int,
+    openai_timeout_seconds: int,
+    recipient: str,
+) -> list[str]:
+    """Return safe preflight lines for account-report Cloud Run verification."""
+    lines = [
+        "account_report_preflight=true "
+        f"report_type={report_type} period_start_date={period_start_date} "
+        f"group_count={len(groups)} depth={report_depth} "
+        f"max_output_tokens={max_output_tokens} "
+        f"openai_timeout_seconds={openai_timeout_seconds} "
+        f"recipient_configured={str(bool(recipient)).lower()}"
+    ]
+    lines.extend(
+        _format_report_group_lines(
+            groups=groups,
+            report_type=report_type,
+            period_start_date=period_start_date,
+        )[1:]
+    )
+    return lines
+
+
 def _generate_and_send_account_group_reports(
     groups: list[dict[str, Any]],
     destination: BigQueryDestination,
@@ -222,6 +264,7 @@ def _generate_and_send_account_group_reports(
 ) -> None:
     """Generate and send reports while isolating failures by account group."""
     failures: list[dict[str, str]] = []
+    sent_count = 0
     for group in groups:
         account_group_name = str(group["account_group_name"])
         try:
@@ -270,10 +313,11 @@ def _generate_and_send_account_group_reports(
                 body=body,
                 html_body=html_body,
             )
+            sent_count += 1
             print(
                 "account_report_email_sent=true "
                 f"report_id={result['report_id']} account_group={account_group_name} "
-                f"recipient={recipient}"
+                "recipient_configured=true"
             )
         except Exception as exc:
             failures.append(
@@ -289,7 +333,16 @@ def _generate_and_send_account_group_reports(
             )
 
     if failures:
+        print(
+            "account_report_batch_finished=false "
+            f"group_count={len(groups)} sent_count={sent_count} failed_count={len(failures)}"
+        )
         raise RuntimeError(_format_group_failure_summary(failures))
+
+    print(
+        "account_report_batch_finished=true "
+        f"group_count={len(groups)} sent_count={sent_count} failed_count=0"
+    )
 
 
 def _format_group_failure_summary(failures: list[dict[str, str]]) -> str:

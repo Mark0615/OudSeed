@@ -7,6 +7,7 @@ from src.ai.send_account_reports import (
     _default_period_start,
     _filter_report_groups,
     _format_report_group_lines,
+    _format_preflight_lines,
     _generate_and_send_account_group_reports,
     _limit_report_groups,
     _optional_positive_int_env,
@@ -143,6 +144,39 @@ def test_format_report_group_lines_hides_account_ids() -> None:
     assert "account_count=2" in output
     assert "act_123" not in output
     assert "act_456" not in output
+
+
+def test_format_preflight_lines_hides_recipient_and_account_ids() -> None:
+    """Preflight mode prints resolved settings without leaking sensitive values."""
+    groups = [
+        {
+            "account_group_name": "Miniware TW",
+            "account_ids": ["act_123"],
+            "platforms": ["meta_ads"],
+        }
+    ]
+
+    lines = _format_preflight_lines(
+        groups=groups,
+        report_type="monthly",
+        period_start_date="2026-04-01",
+        report_depth="standard",
+        max_output_tokens=5000,
+        openai_timeout_seconds=180,
+        recipient="recipient@example.com",
+    )
+    output = "\n".join(lines)
+
+    assert "account_report_preflight=true" in output
+    assert "report_type=monthly" in output
+    assert "period_start_date=2026-04-01" in output
+    assert "group_count=1" in output
+    assert "depth=standard" in output
+    assert "max_output_tokens=5000" in output
+    assert "openai_timeout_seconds=180" in output
+    assert "recipient_configured=true" in output
+    assert "recipient@example.com" not in output
+    assert "act_123" not in output
 
 
 def test_optional_positive_int_env(monkeypatch) -> None:
@@ -306,6 +340,55 @@ def test_generate_and_send_account_group_reports_continues_after_group_failure(
     assert "account_report_email_sent=true report_id=report-1 account_group=A" in output
     assert "account_report_email_failed=true account_group=B error_type=RuntimeError" in output
     assert "account_report_email_sent=true report_id=report-3 account_group=C" in output
+    assert "recipient=recipient@example.com" not in output
+    assert "recipient_configured=true" in output
+    assert "account_report_batch_finished=false group_count=3 sent_count=2 failed_count=1" in output
+
+
+def test_generate_and_send_account_group_reports_logs_success_batch_summary(
+    monkeypatch,
+    capsys,
+) -> None:
+    """Successful account-group batches emit a compact operational summary."""
+
+    def fake_generate_and_log_report(**kwargs):
+        account_id = kwargs["account_ids"][0]
+        return {
+            "report_id": f"report-{account_id}",
+            "report_text": "AI report text",
+            "context": {
+                "period_start_date": "2026-04-01",
+                "period_end_date": "2026-04-30",
+                "campaigns": [],
+            },
+        }
+
+    monkeypatch.setattr(
+        "src.ai.send_account_reports.generate_and_log_report",
+        fake_generate_and_log_report,
+    )
+
+    _generate_and_send_account_group_reports(
+        groups=[
+            {"account_group_name": "A", "account_ids": ["1"]},
+            {"account_group_name": "B", "account_ids": ["2"]},
+        ],
+        destination=FakeDestination(rows=[]),
+        openai_client=FakeOpenAIClient(),
+        sender=FakeSender(),
+        report_type="monthly",
+        workspace_id="mark_internal",
+        client_id="demo_client_001",
+        period_start_date="2026-04-01",
+        limit=10,
+        max_output_tokens=5000,
+        report_depth="standard",
+        recipient="recipient@example.com",
+    )
+
+    output = capsys.readouterr().out
+    assert "account_report_batch_finished=true group_count=2 sent_count=2 failed_count=0" in output
+    assert "recipient=recipient@example.com" not in output
 
 
 def test_format_html_email_renders_table_and_bold_without_markdown_stars() -> None:

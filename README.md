@@ -256,7 +256,7 @@ Required environment values:
 OPENAI_API_KEY=your-openai-api-key
 OPENAI_MODEL=gpt-5.2
 OPENAI_REASONING_EFFORT=medium
-OPENAI_TIMEOUT_SECONDS=60
+OPENAI_TIMEOUT_SECONDS=180
 AI_REPORT_TYPE=monthly
 AI_REPORT_PERIOD_START_DATE=2025-03-01
 AI_REPORT_CLIENT_ID=your-client-id
@@ -278,6 +278,15 @@ Generate a one-off weekly report:
 
 ```bash
 AI_REPORT_TYPE=weekly AI_REPORT_PERIOD_START_DATE=2025-03-24 .venv/bin/python -m src.ai.generate_report
+```
+
+Check a scheduled account-report send without generating AI text or sending
+email:
+
+```bash
+AI_REPORT_SCHEDULE_ID=monthly_email_default \
+AI_REPORT_PREFLIGHT=true \
+.venv/bin/python -m src.ai.send_account_reports
 ```
 
 Generate a one-off Cloud Run report with a specific period:
@@ -502,8 +511,14 @@ bash deploy/deploy_account_ai_report_job.sh
 This uses `src.ai.send_account_reports` as the Cloud Run Job module. SMTP
 settings are read from the environment or `.env`; `SMTP_PASSWORD` is stored in
 Secret Manager when provided. Account-report jobs default to
-`OPENAI_MAX_OUTPUT_TOKENS=5000` and `JOB_MAX_RETRIES=0` to reduce incomplete AI
-responses and avoid duplicate email sends after a partial failure.
+`OPENAI_MAX_OUTPUT_TOKENS=5000`, `OPENAI_TIMEOUT_SECONDS=180`, and
+`JOB_MAX_RETRIES=0` to reduce incomplete AI responses and avoid duplicate email
+sends after a partial failure.
+
+For production verification without sending email, temporarily set
+`AI_REPORT_PREFLIGHT=true` on the Cloud Run Job and execute it once. Preflight
+prints the resolved report type, period, group count, depth, timeout, and
+account group names without exposing recipient emails or account IDs.
 
 Default weekly deployment settings:
 
