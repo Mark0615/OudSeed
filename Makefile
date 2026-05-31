@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 
-.PHONY: install test lint run check clean
+.PHONY: install test lint run check ai-report-deploy-dry-run ai-report-status ai-report-ready ai-report-preflight ai-report-logs ai-report-post-run ai-report-verify clean
 
 install:
 	$(PIP) install -r requirements.txt
@@ -17,6 +17,27 @@ run:
 
 check:
 	$(PYTHON) -m compileall src tests && $(PYTHON) -m pytest
+
+ai-report-deploy-dry-run:
+	DEPLOY_DRY_RUN=true bash deploy/deploy_account_ai_report_job.sh
+
+ai-report-status:
+	PYTHON_BIN=$(PYTHON) bash deploy/check_account_ai_report_status.sh
+
+ai-report-ready:
+	PYTHON_BIN=$(PYTHON) bash deploy/check_account_ai_report_ready.sh
+
+ai-report-preflight:
+	bash deploy/run_account_ai_report_preflight.sh
+
+ai-report-logs:
+	PYTHON_BIN=$(PYTHON) bash deploy/check_account_ai_report_logs.sh
+
+ai-report-post-run:
+	PYTHON_BIN=$(PYTHON) bash deploy/verify_account_ai_report_post_run.sh
+
+ai-report-verify:
+	PYTHON_BIN=$(PYTHON) bash deploy/verify_account_ai_report_ops.sh
 
 clean:
 	find . -type d -name "__pycache__" -prune -exec rm -rf {} +

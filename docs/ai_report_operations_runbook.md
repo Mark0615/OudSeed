@@ -151,7 +151,78 @@ The command sends one HTML email per account group.
 ## 6. Verify Logs
 
 After a send, verify that each account group wrote a row to `ai_report_logs`.
-Use placeholders in saved queries and docs:
+Use the safe checker for routine operations:
+
+```bash
+AI_REPORT_TYPE=monthly \
+AI_REPORT_PERIOD_START_DATE=2026-04-01 \
+make ai-report-logs
+```
+
+When the same period has older test runs, verify only a specific batch:
+
+```bash
+AI_REPORT_TYPE=monthly \
+AI_REPORT_PERIOD_START_DATE=2026-04-01 \
+AI_REPORT_LOG_CREATED_AFTER=2026-05-28T13:52:00Z \
+make ai-report-logs
+```
+
+For automation, fail the command when the fetched window is incomplete or has
+failures:
+
+```bash
+AI_REPORT_TYPE=monthly \
+AI_REPORT_PERIOD_START_DATE=2026-04-01 \
+AI_REPORT_LOG_CREATED_AFTER=2026-05-28T13:52:00Z \
+AI_REPORT_LOG_REQUIRE_COMPLETE=true \
+make ai-report-logs
+```
+
+Use `AI_REPORT_LOG_SHOW_ROWS=false` for summary-only output. The combined
+`make ai-report-verify` target uses summary-only log output by default.
+
+Run the full operations verification flow after a deployment or scheduled send:
+
+```bash
+AI_REPORT_TYPE=monthly \
+AI_REPORT_PERIOD_START_DATE=2026-04-01 \
+AI_REPORT_LOG_CREATED_AFTER=2026-05-28T13:52:00Z \
+make ai-report-verify
+```
+
+This runs the deploy preview, Cloud Run/Scheduler status check, and report-log
+completeness check. When `AI_REPORT_LOG_CREATED_AFTER` is set, the log check
+defaults to `AI_REPORT_LOG_REQUIRE_COMPLETE=true`; without it, the log check is
+informational so older test runs do not fail the whole verification.
+
+After the scheduled monthly run, verify the new batch only:
+
+```bash
+AI_REPORT_TYPE=monthly \
+AI_REPORT_PERIOD_START_DATE=2026-05-01 \
+AI_REPORT_LOG_CREATED_AFTER=2026-05-31T21:00:00Z \
+make ai-report-post-run
+```
+
+`make ai-report-post-run` requires both `AI_REPORT_PERIOD_START_DATE` and
+`AI_REPORT_LOG_CREATED_AFTER`, and it always runs the log check in strict mode.
+For the `2026-06-01 05:00 Asia/Taipei` scheduled run, use
+`AI_REPORT_PERIOD_START_DATE=2026-05-01` and
+`AI_REPORT_LOG_CREATED_AFTER=2026-05-31T21:00:00Z`.
+
+Expected output:
+
+- `expected_group_count` equals the account groups found in reporting marts
+- `successful_group_count` equals the number of expected groups with at least
+  one successful report log in the fetched result window
+- `success_log_count` may be higher than `successful_group_count` if the same
+  period was tested multiple times
+- `failed_log_count=0`
+- `delivery_failure_count=0`
+- `unconfirmed_group_count=0`
+
+Use placeholders in saved ad-hoc queries and docs:
 
 ```sql
 SELECT
@@ -199,15 +270,13 @@ Before sending client-visible reports:
 - no secrets, tokens, real ad account IDs, or real customer IDs are copied into
   docs, logs, screenshots, or PR comments
 
-## Next Productization Step
+## Cloud Run Operations
 
-Deploy schedule-based account reports to Cloud Run Job variants so monthly and
-weekly sends can use `AI_REPORT_SCHEDULE_ID` instead of long env-var overrides.
+Use these commands for the deployed account-grouped monthly report job.
 
 Example deployment:
 
 ```bash
-AI_REPORT_SCHEDULE_ID=monthly_email_default \
 bash deploy/deploy_account_ai_report_job.sh
 ```
 
@@ -217,18 +286,65 @@ sends. The longer timeout gives the Responses API enough room for account-level
 HTML reports, and zero job-level retries avoids duplicate emails after a partial
 send.
 
+Preview effective deploy settings before touching GCP:
+
+```bash
+make ai-report-deploy-dry-run
+```
+
+The preview prints only sanitized flags and effective runtime settings. Values
+passed directly to the deploy command take priority over `.env`, which prevents
+older local defaults from overriding production account-report settings.
+The account-report wrapper defaults `AI_REPORT_SCHEDULE_ID` to
+`monthly_email_default`; override it only for a different scheduled report
+variant.
+Dry-run can run without real secrets; it reports configured flags such as
+`openai_api_key_configured` and `clients_config_file_exists` without printing
+secret values.
+
+Run the combined operations check after deployment or after a scheduled send:
+
+```bash
+AI_REPORT_TYPE=monthly \
+AI_REPORT_PERIOD_START_DATE=2026-04-01 \
+AI_REPORT_LOG_CREATED_AFTER=2026-05-28T13:52:00Z \
+make ai-report-verify
+```
+
 Safe Cloud Run verification:
 
 ```bash
-gcloud run jobs update oudseed-account-ai-report \
-  --region asia-east1 \
-  --update-env-vars=AI_REPORT_PREFLIGHT=true
-
-gcloud run jobs execute oudseed-account-ai-report \
-  --region asia-east1 \
-  --wait
-
-gcloud run jobs update oudseed-account-ai-report \
-  --region asia-east1 \
-  --remove-env-vars=AI_REPORT_PREFLIGHT
+make ai-report-preflight
 ```
+
+The helper enables `AI_REPORT_PREFLIGHT`, executes the Cloud Run Job, prints the
+sanitized preflight logs, and removes `AI_REPORT_PREFLIGHT` on exit so the next
+scheduled run sends the real report.
+
+Check deployed job and scheduler state:
+
+```bash
+make ai-report-status
+```
+
+Run the readiness gate before a scheduled send:
+
+```bash
+make ai-report-ready
+```
+
+The readiness gate exits non-zero when production settings are unsafe, including
+enabled preflight, disabled Scheduler, missing schedule/recipient/secrets, wrong
+module, wrong model, low timeout/tokens, or non-zero Cloud Run retries.
+
+Expected production state:
+
+- `ready=True`
+- `max_retries=0`
+- `openai_timeout_seconds=180`
+- `preflight_enabled=false`
+- `scheduler_state=ENABLED`
+- `recipient_configured=true`
+- `openai_secret_configured=true`
+- `clients_config_secret_configured=true`
+- `smtp_password_secret_configured=true`
