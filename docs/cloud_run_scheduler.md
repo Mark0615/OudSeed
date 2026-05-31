@@ -112,6 +112,24 @@ ORDER BY started_at DESC
 LIMIT 10;
 ```
 
+Verify AI report delivery health in Looker-facing logs:
+
+```sql
+SELECT
+  report_id,
+  account_group_name,
+  report_type,
+  period_start_date,
+  status,
+  is_email_delivery_failure,
+  has_report_text,
+  report_text_chars,
+  created_at
+FROM `oudseed.ads_pipeline.vw_looker_ai_report_logs`
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
 ## Troubleshooting
 
 If the latest sync log shows a Meta token error like:
@@ -187,10 +205,76 @@ value is present in the environment or `.env`. Account-report jobs default to
 `JOB_MAX_RETRIES=0` to reduce incomplete AI responses and avoid duplicate email
 sends after a partial failure.
 
+Use `DEPLOY_DRY_RUN=true` to preview effective settings before any GCP calls:
+
+```bash
+AI_REPORT_SCHEDULE_ID=monthly_email_default \
+make ai-report-deploy-dry-run
+```
+
+Command-line environment values take priority over `.env`; this keeps wrapper
+defaults stable while still allowing `.env` to provide secrets and optional
+settings.
+The account-report wrapper defaults `AI_REPORT_SCHEDULE_ID` to
+`monthly_email_default`; override it only for another scheduled report variant.
+Dry-run reports configured flags for secrets and local config files instead of
+printing their values, and it can run before real secrets are present.
+
 For deployment verification without sending email, run the job once with
 `AI_REPORT_PREFLIGHT=true`. This validates the resolved schedule, period,
 account group count, report depth, and timeout without calling OpenAI or
 printing recipient emails/account IDs.
+
+Use the helper so preflight is automatically removed after the check:
+
+```bash
+make ai-report-preflight
+```
+
+Check deployed job and scheduler state without printing secrets:
+
+```bash
+make ai-report-status
+```
+
+Run the stricter readiness gate before scheduled sends:
+
+```bash
+make ai-report-ready
+```
+
+Check report-log completeness after a manual or scheduled send:
+
+```bash
+AI_REPORT_TYPE=monthly \
+AI_REPORT_PERIOD_START_DATE=2026-04-01 \
+make ai-report-logs
+```
+
+Add `AI_REPORT_LOG_CREATED_AFTER` when the same period contains older test
+runs and only the latest batch should be evaluated.
+Set `AI_REPORT_LOG_REQUIRE_COMPLETE=true` when this check should return a
+non-zero exit code for missing account groups, generation failures, or delivery
+failures in the fetched window.
+Set `AI_REPORT_LOG_SHOW_ROWS=false` for summary-only output.
+
+Run the combined operations check after deployment or after a scheduled send:
+
+```bash
+AI_REPORT_TYPE=monthly \
+AI_REPORT_PERIOD_START_DATE=2026-04-01 \
+AI_REPORT_LOG_CREATED_AFTER=2026-05-28T13:52:00Z \
+make ai-report-verify
+```
+
+After the scheduled monthly run, verify only the new batch logs:
+
+```bash
+AI_REPORT_TYPE=monthly \
+AI_REPORT_PERIOD_START_DATE=2026-05-01 \
+AI_REPORT_LOG_CREATED_AFTER=2026-05-31T21:00:00Z \
+make ai-report-post-run
+```
 
 ## Notes
 

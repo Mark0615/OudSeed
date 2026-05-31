@@ -239,9 +239,12 @@ SELECT
   report_type,
   week_start_date AS period_start_date,
   week_end_date AS period_end_date,
+  JSON_VALUE(prompt_payload, '$.context.campaigns[0].account_name') AS account_group_name,
   model_name,
   status,
   error_message,
+  STARTS_WITH(COALESCE(error_message, ''), 'email_delivery_failed:') AS is_email_delivery_failure,
+  report_text IS NOT NULL AS has_report_text,
   report_text,
   LENGTH(report_text) AS report_text_chars,
   created_at

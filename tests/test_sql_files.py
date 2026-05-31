@@ -71,6 +71,9 @@ def test_looker_views_include_ai_report_logs_view() -> None:
 
     assert "vw_looker_ai_report_logs" in sql
     assert "ai_report_logs" in sql
+    assert "account_group_name" in sql
+    assert "is_email_delivery_failure" in sql
+    assert "has_report_text" in sql
     assert "report_text_chars" in sql
 
 

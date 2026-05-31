@@ -246,6 +246,9 @@ This layer calculates spend, link clicks, conversions, CPC, CPA, ROAS, week-over
 REFRESH_REPORTING_MARTS=false make run
 ```
 
+Current account-report productization status and operational commands are
+tracked in `docs/productization_status.md`.
+
 ## AI Report Generation
 
 The AI reporting layer prepares weekly/monthly context from BigQuery reporting marts, sends the prompt to OpenAI's Responses API, and stores the output in `ai_report_logs`.
@@ -438,8 +441,11 @@ Preview recent AI reports:
 ```sql
 SELECT
   report_id,
+  account_group_name,
   report_type,
   status,
+  is_email_delivery_failure,
+  has_report_text,
   model_name,
   period_start_date,
   period_end_date,
@@ -449,6 +455,16 @@ FROM `oudseed.ads_pipeline.vw_looker_ai_report_logs`
 ORDER BY created_at DESC
 LIMIT 5;
 ```
+
+Useful fields for Looker Studio report monitoring:
+
+| Field | Purpose |
+|---|---|
+| `account_group_name` | Customer/account identity inferred from report context |
+| `status` | Generation or delivery log status |
+| `is_email_delivery_failure` | Flags failed SMTP delivery rows |
+| `has_report_text` | Confirms whether the log row contains generated report text |
+| `report_text_chars` | Quick check for unexpectedly short reports |
 
 ## Cloud Run Scheduler
 
@@ -515,10 +531,92 @@ Secret Manager when provided. Account-report jobs default to
 `JOB_MAX_RETRIES=0` to reduce incomplete AI responses and avoid duplicate email
 sends after a partial failure.
 
+Preview the effective deployment settings without touching GCP:
+
+```bash
+make ai-report-deploy-dry-run
+```
+
+Values passed directly to the deploy command take priority over `.env`, so the
+account-report wrapper keeps its production defaults even if an older `.env`
+contains generic AI report settings.
+The wrapper defaults `AI_REPORT_SCHEDULE_ID` to `monthly_email_default`; override
+it only when deploying a different scheduled report variant.
+Dry-run output is sanitized and can run without real secrets; it reports whether
+required secrets/config files are configured instead of printing their values.
+
 For production verification without sending email, temporarily set
 `AI_REPORT_PREFLIGHT=true` on the Cloud Run Job and execute it once. Preflight
 prints the resolved report type, period, group count, depth, timeout, and
 account group names without exposing recipient emails or account IDs.
+
+Run the safe preflight helper with:
+
+```bash
+make ai-report-preflight
+```
+
+The helper enables preflight, executes the Cloud Run Job, prints the sanitized
+preflight log lines, and removes `AI_REPORT_PREFLIGHT` before exiting.
+
+Check the deployed job and scheduler status without exposing secrets:
+
+```bash
+make ai-report-status
+```
+
+This prints Cloud Run readiness, latest execution status, retry/timeout/model
+settings, preflight state, configured-secret flags, and the next Scheduler time.
+
+Run the readiness gate before a scheduled send:
+
+```bash
+make ai-report-ready
+```
+
+This exits non-zero if production settings are unsafe, including enabled
+preflight, disabled Scheduler, missing schedule/recipient/secrets, wrong module,
+wrong model, low timeout/tokens, or non-zero Cloud Run retries.
+
+Check whether the latest report period has matching AI report logs:
+
+```bash
+AI_REPORT_TYPE=monthly \
+AI_REPORT_PERIOD_START_DATE=2026-04-01 \
+make ai-report-logs
+```
+
+The log checker compares expected account groups against successful report ids,
+counts generation and delivery failures, and prints sanitized errors only.
+When a period has older test runs, set `AI_REPORT_LOG_CREATED_AFTER` to the
+start time of the batch you want to verify.
+Set `AI_REPORT_LOG_REQUIRE_COMPLETE=true` when the command should fail on any
+missing account group, generation failure, or delivery failure in the fetched
+window.
+Set `AI_REPORT_LOG_SHOW_ROWS=false` for summary-only output.
+
+Run the full operations verification flow:
+
+```bash
+AI_REPORT_TYPE=monthly \
+AI_REPORT_PERIOD_START_DATE=2026-04-01 \
+AI_REPORT_LOG_CREATED_AFTER=2026-05-28T13:52:00Z \
+make ai-report-verify
+```
+
+This runs the deploy dry-run, Cloud Run/Scheduler status check, and report-log
+completeness check in one pass.
+When `AI_REPORT_LOG_CREATED_AFTER` is provided, the log check fails on missing
+groups or failures by default. Without it, the log check is informational.
+
+After the scheduled monthly run, verify only the new batch logs:
+
+```bash
+AI_REPORT_TYPE=monthly \
+AI_REPORT_PERIOD_START_DATE=2026-05-01 \
+AI_REPORT_LOG_CREATED_AFTER=2026-05-31T21:00:00Z \
+make ai-report-post-run
+```
 
 Default weekly deployment settings:
 

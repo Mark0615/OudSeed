@@ -1,6 +1,43 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ENV_OVERRIDE_NAMES=(
+  PROJECT_ID
+  PROJECT_NUMBER
+  REGION
+  SCHEDULER_REGION
+  REPOSITORY
+  IMAGE_NAME
+  JOB_NAME
+  SCHEDULER_JOB_NAME
+  SCHEDULE
+  TIME_ZONE
+  BIGQUERY_DATASET
+  ENV_FILE
+  CLIENTS_CONFIG_FILE
+  RUNTIME_SERVICE_ACCOUNT_NAME
+  OPENAI_SECRET_NAME
+  CLIENTS_CONFIG_SECRET_NAME
+  SMTP_PASSWORD_SECRET_NAME
+  AI_REPORT_MODULE
+  AI_REPORT_TYPE
+  AI_REPORT_LIMIT
+  AI_REPORT_DEPTH
+  OPENAI_MODEL
+  OPENAI_REASONING_EFFORT
+  OPENAI_MAX_OUTPUT_TOKENS
+  OPENAI_TIMEOUT_SECONDS
+  JOB_MAX_RETRIES
+  DEPLOY_DRY_RUN
+)
+
+for name in "${ENV_OVERRIDE_NAMES[@]}"; do
+  if [[ "${!name+x}" == "x" ]]; then
+    printf -v "__oudseed_had_${name}" "%s" "1"
+    printf -v "__oudseed_value_${name}" "%s" "${!name}"
+  fi
+done
+
 PROJECT_ID="${PROJECT_ID:-oudseed}"
 PROJECT_NUMBER="${PROJECT_NUMBER:-252487346065}"
 REGION="${REGION:-asia-east1}"
@@ -27,12 +64,54 @@ OPENAI_REASONING_EFFORT="${OPENAI_REASONING_EFFORT:-medium}"
 OPENAI_MAX_OUTPUT_TOKENS="${OPENAI_MAX_OUTPUT_TOKENS:-1800}"
 OPENAI_TIMEOUT_SECONDS="${OPENAI_TIMEOUT_SECONDS:-60}"
 JOB_MAX_RETRIES="${JOB_MAX_RETRIES:-1}"
+DEPLOY_DRY_RUN="${DEPLOY_DRY_RUN:-false}"
+
+restore_preserved_env() {
+  local name="$1"
+  local had_var="__oudseed_had_${name}"
+  local value_var="__oudseed_value_${name}"
+
+  if [[ "${!had_var:-}" == "1" ]]; then
+    printf -v "${name}" "%s" "${!value_var}"
+    export "${name}"
+  fi
+}
 
 if [[ -f "${ENV_FILE}" ]]; then
   set -a
   # shellcheck disable=SC1090
   source "${ENV_FILE}"
   set +a
+  for name in "${ENV_OVERRIDE_NAMES[@]}"; do
+    restore_preserved_env "${name}"
+  done
+fi
+
+IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE_NAME}:latest"
+RUNTIME_SERVICE_ACCOUNT="${RUNTIME_SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+RUN_URI="https://run.googleapis.com/v2/projects/${PROJECT_ID}/locations/${REGION}/jobs/${JOB_NAME}:run"
+
+if [[ "${DEPLOY_DRY_RUN}" == "true" || "${DEPLOY_DRY_RUN}" == "1" ]]; then
+  echo "deploy_dry_run=true"
+  echo "project=${PROJECT_ID}"
+  echo "region=${REGION}"
+  echo "job=${JOB_NAME}"
+  echo "scheduler_job=${SCHEDULER_JOB_NAME}"
+  echo "schedule=${SCHEDULE}"
+  echo "time_zone=${TIME_ZONE}"
+  echo "ai_report_module=${AI_REPORT_MODULE}"
+  echo "ai_report_type=${AI_REPORT_TYPE}"
+  echo "ai_report_depth=${AI_REPORT_DEPTH}"
+  echo "openai_model=${OPENAI_MODEL}"
+  echo "openai_max_output_tokens=${OPENAI_MAX_OUTPUT_TOKENS}"
+  echo "openai_timeout_seconds=${OPENAI_TIMEOUT_SECONDS}"
+  echo "job_max_retries=${JOB_MAX_RETRIES}"
+  echo "openai_api_key_configured=$([[ -n "${OPENAI_API_KEY:-}" ]] && echo true || echo false)"
+  echo "clients_config_file_exists=$([[ -f "${CLIENTS_CONFIG_FILE}" ]] && echo true || echo false)"
+  echo "ai_report_schedule_id_configured=$([[ -n "${AI_REPORT_SCHEDULE_ID:-}" ]] && echo true || echo false)"
+  echo "ai_report_email_to_configured=$([[ -n "${AI_REPORT_EMAIL_TO:-}" ]] && echo true || echo false)"
+  echo "smtp_password_configured=$([[ -n "${SMTP_PASSWORD:-}" ]] && echo true || echo false)"
+  exit 0
 fi
 
 if [[ -z "${OPENAI_API_KEY:-}" ]]; then
@@ -44,10 +123,6 @@ if [[ ! -f "${CLIENTS_CONFIG_FILE}" ]]; then
   echo "Missing ${CLIENTS_CONFIG_FILE}. Create it from config/clients.example.yaml." >&2
   exit 1
 fi
-
-IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE_NAME}:latest"
-RUNTIME_SERVICE_ACCOUNT="${RUNTIME_SERVICE_ACCOUNT_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
-RUN_URI="https://run.googleapis.com/v2/projects/${PROJECT_ID}/locations/${REGION}/jobs/${JOB_NAME}:run"
 
 echo "Using project ${PROJECT_ID}, region ${REGION}, job ${JOB_NAME}."
 
