@@ -8,6 +8,7 @@ import requests
 from src.connectors.meta_ads import (
     DEFAULT_META_INSIGHTS_FIELDS,
     MetaAdsConnector,
+    _meta_account_status_label,
     _redact_token,
 )
 
@@ -110,6 +111,55 @@ def test_fetch_daily_report_supports_pagination() -> None:
     assert session.get.call_args_list[1].kwargs["params"] is None
 
 
+def test_fetch_ad_accounts_lists_accessible_accounts() -> None:
+    """Connector lists Meta ad accounts without exposing tokens."""
+    session = Mock()
+    session.get.return_value = make_response(
+        200,
+        {
+            "data": [
+                {
+                    "id": "act_000000000000001",
+                    "name": "Demo Meta Ads Account",
+                    "currency": "TWD",
+                    "timezone_name": "Asia/Taipei",
+                    "account_status": 1,
+                }
+            ]
+        },
+    )
+    connector = MetaAdsConnector(access_token="token", session=session)
+
+    accounts = connector.fetch_ad_accounts()
+
+    assert accounts == [
+        {
+            "id": "act_000000000000001",
+            "name": "Demo Meta Ads Account",
+            "currency": "TWD",
+            "timezone": "Asia/Taipei",
+            "status": "Active",
+        }
+    ]
+    url = session.get.call_args.args[0]
+    params = session.get.call_args.kwargs["params"]
+    assert url == "https://graph.facebook.com/v24.0/me/adaccounts"
+    assert params["fields"] == "id,name,account_id,currency,timezone_name,account_status"
+    assert params["access_token"] == "token"
+
+
+def test_fetch_ad_accounts_normalizes_numeric_id() -> None:
+    """Meta ad account IDs are normalized to act_ form."""
+    session = Mock()
+    session.get.return_value = make_response(200, {"data": [{"id": "123", "account_status": 2}]})
+    connector = MetaAdsConnector(access_token="token", session=session)
+
+    accounts = connector.fetch_ad_accounts()
+
+    assert accounts[0]["id"] == "act_123"
+    assert accounts[0]["status"] == "Disabled"
+
+
 def test_fetch_daily_report_rejects_invalid_account_id() -> None:
     """Meta account IDs must use act_ prefix."""
     connector = MetaAdsConnector(access_token="token", session=Mock())
@@ -169,6 +219,12 @@ def test_redact_token_redacts_query_parameter_value() -> None:
     redacted = _redact_token("url?access_token=secret&fields=spend")
 
     assert redacted == "url?access_token=REDACTED&fields=spend"
+
+
+def test_meta_account_status_label_handles_unknown_values() -> None:
+    """Unknown account statuses stay readable."""
+    assert _meta_account_status_label(None) == "Unknown"
+    assert _meta_account_status_label(999) == "Status 999"
 
 
 def test_fetch_daily_report_raises_when_data_is_not_list() -> None:

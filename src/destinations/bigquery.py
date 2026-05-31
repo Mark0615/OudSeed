@@ -127,7 +127,7 @@ class BigQueryDestination:
     def query_rows(
         self,
         sql: str,
-        query_parameters: list[bigquery.ScalarQueryParameter] | None = None,
+        query_parameters: list[bigquery.ScalarQueryParameter | bigquery.ArrayQueryParameter] | None = None,
     ) -> list[dict[str, Any]]:
         """Run a parameterized query and return rows as dictionaries."""
         job_config = None

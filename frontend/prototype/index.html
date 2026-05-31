@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OudSeed Connector Prototype</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="prototype-shell">
+      <header class="app-header">
+        <div>
+          <div class="brand-row">
+            <span class="brand-mark">OS</span>
+            <span class="brand-name">OudSeed</span>
+          </div>
+          <h1>Connect ad data</h1>
+          <p>Choose a platform, authorize access, select ad accounts, then decide where the data should go.</p>
+        </div>
+        <button class="secondary-button" type="button" id="resetButton">Reset demo</button>
+        <span class="runtime-pill" id="runtimePill">Static mock</span>
+      </header>
+
+      <section class="stepper" aria-label="Setup progress">
+        <div class="step active" data-step="source">
+          <span>1</span>
+          <strong>Source</strong>
+        </div>
+        <div class="step" data-step="auth">
+          <span>2</span>
+          <strong>Authorize</strong>
+        </div>
+        <div class="step" data-step="accounts">
+          <span>3</span>
+          <strong>Accounts</strong>
+        </div>
+        <div class="step" data-step="destinations">
+          <span>4</span>
+          <strong>Destination</strong>
+        </div>
+      </section>
+
+      <section class="wizard-grid">
+        <aside class="panel source-panel">
+          <div class="panel-title">
+            <h2>Data Sources</h2>
+            <span id="sourceCount">0 available</span>
+          </div>
+
+          <label class="search-box" aria-label="Search platforms">
+            <span aria-hidden="true"></span>
+            <input id="platformSearch" type="search" placeholder="Type platform name" autocomplete="off" />
+          </label>
+
+          <label class="toggle-row">
+            <input id="connectedOnly" type="checkbox" />
+            Show only connected
+          </label>
+
+          <div class="divider"></div>
+          <div class="platform-list" id="platformList"></div>
+        </aside>
+
+        <section class="panel setup-panel">
+          <div class="panel-title">
+            <div>
+              <p class="eyebrow">Selected source</p>
+              <h2 id="selectedSourceTitle">Select a platform</h2>
+            </div>
+            <span class="status-pill" id="sourceStatusPill">Not connected</span>
+          </div>
+
+          <div class="source-hero" id="sourceHero">
+            <div class="hero-logo" id="heroLogo">OS</div>
+            <div>
+              <h3 id="heroTitle">Start with a data source</h3>
+              <p id="heroText">Meta Ads is the current MVP path. Google Ads and LINE Ads are shown here so the user flow already matches the future product.</p>
+            </div>
+            <button class="primary-button" type="button" id="connectButton" disabled>Connect</button>
+          </div>
+
+          <div class="section-block">
+            <div class="section-heading">
+              <h3>Ad accounts</h3>
+              <span id="accountSelectionCount">No source selected</span>
+            </div>
+            <div class="account-toolbar">
+              <input id="accountSearch" type="search" placeholder="Search accounts" autocomplete="off" />
+              <button class="secondary-button" type="button" id="selectAllAccountsButton" disabled>Select all</button>
+            </div>
+            <div class="account-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>
+                      <input id="accountMasterCheckbox" type="checkbox" aria-label="Select all visible accounts" disabled />
+                    </th>
+                    <th>Account name</th>
+                    <th>Account ID</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="accountRows">
+                  <tr>
+                    <td colspan="4" class="empty-state">Connect a platform to load ad accounts.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="section-block">
+            <div class="section-heading">
+              <h3>Data destinations</h3>
+              <span id="destinationSelectionCount">Select at least one</span>
+            </div>
+
+            <div class="destination-tabs" role="group" aria-label="Destination category">
+              <button class="tab active" type="button" data-category="all">All</button>
+              <button class="tab" type="button" data-category="dashboard">Dashboards</button>
+              <button class="tab" type="button" data-category="spreadsheet">Spreadsheets</button>
+              <button class="tab" type="button" data-category="ai">AI reports</button>
+              <button class="tab" type="button" data-category="warehouse">Warehouse</button>
+            </div>
+
+            <div class="destination-grid" id="destinationGrid"></div>
+          </div>
+
+          <div class="section-block email-settings" id="emailSettings" hidden>
+            <div class="section-heading">
+              <h3>Email report settings</h3>
+              <span>Required for AI Report Email</span>
+            </div>
+
+            <div class="control-row" role="group" aria-label="Email report cadence">
+              <button class="segment active" type="button" data-report-type="monthly">Monthly</button>
+              <button class="segment" type="button" data-report-type="weekly">Weekly</button>
+            </div>
+
+            <div class="settings-grid">
+              <label id="monthlyDeliveryField">
+                Monthly delivery day
+                <input id="monthlyDeliveryDay" type="number" min="1" max="31" value="1" />
+              </label>
+              <label id="weeklyDeliveryField" hidden>
+                Weekly delivery day
+                <select id="weeklyDeliveryDay">
+                  <option value="monday">Monday</option>
+                  <option value="tuesday">Tuesday</option>
+                  <option value="wednesday">Wednesday</option>
+                  <option value="thursday">Thursday</option>
+                  <option value="friday">Friday</option>
+                </select>
+              </label>
+              <label>
+                Report depth
+                <select id="reportDepth">
+                  <option value="standard">Standard</option>
+                  <option value="brief">Brief</option>
+                  <option value="deep">Deep</option>
+                </select>
+              </label>
+              <label>
+                Timezone
+                <select id="reportTimezone">
+                  <option value="Asia/Taipei">Asia/Taipei</option>
+                  <option value="America/Los_Angeles">America/Los_Angeles</option>
+                  <option value="Europe/Berlin">Europe/Berlin</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <footer class="summary-bar">
+            <div>
+              <span>Connection summary</span>
+              <strong id="summaryText">Choose a source to continue.</strong>
+            </div>
+            <button class="primary-button" type="button" id="finishButton" disabled>Finish setup</button>
+          </footer>
+
+          <section class="connection-result" id="connectionResult" hidden>
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Setup complete</p>
+                <h3>Connection is ready</h3>
+              </div>
+              <span id="connectionStatus">Not queued</span>
+            </div>
+            <div class="handoff-grid">
+              <div class="handoff-summary" id="handoffSummary"></div>
+              <div class="preview-stack">
+                <div>
+                  <h4>Destination status</h4>
+                  <div class="next-actions" id="nextActions"></div>
+                </div>
+                <details class="developer-details">
+                  <summary>Developer details</summary>
+                  <div class="developer-preview-grid">
+                    <div>
+                      <h4>Selection payload (safe display)</h4>
+                      <pre id="payloadPreview"></pre>
+                    </div>
+                    <div>
+                      <h4>Sanitized config preview</h4>
+                      <pre id="configPreview"></pre>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            </div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <div class="modal-backdrop" id="authModal" aria-hidden="true">
+      <section class="auth-modal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+        <button class="icon-button" type="button" id="closeAuthButton" aria-label="Close authorization dialog">×</button>
+        <div class="modal-logo" id="modalLogo">f</div>
+        <h2 id="authTitle">Connect your Meta Ads account</h2>
+        <p id="authDescription">Grant read access so OudSeed can list available ad accounts and sync performance data into your selected destination.</p>
+        <button class="primary-button large" type="button" id="grantAccessButton">Grant Meta Ads Access</button>
+        <p class="modal-note" id="modalNote">Prototype only: this simulates OAuth and does not store tokens.</p>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./mock-api.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

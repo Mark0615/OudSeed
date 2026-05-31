@@ -84,6 +84,43 @@ class MetaAdsConnector(BaseAdsConnector):
 
         return rows
 
+    def fetch_ad_accounts(self) -> list[dict[str, Any]]:
+        """Fetch ad accounts accessible by the current token."""
+        url = f"{self.base_url}/me/adaccounts"
+        params: dict[str, Any] | None = {
+            "access_token": self.access_token,
+            "fields": "id,name,account_id,currency,timezone_name,account_status",
+            "limit": 500,
+        }
+
+        accounts: list[dict[str, Any]] = []
+        while url:
+            payload = self._get_json(url, params=params)
+            data = payload.get("data", [])
+            if not isinstance(data, list):
+                raise RuntimeError("Meta Ads API response field 'data' must be a list.")
+
+            for account in data:
+                if not isinstance(account, dict):
+                    continue
+                account_id = str(account.get("id") or "")
+                if account_id and not account_id.startswith("act_"):
+                    account_id = f"act_{account_id}"
+                accounts.append(
+                    {
+                        "id": account_id,
+                        "name": str(account.get("name") or account_id or "Unnamed Meta Ads Account"),
+                        "currency": account.get("currency"),
+                        "timezone": account.get("timezone_name"),
+                        "status": _meta_account_status_label(account.get("account_status")),
+                    }
+                )
+
+            url = payload.get("paging", {}).get("next")
+            params = None
+
+        return accounts
+
     def _insights_url(self, account_id: str) -> str:
         """Build the insights endpoint URL for an ad account."""
         if not account_id.startswith("act_"):
@@ -126,3 +163,23 @@ class MetaAdsConnector(BaseAdsConnector):
 def _redact_token(value: str) -> str:
     """Redact common token shapes from error strings before logging."""
     return re.sub(r"(access_token=)[^&\s)]+", r"\1REDACTED", value)
+
+
+def _meta_account_status_label(status: object) -> str:
+    """Return a readable non-sensitive account status label."""
+    labels = {
+        1: "Active",
+        2: "Disabled",
+        3: "Unsettled",
+        7: "Pending review",
+        9: "In grace period",
+        100: "Pending closure",
+        101: "Closed",
+        201: "Any active",
+        202: "Any closed",
+    }
+    try:
+        status_id = int(status)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return "Unknown"
+    return labels.get(status_id, f"Status {status_id}")
