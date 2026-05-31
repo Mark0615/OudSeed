@@ -61,6 +61,20 @@ AI_REPORT_LOG_CREATED_AFTER=2026-05-31T21:00:00Z \
 make ai-report-post-run
 ```
 
+Run a narrow local Meta-only sync smoke test:
+
+```bash
+SYNC_ENABLED_PLATFORMS=meta_ads \
+SYNC_START_DATE=2026-05-30 \
+SYNC_END_DATE=2026-05-30 \
+REFRESH_REPORTING_MARTS=false \
+.venv/bin/python -m src.main
+```
+
+`SYNC_ENABLED_PLATFORMS` is intended for one-off operational tests when local
+config has more than one enabled platform. Runtime progress logs redact
+workspace, client, account, and customer identifiers.
+
 ## Next Scheduled Monthly Run
 
 The configured monthly scheduler fires at `2026-06-01 05:00:00 Asia/Taipei`,
@@ -120,3 +134,66 @@ Use `make ai-report-logs` or `make ai-report-verify` for routine checks. Use
 - Scheduler success after the next real run still needs post-run verification
   with `AI_REPORT_LOG_CREATED_AFTER` set to the batch start time.
 - LINE delivery, SaaS users, OAuth, and payment remain out of MVP scope.
+
+## Frontend Prototype Direction
+
+The approved frontend direction is a connector onboarding wizard, not an
+internal AI report operations dashboard:
+
+- choose an ad/data platform;
+- grant platform authorization;
+- select accessible ad accounts;
+- choose destinations such as Looker Studio, BigQuery, and AI Report Email.
+
+The static prototype is in `frontend/prototype`. The backend handoff contract is
+tracked in `docs/connector_onboarding_handoff.md`.
+
+Prototype data now flows through `frontend/prototype/mock-api.js`, which mirrors
+the intended connector/account/destination API shape while staying fully static.
+
+The internal config bridge is available through `src.onboarding.config_bridge`.
+It accepts onboarding selection JSON and prints a sanitized
+`clients.yaml`-compatible preview without writing `config/clients.yaml`.
+
+The local onboarding API now creates an in-memory connection draft after the
+user selects Meta accounts and destinations. The draft includes destination
+handoff metadata for BigQuery, Looker Studio, and AI Report Email plus an apply
+plan for promoting the selection into managed config. It is intentionally
+non-durable and reports `writes_config=false` and `writes_secrets=false`.
+The frontend presents this as a user-facing setup-complete state; draft/config
+details are kept in a collapsed developer details section for debugging.
+
+The prototype also creates a local first-sync job status and polls it from the
+frontend. This models the product experience of queued, running, and completed
+sync states without automatically executing Cloud Run or writing BigQuery from
+the browser flow.
+
+When started through `make onboarding-prototype-real-meta`, the local prototype
+also enables a read-only BigQuery backend data check. After first sync reaches
+completed, the UI can show the latest aggregate Meta sync status plus BigQuery
+and Looker-facing view row counts scoped to the selected accounts. This status
+check does not print or return real account IDs.
+
+Completed first-sync jobs can now send an AI report email from the prototype.
+The endpoint uses the existing account-grouped AI report generator and SMTP HTML
+email delivery path, scoped to selected account IDs. The browser receives only
+safe delivery metadata and never sees the configured recipient or real account
+IDs.
+
+Run the fuller local onboarding product slice with:
+
+```bash
+make onboarding-prototype
+```
+
+This serves `frontend/prototype` and safe local `/api/*` endpoints backed by the
+config bridge.
+
+Real Meta ad account discovery can be tested locally with:
+
+```bash
+make onboarding-prototype-real-meta
+```
+
+This uses `META_ACCESS_TOKEN` from local `.env` only when explicitly enabled.
+It does not change deployed Cloud Run jobs, Secret Manager, or `config/clients.yaml`.

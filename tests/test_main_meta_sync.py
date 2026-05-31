@@ -8,7 +8,9 @@ from src.main import (
     SYNC_LOGS_TABLE,
     UNIFIED_TABLE,
     _load_runtime_config,
+    _enabled_platform_filter,
     _positive_int_env,
+    _safe_log_value,
     _should_refresh_reporting_marts,
     refresh_reporting_marts,
     run_google_ads_sync,
@@ -341,3 +343,25 @@ def test_positive_int_env_rejects_invalid_values(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="positive integer"):
         _positive_int_env("META_API_TIMEOUT_SECONDS", 60)
+
+
+def test_enabled_platform_filter_can_limit_one_off_sync_runs(monkeypatch) -> None:
+    """Operators can run only one enabled platform even when config has more."""
+    monkeypatch.setenv("SYNC_ENABLED_PLATFORMS", "meta_ads")
+
+    assert _enabled_platform_filter() == {"meta_ads"}
+
+
+def test_enabled_platform_filter_rejects_unknown_platforms(monkeypatch) -> None:
+    """Unsupported one-off platform filters fail clearly."""
+    monkeypatch.setenv("SYNC_ENABLED_PLATFORMS", "line_ads")
+
+    with pytest.raises(ValueError, match="unsupported platform"):
+        _enabled_platform_filter()
+
+
+def test_safe_log_value_redacts_sensitive_ids() -> None:
+    """Runtime logs should not print real account or customer identifiers."""
+    assert _safe_log_value("account_id", "act_1234567890") == "REDACTED_7890"
+    assert _safe_log_value("customer_id", "1234567890") == "REDACTED_7890"
+    assert _safe_log_value("project_id", "oudseed") == "oudseed"

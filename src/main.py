@@ -33,6 +33,7 @@ def main() -> None:
     """Run the Meta Ads sync flow using local configuration."""
     load_dotenv()
     config = _load_runtime_config()
+    enabled_platform_filter = _enabled_platform_filter()
 
     bigquery_config = config.get("bigquery", {})
     project_id = os.getenv("GCP_PROJECT_ID") or bigquery_config.get("project_id")
@@ -51,13 +52,13 @@ def main() -> None:
     )
 
     destination = BigQueryDestination(project_id=project_id, dataset_id=dataset_id)
-    if _has_enabled_platform(config, "meta_ads"):
+    if _platform_selected("meta_ads", enabled_platform_filter) and _has_enabled_platform(config, "meta_ads"):
         connector = MetaAdsConnector(
             access_token=_required_env("META_ACCESS_TOKEN"),
             timeout_seconds=meta_api_timeout_seconds,
         )
         run_meta_sync(config=config, connector=connector, destination=destination)
-    if _has_enabled_platform(config, "google_ads"):
+    if _platform_selected("google_ads", enabled_platform_filter) and _has_enabled_platform(config, "google_ads"):
         google_connector = GoogleAdsConnector(
             developer_token=_required_env("GOOGLE_ADS_DEVELOPER_TOKEN"),
             client_id=_required_env("GOOGLE_ADS_CLIENT_ID"),
@@ -618,6 +619,26 @@ def _has_enabled_platform(config: dict[str, Any], platform_name: str) -> bool:
     return False
 
 
+def _enabled_platform_filter() -> set[str] | None:
+    """Return an optional platform allowlist for one-off sync runs."""
+    raw_value = os.getenv("SYNC_ENABLED_PLATFORMS")
+    if not raw_value:
+        return None
+    platforms = {platform.strip() for platform in raw_value.split(",") if platform.strip()}
+    allowed = {"meta_ads", "google_ads"}
+    unknown = platforms - allowed
+    if unknown:
+        raise ValueError(f"SYNC_ENABLED_PLATFORMS contains unsupported platform(s): {', '.join(sorted(unknown))}")
+    if not platforms:
+        raise ValueError("SYNC_ENABLED_PLATFORMS must include at least one platform when set.")
+    return platforms
+
+
+def _platform_selected(platform_name: str, enabled_platform_filter: set[str] | None) -> bool:
+    """Return whether a platform should run under the optional allowlist."""
+    return enabled_platform_filter is None or platform_name in enabled_platform_filter
+
+
 def _positive_int_env(name: str, default: int) -> int:
     """Read a positive integer environment variable."""
     raw_value = os.getenv(name)
@@ -637,8 +658,22 @@ def _positive_int_env(name: str, default: int) -> int:
 
 def _log(event: str, **fields: Any) -> None:
     """Print structured runtime progress for local runs and Cloud Logging."""
-    payload = " ".join(f"{key}={value}" for key, value in fields.items())
+    payload = " ".join(f"{key}={_safe_log_value(key, value)}" for key, value in fields.items())
     print(f"event={event} {payload}".strip(), flush=True)
+
+
+def _safe_log_value(key: str, value: Any) -> Any:
+    """Redact sensitive identifiers from terminal and Cloud Logging output."""
+    if key in {"workspace_id", "client_id", "account_id", "customer_id"}:
+        return _redacted_identifier(value)
+    return value
+
+
+def _redacted_identifier(value: Any) -> str:
+    text = str(value)
+    if len(text) <= 4:
+        return "REDACTED"
+    return f"REDACTED_{text[-4:]}"
 
 
 def _utc_now() -> str:

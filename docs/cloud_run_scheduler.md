@@ -75,6 +75,23 @@ Run the job immediately:
 gcloud run jobs execute oudseed-meta-ads-sync --region asia-east1 --wait
 ```
 
+For a narrow local real-data smoke test, limit the run to Meta Ads and a short
+date window. Runtime logs redact workspace, client, account, and customer IDs:
+
+```bash
+SYNC_ENABLED_PLATFORMS=meta_ads \
+SYNC_START_DATE=2026-05-30 \
+SYNC_END_DATE=2026-05-30 \
+REFRESH_REPORTING_MARTS=false \
+.venv/bin/python -m src.main
+```
+
+Then refresh reporting marts and Looker Studio views:
+
+```bash
+.venv/bin/python -c "from dotenv import load_dotenv; load_dotenv(); import os; from src.destinations.bigquery import BigQueryDestination; from src.main import refresh_reporting_marts; refresh_reporting_marts(BigQueryDestination(project_id=os.getenv('GCP_PROJECT_ID','oudseed'), dataset_id=os.getenv('BIGQUERY_DATASET','ads_pipeline')))"
+```
+
 ## Check Logs
 
 View recent job logs:
