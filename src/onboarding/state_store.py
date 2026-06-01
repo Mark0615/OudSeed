@@ -25,6 +25,9 @@ class OnboardingStateStore(Protocol):
     def get_connection_draft(self, draft_id: str) -> dict[str, Any] | None:
         """Return a connection draft, or None when it is unknown."""
 
+    def list_connection_drafts(self) -> list[dict[str, Any]]:
+        """Return stored connection drafts."""
+
     def save_sync_job(self, sync_job_id: str, sync_job: dict[str, Any]) -> None:
         """Persist a first-sync job."""
 
@@ -76,6 +79,11 @@ class InMemoryOnboardingStateStore:
         with self._lock:
             draft = self._connection_drafts.get(draft_id)
             return copy.deepcopy(draft) if draft is not None else None
+
+    def list_connection_drafts(self) -> list[dict[str, Any]]:
+        """Return defensive copies of connection drafts in creation order."""
+        with self._lock:
+            return [copy.deepcopy(draft) for draft in self._connection_drafts.values()]
 
     def save_sync_job(self, sync_job_id: str, sync_job: dict[str, Any]) -> None:
         """Save a defensive copy of a first-sync job."""

@@ -37,6 +37,22 @@ def test_in_memory_onboarding_state_store_uses_defensive_copies() -> None:
     assert store.get_sync_job(sync_job_id) == {"status": "queued", "nested": {"checks": 0}}
 
 
+def test_in_memory_onboarding_state_store_lists_connection_drafts_safely() -> None:
+    store = InMemoryOnboardingStateStore()
+    first_draft_id = store.next_draft_id()
+    second_draft_id = store.next_draft_id()
+    store.save_connection_draft(first_draft_id, {"safe_detail": {"draft_id": first_draft_id}})
+    store.save_connection_draft(second_draft_id, {"safe_detail": {"draft_id": second_draft_id}})
+
+    drafts = store.list_connection_drafts()
+    drafts[0]["safe_detail"]["draft_id"] = "mutated"
+
+    assert [draft["safe_detail"]["draft_id"] for draft in store.list_connection_drafts()] == [
+        first_draft_id,
+        second_draft_id,
+    ]
+
+
 def test_in_memory_onboarding_state_store_reset_clears_state_and_counters() -> None:
     store = InMemoryOnboardingStateStore()
     draft_id = store.next_draft_id()
