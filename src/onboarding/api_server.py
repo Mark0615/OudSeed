@@ -20,6 +20,7 @@ from google.cloud import bigquery
 from src.connectors.meta_ads import MetaAdsConnector
 from src.destinations.bigquery import BigQueryDestination
 from src.onboarding.config_bridge import build_config_preview_response
+from src.onboarding.state_store import InMemoryOnboardingStateStore, OnboardingStateStore
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -38,6 +39,7 @@ class OnboardingPrototypeState:
         use_real_meta: bool = False,
         backend_status_reader: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         email_report_sender: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+        state_store: OnboardingStateStore | None = None,
     ) -> None:
         self._connectors = _default_connectors()
         self._accounts_by_connector = _default_accounts_by_connector()
@@ -46,11 +48,8 @@ class OnboardingPrototypeState:
         self._use_real_meta = use_real_meta
         self._backend_status_reader = backend_status_reader
         self._email_report_sender = email_report_sender
+        self._state_store = state_store or InMemoryOnboardingStateStore()
         self._real_meta_loaded = False
-        self._connection_drafts: dict[str, dict[str, Any]] = {}
-        self._draft_counter = 0
-        self._sync_jobs: dict[str, dict[str, Any]] = {}
-        self._sync_job_counter = 0
         self._email_delivery_lock = threading.Lock()
         if use_real_meta:
             self._mark_real_meta_mode()
@@ -62,8 +61,7 @@ class OnboardingPrototypeState:
         if self._use_real_meta:
             self._accounts_by_connector["meta_ads"] = []
             self._real_meta_loaded = False
-        self._connection_drafts.clear()
-        self._sync_jobs.clear()
+        self._state_store.reset()
         return {"ok": True}
 
     def list_connectors(self) -> dict[str, Any]:
@@ -121,7 +119,7 @@ class OnboardingPrototypeState:
         """Validate a selection payload and return a local draft handoff."""
         response = build_config_preview_response(payload)
         account_count = response["config_preview"]["summary"]["account_count"]
-        draft_id = self._next_draft_id()
+        draft_id = self._state_store.next_draft_id()
         draft = {
             "draft_id": draft_id,
             "status": "draft",
@@ -134,10 +132,10 @@ class OnboardingPrototypeState:
             "apply_plan": _build_apply_plan(payload, draft_id),
         }
         sync_job = self._create_first_sync_job(draft_id, payload, account_count)
-        self._connection_drafts[draft_id] = {
+        self._state_store.save_connection_draft(draft_id, {
             "raw_selection": payload,
             "safe_detail": draft,
-        }
+        })
         return {
             "ok": True,
             "draft_id": draft_id,
@@ -155,7 +153,7 @@ class OnboardingPrototypeState:
 
     def get_connection_draft(self, draft_id: str) -> dict[str, Any]:
         """Return a sanitized local draft detail without sensitive source IDs."""
-        draft = self._connection_drafts.get(draft_id)
+        draft = self._state_store.get_connection_draft(draft_id)
         if not draft:
             raise ValueError("Unknown connection draft.")
         return {"ok": True, "draft": draft["safe_detail"]}
@@ -167,15 +165,16 @@ class OnboardingPrototypeState:
 
     def get_sync_job(self, sync_job_id: str) -> dict[str, Any]:
         """Return a sanitized first-sync job status for the local prototype."""
-        job = self._sync_jobs.get(sync_job_id)
+        job = self._state_store.get_sync_job(sync_job_id)
         if not job:
             raise ValueError("Unknown sync job.")
         self._advance_sync_job(job)
+        self._state_store.save_sync_job(sync_job_id, job)
         return {"ok": True, "sync_job": _public_sync_job(job)}
 
     def send_report_email(self, sync_job_id: str) -> dict[str, Any]:
         """Send a report email for a completed local sync job."""
-        job = self._sync_jobs.get(sync_job_id)
+        job = self._state_store.get_sync_job(sync_job_id)
         if not job:
             raise ValueError("Unknown sync job.")
         if job.get("status") != "completed":
@@ -183,6 +182,11 @@ class OnboardingPrototypeState:
         if "ai_report_email" not in job.get("destinations", []):
             raise ValueError("AI Report Email is not enabled for this connection.")
         with self._email_delivery_lock:
+            job = self._state_store.get_sync_job(sync_job_id)
+            if not job:
+                raise ValueError("Unknown sync job.")
+            if job.get("status") != "completed":
+                raise ValueError("First sync must complete before sending report email.")
             delivery_status = job.get("email_delivery", {}).get("status")
             if delivery_status == "sent":
                 return {"ok": True, "email_delivery": job["email_delivery"]}
@@ -194,17 +198,21 @@ class OnboardingPrototypeState:
                     "message": "Email sending is not enabled for this prototype run.",
                     "recipient_configured": False,
                 }
+                self._state_store.save_sync_job(sync_job_id, job)
                 return {"ok": False, "email_delivery": job["email_delivery"]}
             job["email_delivery"] = {
                 "status": "sending",
                 "message": "Report email is sending.",
                 "recipient_configured": True,
             }
+            self._state_store.save_sync_job(sync_job_id, job)
 
         try:
             email_delivery = self._email_report_sender(job)
             with self._email_delivery_lock:
+                job = self._state_store.get_sync_job(sync_job_id) or job
                 job["email_delivery"] = email_delivery
+                self._state_store.save_sync_job(sync_job_id, job)
             return {"ok": True, "email_delivery": email_delivery}
         except Exception as exc:
             email_delivery = {
@@ -213,7 +221,9 @@ class OnboardingPrototypeState:
                 "recipient_configured": True,
             }
             with self._email_delivery_lock:
+                job = self._state_store.get_sync_job(sync_job_id) or job
                 job["email_delivery"] = email_delivery
+                self._state_store.save_sync_job(sync_job_id, job)
             return {"ok": False, "email_delivery": email_delivery}
 
     def _find_connector(self, connector_id: str) -> dict[str, Any] | None:
@@ -239,13 +249,8 @@ class OnboardingPrototypeState:
         self._accounts_by_connector["meta_ads"] = self._meta_connector.fetch_ad_accounts()
         self._real_meta_loaded = True
 
-    def _next_draft_id(self) -> str:
-        self._draft_counter += 1
-        return f"draft_demo_{self._draft_counter:04d}"
-
     def _create_first_sync_job(self, draft_id: str, payload: dict[str, Any], account_count: int) -> dict[str, Any]:
-        self._sync_job_counter += 1
-        sync_job_id = f"sync_demo_{self._sync_job_counter:04d}"
+        sync_job_id = self._state_store.next_sync_job_id()
         job = {
             "sync_job_id": sync_job_id,
             "draft_id": draft_id,
@@ -259,7 +264,7 @@ class OnboardingPrototypeState:
             "account_group_name": str(payload.get("client_name") or "Selected account"),
             "report_schedule": payload.get("report_schedule") if isinstance(payload.get("report_schedule"), dict) else {},
         }
-        self._sync_jobs[sync_job_id] = job
+        self._state_store.save_sync_job(sync_job_id, job)
         return _public_sync_job(job)
 
     def _advance_sync_job(self, job: dict[str, Any]) -> None:

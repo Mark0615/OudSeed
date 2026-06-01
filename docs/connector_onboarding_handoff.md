@@ -64,6 +64,10 @@ The `Create connection` action creates a local in-memory draft and first-sync
 job only. The response contains a sanitized config preview, destination handoff
 metadata, an apply plan, and a prototype sync status object; it does not write
 project config, Secret Manager, Cloud Run jobs, or Looker Studio assets.
+Draft and sync-job state now goes through `src.onboarding.state_store` so the
+prototype API contract can later swap in durable product storage without
+rewriting the frontend flow. The current implementation remains process-local
+and does not persist real account ids, recipients, tokens, or client config.
 
 ### List Connectors
 
@@ -239,7 +243,10 @@ GET /api/account-connections/{draft_id}/apply-plan
 ```
 
 These endpoints return only sanitized local draft details for the prototype UI.
-They are intended to shape the later product API, not to act as durable storage.
+They are intended to shape the later product API. The local implementation uses
+an `OnboardingStateStore` boundary with an in-memory store; durable product
+storage should implement the same responsibilities while keeping sensitive
+account selections and token references server-side.
 
 ### Inspect First Sync Status
 
@@ -370,6 +377,9 @@ recipients.
 - Create a local connection draft with destination handoff and apply-plan
   metadata. Completed in `src.onboarding.api_server` without writing config,
   secrets, Cloud Run, or Looker Studio assets.
+- Add a state-store boundary for local drafts and first-sync jobs. Completed in
+  `src.onboarding.state_store`; the default implementation is in-memory and
+  thread-safe, with defensive copies to prevent accidental mutation leaks.
 - Create a local first-sync job status after setup and poll it in the frontend
   so the user sees queued, running, and completed states.
 - Add optional read-only backend data checks after completion so the prototype
