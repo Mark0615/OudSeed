@@ -19,7 +19,11 @@ from google.cloud import bigquery
 
 from src.connectors.meta_ads import MetaAdsConnector
 from src.destinations.bigquery import BigQueryDestination
-from src.onboarding.config_bridge import build_config_preview_response
+from src.onboarding.config_bridge import (
+    build_config_preview_response,
+    export_local_clients_config,
+    format_local_export_summary,
+)
 from src.onboarding.state_store import (
     InMemoryOnboardingStateStore,
     JsonFileOnboardingStateStore,
@@ -43,6 +47,7 @@ class OnboardingPrototypeState:
         use_real_meta: bool = False,
         backend_status_reader: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         email_report_sender: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+        local_config_exporter: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         state_store: OnboardingStateStore | None = None,
     ) -> None:
         self._connectors = _default_connectors()
@@ -52,6 +57,7 @@ class OnboardingPrototypeState:
         self._use_real_meta = use_real_meta
         self._backend_status_reader = backend_status_reader
         self._email_report_sender = email_report_sender
+        self._local_config_exporter = local_config_exporter
         self._state_store = state_store or InMemoryOnboardingStateStore()
         self._real_meta_loaded = False
         self._email_delivery_lock = threading.Lock()
@@ -182,6 +188,30 @@ class OnboardingPrototypeState:
         """Return the sanitized apply plan for a local draft."""
         draft = self.get_connection_draft(draft_id)["draft"]
         return {"ok": True, "draft_id": draft_id, "apply_plan": draft["apply_plan"]}
+
+    def export_local_config(self, draft_id: str) -> dict[str, Any]:
+        """Write a local clients config artifact for a connection draft."""
+        draft = self._state_store.get_connection_draft(draft_id)
+        if not draft:
+            raise ValueError("Unknown connection draft.")
+        if not self._local_config_exporter:
+            return {
+                "ok": False,
+                "local_config_export": {
+                    "status": "unavailable",
+                    "message": "Local config export is not enabled for this prototype run.",
+                    "writes_config": False,
+                    "writes_secrets": False,
+                },
+            }
+        export_summary = self._local_config_exporter(draft["raw_selection"])
+        return {
+            "ok": True,
+            "local_config_export": {
+                "status": "exported",
+                **export_summary,
+            },
+        }
 
     def get_sync_job(self, sync_job_id: str) -> dict[str, Any]:
         """Return a sanitized first-sync job status for the local prototype."""
@@ -360,6 +390,8 @@ def create_handler(
                     self._send_json(app_state.create_connection(self._read_json_body()))
                 elif path.startswith("/api/sync-jobs/") and path.endswith("/report-email"):
                     self._send_json(self._handle_send_report_email(path))
+                elif path.startswith("/api/account-connections/") and path.endswith("/local-config-export"):
+                    self._send_json(self._handle_local_config_export(path))
                 elif path == "/api/config-preview":
                     self._send_json(app_state.config_preview(self._read_json_body()))
                 elif path.startswith("/api/connectors/") and path.endswith("/oauth/start"):
@@ -401,6 +433,16 @@ def create_handler(
             if len(parts) == 4 and parts[:2] == ["api", "sync-jobs"] and parts[3] == "report-email":
                 return app_state.send_report_email(parts[2])
             raise ValueError("Invalid report email path.")
+
+        def _handle_local_config_export(self, path: str) -> dict[str, Any]:
+            parts = [part for part in path.split("/") if part]
+            if (
+                len(parts) == 4
+                and parts[:2] == ["api", "account-connections"]
+                and parts[3] == "local-config-export"
+            ):
+                return app_state.export_local_config(parts[2])
+            raise ValueError("Invalid local config export path.")
 
         def _serve_static(self, path: str) -> None:
             relative_path = "index.html" if path in {"", "/"} else unquote(path.lstrip("/"))
@@ -1024,11 +1066,13 @@ def _state_from_env() -> OnboardingPrototypeState:
     use_real_meta = _truthy(os.getenv("ONBOARDING_USE_REAL_META"))
     backend_status_reader = _backend_status_reader_from_env()
     email_report_sender = _email_report_sender_from_env()
+    local_config_exporter = _local_config_exporter_from_env()
     state_store = _state_store_from_env()
     if not use_real_meta:
         return OnboardingPrototypeState(
             backend_status_reader=backend_status_reader,
             email_report_sender=email_report_sender,
+            local_config_exporter=local_config_exporter,
             state_store=state_store,
         )
 
@@ -1047,6 +1091,7 @@ def _state_from_env() -> OnboardingPrototypeState:
         use_real_meta=True,
         backend_status_reader=backend_status_reader,
         email_report_sender=email_report_sender,
+        local_config_exporter=local_config_exporter,
         state_store=state_store,
     )
 
@@ -1056,6 +1101,17 @@ def _state_store_from_env() -> OnboardingStateStore:
     if not state_store_path:
         return InMemoryOnboardingStateStore()
     return JsonFileOnboardingStateStore(Path(state_store_path))
+
+
+def _local_config_exporter_from_env() -> Callable[[dict[str, Any]], dict[str, Any]] | None:
+    export_path = os.getenv("ONBOARDING_LOCAL_CONFIG_EXPORT_PATH", "").strip()
+    if not export_path:
+        return None
+
+    def export(selection: dict[str, Any]) -> dict[str, Any]:
+        return format_local_export_summary(export_local_clients_config(selection, Path(export_path)))
+
+    return export
 
 
 def _backend_status_reader_from_env() -> Callable[[dict[str, Any]], dict[str, Any]] | None:

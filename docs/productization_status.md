@@ -186,6 +186,12 @@ This sets `ONBOARDING_STATE_STORE_PATH=.local/onboarding_state.json`. The
 account selections. It does not persist platform tokens or write
 `config/clients.yaml`.
 
+The persistent prototype target also sets
+`ONBOARDING_LOCAL_CONFIG_EXPORT_PATH=.local/clients.generated.yaml`. That enables
+an internal local export endpoint for turning an onboarding draft into a
+clients.yaml-compatible artifact. The API response is safe metadata only; the
+generated local file is ignored by git and may contain real ad account IDs.
+
 The prototype also creates a local first-sync job status and polls it from the
 frontend. This models the product experience of queued, running, and completed
 sync states without automatically executing Cloud Run or writing BigQuery from

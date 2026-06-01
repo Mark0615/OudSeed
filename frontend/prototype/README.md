@@ -30,9 +30,10 @@ prototype server, run:
 make onboarding-prototype-persistent
 ```
 
-This writes onboarding state to `.local/onboarding_state.json`, which is ignored
-by git because it may contain real ad account selections. It still does not
-store platform tokens or write `config/clients.yaml`.
+This writes onboarding state to `.local/onboarding_state.json` and enables local
+config artifact export to `.local/clients.generated.yaml`. Both paths are
+ignored by git because they may contain real ad account selections. It still
+does not store platform tokens or write `config/clients.yaml`.
 
 Current prototype scope:
 
@@ -67,6 +68,8 @@ Current prototype scope:
   `ONBOARDING_USE_REAL_META=true`.
 - Optionally persist local connection and first-sync state with
   `ONBOARDING_STATE_STORE_PATH=.local/onboarding_state.json`.
+- Optionally export selected account drafts to a local clients.yaml-compatible
+  artifact with `ONBOARDING_LOCAL_CONFIG_EXPORT_PATH=.local/clients.generated.yaml`.
 
 This prototype intentionally does not implement real OAuth, token storage, user login, or SaaS account management.
 

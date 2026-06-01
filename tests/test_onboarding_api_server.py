@@ -5,7 +5,11 @@ from __future__ import annotations
 import json
 from unittest.mock import Mock
 
-from src.onboarding.api_server import OnboardingPrototypeState, _state_store_from_env
+from src.onboarding.api_server import (
+    OnboardingPrototypeState,
+    _local_config_exporter_from_env,
+    _state_store_from_env,
+)
 from src.onboarding.state_store import InMemoryOnboardingStateStore, JsonFileOnboardingStateStore
 
 
@@ -286,6 +290,60 @@ def test_onboarding_state_persists_unavailable_report_email_status() -> None:
     assert response["ok"] is False
     assert response["email_delivery"]["status"] == "unavailable"
     assert status["sync_job"]["email_delivery"]["status"] == "unavailable"
+
+
+def test_onboarding_state_exports_local_config_without_returning_sensitive_ids() -> None:
+    exported_selections: list[dict] = []
+
+    def fake_exporter(selection: dict) -> dict:
+        exported_selections.append(selection)
+        return {
+            "output_path": ".local/clients.generated.yaml",
+            "client_count": 1,
+            "account_count": len(selection["accounts"]),
+            "destinations": selection["destinations"],
+            "report_schedule_count": 1,
+            "warnings": [],
+            "writes_config": False,
+            "writes_secrets": False,
+            "local_artifact_only": True,
+        }
+
+    state = OnboardingPrototypeState(local_config_exporter=fake_exporter)
+    created = state.create_connection(sample_connection_payload())
+
+    response = state.export_local_config(created["draft_id"])
+    output = json.dumps(response)
+
+    assert response["ok"] is True
+    assert response["local_config_export"]["status"] == "exported"
+    assert exported_selections[0]["accounts"][0]["external_account_id"] == "act_demo_1001"
+    assert "act_demo_1001" not in output
+
+
+def test_onboarding_state_returns_safe_response_when_local_config_export_disabled() -> None:
+    state = OnboardingPrototypeState()
+    created = state.create_connection(sample_connection_payload())
+
+    response = state.export_local_config(created["draft_id"])
+
+    assert response["ok"] is False
+    assert response["local_config_export"]["status"] == "unavailable"
+    assert response["local_config_export"]["writes_config"] is False
+    assert response["local_config_export"]["writes_secrets"] is False
+
+
+def test_local_config_exporter_from_env_writes_local_artifact(monkeypatch, tmp_path) -> None:
+    output_path = tmp_path / "clients.generated.yaml"
+    monkeypatch.setenv("ONBOARDING_LOCAL_CONFIG_EXPORT_PATH", str(output_path))
+
+    exporter = _local_config_exporter_from_env()
+    assert exporter is not None
+    response = exporter(sample_connection_payload())
+
+    assert response["account_count"] == 1
+    assert response["local_artifact_only"] is True
+    assert "act_demo_1001" in output_path.read_text(encoding="utf-8")
 
 
 def test_onboarding_state_exposes_sanitized_connection_draft_and_apply_plan() -> None:

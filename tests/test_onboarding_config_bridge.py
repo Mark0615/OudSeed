@@ -7,6 +7,8 @@ import pytest
 from src.onboarding.config_bridge import (
     build_config_preview,
     build_config_preview_response,
+    export_local_clients_config,
+    format_local_export_summary,
     format_preview_summary,
 )
 from src.utils.config_loader import load_config_from_yaml
@@ -115,5 +117,31 @@ def test_build_config_preview_response_matches_api_shape() -> None:
     assert response["config_preview"]["summary"]["account_count"] == 2
     assert response["config_preview"]["summary"]["report_schedule_count"] == 1
     assert "yaml_text" in response["config_preview"]
+    assert "act_real_should_not_print" not in output
+    assert "real-recipient@example.test" not in output
+
+
+def test_export_local_clients_config_writes_real_account_ids_to_ignored_artifact(tmp_path) -> None:
+    output_path = tmp_path / "clients.generated.yaml"
+
+    export = export_local_clients_config(sample_selection(), output_path)
+    config = load_config_from_yaml(output_path.read_text(encoding="utf-8"), source="local export")
+
+    accounts = config["clients"][0]["platforms"]["meta_ads"]["accounts"]
+    assert accounts[0]["ad_account_id"] == "act_real_should_not_print"
+    assert accounts[1]["ad_account_id"] == "act_another_real_should_not_print"
+    assert export.account_count == 2
+    assert export.report_schedule_count == 1
+
+
+def test_format_local_export_summary_is_safe_for_api_response(tmp_path) -> None:
+    export = export_local_clients_config(sample_selection(), tmp_path / "clients.generated.yaml")
+    response = format_local_export_summary(export)
+    output = json.dumps(response)
+
+    assert response["account_count"] == 2
+    assert response["local_artifact_only"] is True
+    assert response["writes_config"] is False
+    assert response["writes_secrets"] is False
     assert "act_real_should_not_print" not in output
     assert "real-recipient@example.test" not in output
