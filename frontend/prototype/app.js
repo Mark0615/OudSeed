@@ -11,6 +11,7 @@ const state = {
   reportType: "monthly",
   syncPollTimer: null,
   currentSyncJobId: null,
+  connections: [],
 };
 
 const els = {
@@ -42,6 +43,8 @@ const els = {
   summaryText: document.querySelector("#summaryText"),
   finishButton: document.querySelector("#finishButton"),
   connectionResult: document.querySelector("#connectionResult"),
+  connectionList: document.querySelector("#connectionList"),
+  connectionListCount: document.querySelector("#connectionListCount"),
   connectionStatus: document.querySelector("#connectionStatus"),
   handoffSummary: document.querySelector("#handoffSummary"),
   payloadPreview: document.querySelector("#payloadPreview"),
@@ -82,15 +85,17 @@ function visibleAccounts() {
 }
 
 async function hydrateData() {
-  const [{ connectors }, destinationResponse] = await Promise.all([
+  const [{ connectors }, destinationResponse, connectionResponse] = await Promise.all([
     api.listConnectors(),
     api.listDestinations(),
+    api.listAccountConnections(),
   ]);
   sources = connectors.map((connector) => ({
     ...connector,
     accounts: sources.find((source) => source.id === connector.id)?.accounts || [],
   }));
   destinations = destinationResponse.destinations;
+  state.connections = connectionResponse.connections || [];
 }
 
 function renderSources() {
@@ -308,6 +313,7 @@ function renderAll() {
   renderAccounts();
   renderDestinations();
   renderEmailSettings();
+  renderConnections();
   renderStepper();
   renderSummary();
 }
@@ -451,10 +457,17 @@ async function createConnection() {
   const result = await api.createConnection(payload);
   state.currentSyncJobId = result.first_sync_job?.sync_job_id || null;
   renderConnectionResult(payload, result);
+  await refreshConnections();
   if (result.first_sync_job?.sync_job_id) {
     pollSyncJob(result.first_sync_job.sync_job_id);
   }
   showToast("Connection ready. First sync started.");
+}
+
+async function refreshConnections() {
+  const response = await api.listAccountConnections();
+  state.connections = response.connections || [];
+  renderConnections();
 }
 
 function buildConnectionPayload() {
@@ -509,6 +522,42 @@ function renderConnectionResult(payload, result) {
   els.payloadPreview.textContent = JSON.stringify(sanitizePayloadForDisplay(payload), null, 2);
   els.nextActions.innerHTML = renderDestinationStatus(result.destination_handoff, payload, accountNames, result.first_sync_job);
   els.configPreview.textContent = result.config_preview.yaml_text;
+}
+
+function renderConnections() {
+  const connections = state.connections || [];
+  els.connectionListCount.textContent = connections.length === 0
+    ? "No connections"
+    : `${connections.length} connected`;
+  if (connections.length === 0) {
+    els.connectionList.innerHTML = `<div class="empty-state">Finish setup to see connected account groups here.</div>`;
+    return;
+  }
+
+  els.connectionList.innerHTML = connections
+    .map((connection) => {
+      const destinationNames = (connection.destinations || []).map(destinationLabel).join(", ");
+      const reportSchedule = connection.report_schedule
+        ? `${connection.report_schedule.report_type} · ${connection.report_schedule.timezone}`
+        : "Not scheduled";
+      return `
+        <article class="connection-card">
+          <div>
+            <strong>${formatCount(connection.account_count)} account${connection.account_count === 1 ? "" : "s"}</strong>
+            <span>${destinationNames || "No destinations"}</span>
+          </div>
+          <div>
+            <span>Report</span>
+            <strong>${reportSchedule}</strong>
+          </div>
+          <div>
+            <span>First sync</span>
+            <strong>${connection.first_sync_job_id ? "Ready to check" : "Not queued"}</strong>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
 }
 
 function clearConnectionResult() {

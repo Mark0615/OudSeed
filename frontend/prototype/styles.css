@@ -990,6 +990,45 @@ code {
   line-height: 1.4;
 }
 
+.connection-list {
+  display: grid;
+  gap: 10px;
+}
+
+.connection-card {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 0.8fr;
+  gap: 12px;
+  align-items: center;
+  min-height: 86px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.connection-card div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.connection-card strong,
+.connection-card span {
+  overflow-wrap: anywhere;
+}
+
+.connection-card strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.connection-card span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .developer-details {
   border: 1px dashed var(--line);
   border-radius: 8px;
@@ -1115,6 +1154,7 @@ pre {
 @media (max-width: 1060px) {
   .wizard-grid,
   .backend-check-grid,
+  .connection-card,
   .destination-grid,
   .handoff-destinations,
   .handoff-grid,
