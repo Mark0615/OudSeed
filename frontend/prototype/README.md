@@ -23,6 +23,17 @@ This reads `META_ACCESS_TOKEN` locally and calls Meta's `/me/adaccounts` endpoin
 after the prototype authorization step. It does not store tokens, print tokens,
 or write `config/clients.yaml`.
 
+To keep local connection drafts and first-sync state after restarting the
+prototype server, run:
+
+```bash
+make onboarding-prototype-persistent
+```
+
+This writes onboarding state to `.local/onboarding_state.json`, which is ignored
+by git because it may contain real ad account selections. It still does not
+store platform tokens or write `config/clients.yaml`.
+
 Current prototype scope:
 
 - Select an ad/data platform.
@@ -54,6 +65,8 @@ Current prototype scope:
 - Redact external ad account IDs from the displayed handoff payload.
 - Optionally list real Meta ad accounts through local API mode when
   `ONBOARDING_USE_REAL_META=true`.
+- Optionally persist local connection and first-sync state with
+  `ONBOARDING_STATE_STORE_PATH=.local/onboarding_state.json`.
 
 This prototype intentionally does not implement real OAuth, token storage, user login, or SaaS account management.
 

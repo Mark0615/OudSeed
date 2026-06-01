@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 
-.PHONY: install test lint run check onboarding-prototype onboarding-prototype-real-meta ai-report-deploy-dry-run ai-report-status ai-report-ready ai-report-preflight ai-report-logs ai-report-post-run ai-report-verify clean
+.PHONY: install test lint run check onboarding-prototype onboarding-prototype-real-meta onboarding-prototype-persistent ai-report-deploy-dry-run ai-report-status ai-report-ready ai-report-preflight ai-report-logs ai-report-post-run ai-report-verify clean
 
 install:
 	$(PIP) install -r requirements.txt
@@ -23,6 +23,9 @@ onboarding-prototype:
 
 onboarding-prototype-real-meta:
 	ONBOARDING_USE_REAL_META=true ONBOARDING_USE_BIGQUERY_STATUS=true ONBOARDING_ENABLE_EMAIL_SEND=true $(PYTHON) -m src.onboarding.api_server
+
+onboarding-prototype-persistent:
+	ONBOARDING_STATE_STORE_PATH=.local/onboarding_state.json ONBOARDING_USE_REAL_META=true ONBOARDING_USE_BIGQUERY_STATUS=true ONBOARDING_ENABLE_EMAIL_SEND=true $(PYTHON) -m src.onboarding.api_server
 
 ai-report-deploy-dry-run:
 	DEPLOY_DRY_RUN=true bash deploy/deploy_account_ai_report_job.sh

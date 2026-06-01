@@ -20,7 +20,11 @@ from google.cloud import bigquery
 from src.connectors.meta_ads import MetaAdsConnector
 from src.destinations.bigquery import BigQueryDestination
 from src.onboarding.config_bridge import build_config_preview_response
-from src.onboarding.state_store import InMemoryOnboardingStateStore, OnboardingStateStore
+from src.onboarding.state_store import (
+    InMemoryOnboardingStateStore,
+    JsonFileOnboardingStateStore,
+    OnboardingStateStore,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -1020,10 +1024,12 @@ def _state_from_env() -> OnboardingPrototypeState:
     use_real_meta = _truthy(os.getenv("ONBOARDING_USE_REAL_META"))
     backend_status_reader = _backend_status_reader_from_env()
     email_report_sender = _email_report_sender_from_env()
+    state_store = _state_store_from_env()
     if not use_real_meta:
         return OnboardingPrototypeState(
             backend_status_reader=backend_status_reader,
             email_report_sender=email_report_sender,
+            state_store=state_store,
         )
 
     access_token = os.getenv("META_ACCESS_TOKEN", "").strip()
@@ -1041,7 +1047,15 @@ def _state_from_env() -> OnboardingPrototypeState:
         use_real_meta=True,
         backend_status_reader=backend_status_reader,
         email_report_sender=email_report_sender,
+        state_store=state_store,
     )
+
+
+def _state_store_from_env() -> OnboardingStateStore:
+    state_store_path = os.getenv("ONBOARDING_STATE_STORE_PATH", "").strip()
+    if not state_store_path:
+        return InMemoryOnboardingStateStore()
+    return JsonFileOnboardingStateStore(Path(state_store_path))
 
 
 def _backend_status_reader_from_env() -> Callable[[dict[str, Any]], dict[str, Any]] | None:
