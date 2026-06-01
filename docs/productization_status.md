@@ -163,6 +163,12 @@ non-durable and reports `writes_config=false` and `writes_secrets=false`.
 The frontend presents this as a user-facing setup-complete state; draft/config
 details are kept in a collapsed developer details section for debugging.
 
+Onboarding draft and first-sync job state now sits behind
+`src.onboarding.state_store`. The default store remains process-local and
+in-memory for safety, but the API no longer depends directly on internal dicts.
+This is the intended boundary for replacing local prototype state with a durable
+workspace/account connection store later.
+
 The prototype also creates a local first-sync job status and polls it from the
 frontend. This models the product experience of queued, running, and completed
 sync states without automatically executing Cloud Run or writing BigQuery from

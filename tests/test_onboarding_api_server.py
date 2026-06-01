@@ -6,6 +6,7 @@ import json
 from unittest.mock import Mock
 
 from src.onboarding.api_server import OnboardingPrototypeState
+from src.onboarding.state_store import InMemoryOnboardingStateStore
 
 
 def sample_connection_payload() -> dict:
@@ -73,6 +74,18 @@ def test_onboarding_state_connection_returns_sanitized_config_preview() -> None:
     assert "act_demo_1001" not in response["config_preview"]["yaml_text"]
     assert "recipient@example.com" in response["config_preview"]["yaml_text"]
     assert "act_demo_1001" not in output
+
+
+def test_onboarding_state_accepts_injected_state_store() -> None:
+    store = InMemoryOnboardingStateStore()
+    state = OnboardingPrototypeState(state_store=store)
+
+    created = state.create_connection(sample_connection_payload())
+    sync_job_id = created["first_sync_job"]["sync_job_id"]
+
+    assert store.get_connection_draft(created["draft_id"]) is not None
+    assert store.get_sync_job(sync_job_id) is not None
+    assert state.get_sync_job(sync_job_id)["sync_job"]["status"] == "running"
 
 
 def test_onboarding_state_first_sync_job_advances_without_sensitive_ids() -> None:
@@ -223,6 +236,21 @@ def test_onboarding_state_requires_completed_sync_before_report_email() -> None:
         assert str(exc) == "First sync must complete before sending report email."
     else:
         raise AssertionError("Expected incomplete sync to block report email.")
+
+
+def test_onboarding_state_persists_unavailable_report_email_status() -> None:
+    state = OnboardingPrototypeState()
+
+    created = state.create_connection(sample_connection_payload())
+    sync_job_id = created["first_sync_job"]["sync_job_id"]
+    state.get_sync_job(sync_job_id)
+    state.get_sync_job(sync_job_id)
+    response = state.send_report_email(sync_job_id)
+    status = state.get_sync_job(sync_job_id)
+
+    assert response["ok"] is False
+    assert response["email_delivery"]["status"] == "unavailable"
+    assert status["sync_job"]["email_delivery"]["status"] == "unavailable"
 
 
 def test_onboarding_state_exposes_sanitized_connection_draft_and_apply_plan() -> None:
