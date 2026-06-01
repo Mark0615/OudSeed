@@ -183,6 +183,35 @@ def test_onboarding_state_sends_report_email_for_completed_sync_job() -> None:
     assert "act_demo_1001" not in output
 
 
+def test_onboarding_state_blocks_duplicate_report_email_while_sending() -> None:
+    duplicate_response: dict | None = None
+
+    def fake_email_sender(sync_job: dict) -> dict:
+        nonlocal duplicate_response
+        duplicate_response = state.send_report_email(sync_job["sync_job_id"])
+        return {
+            "status": "sent",
+            "message": "Report email sent.",
+            "report_id": "report_demo",
+            "report_type": "monthly",
+            "period_start_date": "2026-05-01",
+            "recipient_configured": True,
+        }
+
+    state = OnboardingPrototypeState(email_report_sender=fake_email_sender)
+
+    created = state.create_connection(sample_connection_payload())
+    sync_job_id = created["first_sync_job"]["sync_job_id"]
+    state.get_sync_job(sync_job_id)
+    state.get_sync_job(sync_job_id)
+    response = state.send_report_email(sync_job_id)
+
+    assert duplicate_response is not None
+    assert duplicate_response["ok"] is False
+    assert duplicate_response["email_delivery"]["status"] == "sending"
+    assert response["email_delivery"]["status"] == "sent"
+
+
 def test_onboarding_state_requires_completed_sync_before_report_email() -> None:
     state = OnboardingPrototypeState(email_report_sender=lambda sync_job: {"status": "sent"})
 

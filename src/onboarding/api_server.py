@@ -6,6 +6,7 @@ import argparse
 import json
 import mimetypes
 import os
+import threading
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -50,6 +51,7 @@ class OnboardingPrototypeState:
         self._draft_counter = 0
         self._sync_jobs: dict[str, dict[str, Any]] = {}
         self._sync_job_counter = 0
+        self._email_delivery_lock = threading.Lock()
         if use_real_meta:
             self._mark_real_meta_mode()
 
@@ -180,26 +182,39 @@ class OnboardingPrototypeState:
             raise ValueError("First sync must complete before sending report email.")
         if "ai_report_email" not in job.get("destinations", []):
             raise ValueError("AI Report Email is not enabled for this connection.")
-        if job.get("email_delivery", {}).get("status") == "sent":
-            return {"ok": True, "email_delivery": job["email_delivery"]}
-        if not self._email_report_sender:
+        with self._email_delivery_lock:
+            delivery_status = job.get("email_delivery", {}).get("status")
+            if delivery_status == "sent":
+                return {"ok": True, "email_delivery": job["email_delivery"]}
+            if delivery_status == "sending":
+                return {"ok": False, "email_delivery": job["email_delivery"]}
+            if not self._email_report_sender:
+                job["email_delivery"] = {
+                    "status": "unavailable",
+                    "message": "Email sending is not enabled for this prototype run.",
+                    "recipient_configured": False,
+                }
+                return {"ok": False, "email_delivery": job["email_delivery"]}
             job["email_delivery"] = {
-                "status": "unavailable",
-                "message": "Email sending is not enabled for this prototype run.",
-                "recipient_configured": False,
+                "status": "sending",
+                "message": "Report email is sending.",
+                "recipient_configured": True,
             }
-            return {"ok": False, "email_delivery": job["email_delivery"]}
 
         try:
-            job["email_delivery"] = self._email_report_sender(job)
-            return {"ok": True, "email_delivery": job["email_delivery"]}
+            email_delivery = self._email_report_sender(job)
+            with self._email_delivery_lock:
+                job["email_delivery"] = email_delivery
+            return {"ok": True, "email_delivery": email_delivery}
         except Exception as exc:
-            job["email_delivery"] = {
+            email_delivery = {
                 "status": "failed",
                 "message": f"Report email failed: {exc.__class__.__name__}",
                 "recipient_configured": True,
             }
-            return {"ok": False, "email_delivery": job["email_delivery"]}
+            with self._email_delivery_lock:
+                job["email_delivery"] = email_delivery
+            return {"ok": False, "email_delivery": email_delivery}
 
     def _find_connector(self, connector_id: str) -> dict[str, Any] | None:
         return next((connector for connector in self._connectors if connector["id"] == connector_id), None)
