@@ -252,6 +252,13 @@ in-memory store; durable product storage should implement the same
 responsibilities while keeping sensitive account selections and token references
 server-side.
 
+For local product testing, `ONBOARDING_STATE_STORE_PATH` can point the prototype
+at a JSON-backed store. The recommended path is `.local/onboarding_state.json`,
+which is ignored by git because it may contain real ad account selections. This
+only persists onboarding draft and sync-job state; platform tokens remain in
+local environment variables or Secret Manager, and `config/clients.yaml` is not
+written by the browser flow.
+
 ### Inspect First Sync Status
 
 ```http
@@ -388,6 +395,9 @@ recipients.
   flows. Completed in `src.onboarding.api_server`; it returns account counts,
   destination statuses, schedule metadata, and sync job ids without external ad
   account ids.
+- Add an opt-in JSON-backed local state store for prototype restarts. Completed
+  in `src.onboarding.state_store` and enabled with
+  `ONBOARDING_STATE_STORE_PATH`; `.local/` remains git-ignored.
 - Create a local first-sync job status after setup and poll it in the frontend
   so the user sees queued, running, and completed states.
 - Add optional read-only backend data checks after completion so the prototype

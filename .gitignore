@@ -32,6 +32,7 @@ refresh_token*.txt
 # Local config with real account IDs
 config/clients.yaml
 !config/clients.example.yaml
+.local/
 
 # Logs
 *.log

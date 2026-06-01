@@ -17,6 +17,8 @@ def test_makefile_includes_account_report_ops_targets() -> None:
     assert "ai-report-logs:" in makefile
     assert "ai-report-post-run:" in makefile
     assert "ai-report-verify:" in makefile
+    assert "onboarding-prototype-persistent:" in makefile
+    assert "ONBOARDING_STATE_STORE_PATH=.local/onboarding_state.json" in makefile
     assert "deploy/check_account_ai_report_ready.sh" in makefile
     assert "deploy/check_account_ai_report_status.sh" in makefile
     assert "deploy/check_account_ai_report_logs.sh" in makefile

@@ -174,6 +174,18 @@ for created connections. It returns account counts, enabled destinations,
 destination statuses, report schedule metadata, and first-sync job ids, but not
 external ad account ids, recipients, tokens, or raw selections.
 
+For longer local product tests, the prototype can persist draft/sync-job state
+with:
+
+```bash
+make onboarding-prototype-persistent
+```
+
+This sets `ONBOARDING_STATE_STORE_PATH=.local/onboarding_state.json`. The
+`.local/` directory is ignored by git because the JSON state can contain real ad
+account selections. It does not persist platform tokens or write
+`config/clients.yaml`.
+
 The prototype also creates a local first-sync job status and polls it from the
 frontend. This models the product experience of queued, running, and completed
 sync states without automatically executing Cloud Run or writing BigQuery from

@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from unittest.mock import Mock
 
-from src.onboarding.api_server import OnboardingPrototypeState
-from src.onboarding.state_store import InMemoryOnboardingStateStore
+from src.onboarding.api_server import OnboardingPrototypeState, _state_store_from_env
+from src.onboarding.state_store import InMemoryOnboardingStateStore, JsonFileOnboardingStateStore
 
 
 def sample_connection_payload() -> dict:
@@ -86,6 +86,18 @@ def test_onboarding_state_accepts_injected_state_store() -> None:
     assert store.get_connection_draft(created["draft_id"]) is not None
     assert store.get_sync_job(sync_job_id) is not None
     assert state.get_sync_job(sync_job_id)["sync_job"]["status"] == "running"
+
+
+def test_onboarding_state_store_from_env_uses_json_file_store(monkeypatch, tmp_path) -> None:
+    store_path = tmp_path / "onboarding_state.json"
+    monkeypatch.setenv("ONBOARDING_STATE_STORE_PATH", str(store_path))
+
+    store = _state_store_from_env()
+
+    assert isinstance(store, JsonFileOnboardingStateStore)
+    draft_id = store.next_draft_id()
+    store.save_connection_draft(draft_id, {"safe_detail": {"draft_id": draft_id}})
+    assert JsonFileOnboardingStateStore(store_path).get_connection_draft(draft_id) is not None
 
 
 def test_onboarding_state_lists_created_account_connections_without_sensitive_ids() -> None:
