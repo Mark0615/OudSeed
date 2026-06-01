@@ -38,8 +38,77 @@ class ConfigPreview:
     warnings: list[str]
 
 
+@dataclass(frozen=True)
+class LocalConfigExport:
+    """Local config export metadata, without exposing rendered YAML."""
+
+    output_path: Path
+    client_count: int
+    account_count: int
+    destinations: list[str]
+    report_schedule_count: int
+    warnings: list[str]
+
+
 def build_config_preview(selection: dict[str, Any]) -> ConfigPreview:
     """Convert an onboarding selection payload into sanitized clients YAML."""
+    yaml_text, account_count, destinations, report_schedule_count = _build_clients_yaml(
+        selection,
+        redact_account_ids=True,
+    )
+    warnings = _warnings(destinations)
+    return ConfigPreview(
+        yaml_text=yaml_text,
+        client_count=1,
+        account_count=account_count,
+        destinations=destinations,
+        report_schedule_count=report_schedule_count,
+        warnings=warnings,
+    )
+
+
+def export_local_clients_config(selection: dict[str, Any], output_path: Path | str) -> LocalConfigExport:
+    """Write selected accounts to a local clients.yaml-compatible artifact.
+
+    The artifact may contain real ad account IDs. Use only ignored local paths.
+    """
+    path = Path(output_path)
+    yaml_text, account_count, destinations, report_schedule_count = _build_clients_yaml(
+        selection,
+        redact_account_ids=False,
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml_text, encoding="utf-8")
+    return LocalConfigExport(
+        output_path=path,
+        client_count=1,
+        account_count=account_count,
+        destinations=destinations,
+        report_schedule_count=report_schedule_count,
+        warnings=_warnings(destinations),
+    )
+
+
+def format_local_export_summary(export: LocalConfigExport) -> dict[str, Any]:
+    """Return safe local export metadata for API responses."""
+    return {
+        "output_path": str(export.output_path),
+        "client_count": export.client_count,
+        "account_count": export.account_count,
+        "destinations": export.destinations,
+        "report_schedule_count": export.report_schedule_count,
+        "warnings": export.warnings,
+        "writes_config": False,
+        "writes_secrets": False,
+        "local_artifact_only": True,
+    }
+
+
+def _build_clients_yaml(
+    selection: dict[str, Any],
+    *,
+    redact_account_ids: bool,
+) -> tuple[str, int, list[str], int]:
     _require_mapping(selection, "selection")
     connector_id = _required_str(selection, "connector_id", "selection")
     if connector_id not in SUPPORTED_CONNECTORS:
@@ -49,7 +118,11 @@ def build_config_preview(selection: dict[str, Any]) -> ConfigPreview:
     destinations = _normalize_destinations(_required_list(selection, "destinations", "selection"))
     workspace_id = _optional_str(selection.get("workspace_id")) or DEFAULT_WORKSPACE_ID
     report_schedule = _build_report_schedule(selection, destinations)
-    platform_config = _build_platform_config(connector_id, accounts)
+    platform_config = _build_platform_config(
+        connector_id,
+        accounts,
+        redact_account_ids=redact_account_ids,
+    )
     destination_config = _build_destination_config(destinations)
     client_name = _client_name(selection, accounts)
 
@@ -82,16 +155,7 @@ def build_config_preview(selection: dict[str, Any]) -> ConfigPreview:
     }
     yaml_text = yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
     load_config_from_yaml(yaml_text, source="onboarding config preview")
-
-    warnings = _warnings(destinations)
-    return ConfigPreview(
-        yaml_text=yaml_text,
-        client_count=1,
-        account_count=len(accounts),
-        destinations=destinations,
-        report_schedule_count=1 if report_schedule else 0,
-        warnings=warnings,
-    )
+    return yaml_text, len(accounts), destinations, 1 if report_schedule else 0
 
 
 def format_preview_summary(preview: ConfigPreview) -> list[str]:
@@ -145,7 +209,12 @@ def main() -> None:
         print(preview.yaml_text, end="")
 
 
-def _build_platform_config(connector_id: str, accounts: list[Any]) -> dict[str, Any]:
+def _build_platform_config(
+    connector_id: str,
+    accounts: list[Any],
+    *,
+    redact_account_ids: bool,
+) -> dict[str, Any]:
     if connector_id != "meta_ads":
         raise ValueError(f"Unsupported connector_id: {connector_id}")
 
@@ -153,7 +222,11 @@ def _build_platform_config(connector_id: str, accounts: list[Any]) -> dict[str, 
         "enabled": True,
         "accounts": [
             {
-                "ad_account_id": f"act_preview_{index:04d}",
+                "ad_account_id": (
+                    f"act_preview_{index:04d}"
+                    if redact_account_ids
+                    else _account_external_id(account, index)
+                ),
                 "account_name": _account_name(account, index),
                 "report_level": "ad",
                 "attribution_setting": "platform_default",
@@ -252,6 +325,15 @@ def _account_name(account: Any, index: int) -> str:
     if not external_account_id:
         raise ValueError(f"selection.accounts[{index - 1}].external_account_id is required.")
     return _optional_str(account.get("account_name") or account.get("name")) or f"Preview Account {index}"
+
+
+def _account_external_id(account: Any, index: int) -> str:
+    if not isinstance(account, dict):
+        raise ValueError(f"selection.accounts[{index - 1}] must be a mapping/object.")
+    external_account_id = _optional_str(account.get("external_account_id") or account.get("id"))
+    if not external_account_id:
+        raise ValueError(f"selection.accounts[{index - 1}].external_account_id is required.")
+    return external_account_id
 
 
 def _load_selection(selection_json: str) -> dict[str, Any]:

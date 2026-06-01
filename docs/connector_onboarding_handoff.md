@@ -259,6 +259,12 @@ only persists onboarding draft and sync-job state; platform tokens remain in
 local environment variables or Secret Manager, and `config/clients.yaml` is not
 written by the browser flow.
 
+When `ONBOARDING_LOCAL_CONFIG_EXPORT_PATH` is set, an internal prototype endpoint
+can export a draft's selected accounts into a local clients.yaml-compatible
+artifact, such as `.local/clients.generated.yaml`. The endpoint returns only a
+safe summary; the artifact itself is local and git-ignored because it may
+contain real ad account IDs.
+
 ### Inspect First Sync Status
 
 ```http
@@ -398,6 +404,10 @@ recipients.
 - Add an opt-in JSON-backed local state store for prototype restarts. Completed
   in `src.onboarding.state_store` and enabled with
   `ONBOARDING_STATE_STORE_PATH`; `.local/` remains git-ignored.
+- Add an opt-in local clients.yaml-compatible export for selected account
+  drafts. Completed in `src.onboarding.config_bridge` and
+  `src.onboarding.api_server`; the API returns only safe metadata and writes
+  the artifact only when `ONBOARDING_LOCAL_CONFIG_EXPORT_PATH` is configured.
 - Create a local first-sync job status after setup and poll it in the frontend
   so the user sees queued, running, and completed states.
 - Add optional read-only backend data checks after completion so the prototype
