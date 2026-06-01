@@ -238,15 +238,19 @@ Response:
 ### Inspect Local Draft
 
 ```http
+GET /api/account-connections
 GET /api/account-connections/{draft_id}
 GET /api/account-connections/{draft_id}/apply-plan
 ```
 
-These endpoints return only sanitized local draft details for the prototype UI.
-They are intended to shape the later product API. The local implementation uses
-an `OnboardingStateStore` boundary with an in-memory store; durable product
-storage should implement the same responsibilities while keeping sensitive
-account selections and token references server-side.
+`GET /api/account-connections` returns safe summaries of locally created
+connections so the product UI can show which account groups and destinations are
+set up after a page reload. The detail endpoints return only sanitized local
+draft details for the prototype UI. They are intended to shape the later product
+API. The local implementation uses an `OnboardingStateStore` boundary with an
+in-memory store; durable product storage should implement the same
+responsibilities while keeping sensitive account selections and token references
+server-side.
 
 ### Inspect First Sync Status
 
@@ -380,6 +384,10 @@ recipients.
 - Add a state-store boundary for local drafts and first-sync jobs. Completed in
   `src.onboarding.state_store`; the default implementation is in-memory and
   thread-safe, with defensive copies to prevent accidental mutation leaks.
+- Add a safe account-connections list endpoint for product UI reload/revisit
+  flows. Completed in `src.onboarding.api_server`; it returns account counts,
+  destination statuses, schedule metadata, and sync job ids without external ad
+  account ids.
 - Create a local first-sync job status after setup and poll it in the frontend
   so the user sees queued, running, and completed states.
 - Add optional read-only backend data checks after completion so the prototype

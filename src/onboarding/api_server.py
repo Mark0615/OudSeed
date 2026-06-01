@@ -123,6 +123,7 @@ class OnboardingPrototypeState:
         draft = {
             "draft_id": draft_id,
             "status": "draft",
+            "created_at": _utc_now(),
             "local_draft_only": True,
             "writes_config": False,
             "writes_secrets": False,
@@ -132,10 +133,14 @@ class OnboardingPrototypeState:
             "apply_plan": _build_apply_plan(payload, draft_id),
         }
         sync_job = self._create_first_sync_job(draft_id, payload, account_count)
-        self._state_store.save_connection_draft(draft_id, {
-            "raw_selection": payload,
-            "safe_detail": draft,
-        })
+        draft["first_sync_job_id"] = sync_job["sync_job_id"]
+        self._state_store.save_connection_draft(
+            draft_id,
+            {
+                "raw_selection": payload,
+                "safe_detail": draft,
+            },
+        )
         return {
             "ok": True,
             "draft_id": draft_id,
@@ -157,6 +162,17 @@ class OnboardingPrototypeState:
         if not draft:
             raise ValueError("Unknown connection draft.")
         return {"ok": True, "draft": draft["safe_detail"]}
+
+    def list_account_connections(self) -> dict[str, Any]:
+        """Return safe summaries for locally created account connections."""
+        return {
+            "ok": True,
+            "connections": [
+                _public_connection_summary(draft["safe_detail"])
+                for draft in self._state_store.list_connection_drafts()
+                if isinstance(draft.get("safe_detail"), dict)
+            ],
+        }
 
     def get_apply_plan(self, draft_id: str) -> dict[str, Any]:
         """Return the sanitized apply plan for a local draft."""
@@ -318,6 +334,8 @@ def create_handler(
                     self._send_json(app_state.list_connectors())
                 elif path == "/api/destinations":
                     self._send_json(app_state.list_destinations())
+                elif path == "/api/account-connections":
+                    self._send_json(app_state.list_account_connections())
                 elif path.startswith("/api/sync-jobs/"):
                     self._send_json(self._handle_get_sync_job(path))
                 elif path.startswith("/api/account-connections/"):
@@ -580,6 +598,48 @@ def _public_sync_job(job: dict[str, Any]) -> dict[str, Any]:
     if "email_delivery" in job:
         sync_job["email_delivery"] = job["email_delivery"]
     return sync_job
+
+
+def _public_connection_summary(draft: dict[str, Any]) -> dict[str, Any]:
+    config_summary = draft.get("config_preview", {}).get("summary", {})
+    destinations = config_summary.get("destinations") if isinstance(config_summary, dict) else []
+    destination_handoff = (
+        draft.get("destination_handoff")
+        if isinstance(draft.get("destination_handoff"), dict)
+        else {}
+    )
+    handoff_destinations = destination_handoff.get("destinations", {})
+    if not isinstance(handoff_destinations, dict):
+        handoff_destinations = {}
+    destination_statuses = {
+        destination_id: detail.get("status", "unknown")
+        for destination_id, detail in handoff_destinations.items()
+        if isinstance(destination_id, str) and isinstance(detail, dict)
+    }
+    report_handoff = handoff_destinations.get("ai_report_email", {})
+    report_schedule: dict[str, Any] | None = None
+    if isinstance(report_handoff, dict) and report_handoff:
+        report_schedule = {
+            "report_type": report_handoff.get("report_type", "monthly"),
+            "delivery_day": report_handoff.get("delivery_day", 1),
+            "timezone": report_handoff.get("timezone", "Asia/Taipei"),
+            "depth": report_handoff.get("depth", "standard"),
+        }
+
+    return {
+        "draft_id": draft["draft_id"],
+        "status": draft.get("status", "draft"),
+        "created_at": draft.get("created_at"),
+        "first_sync_job_id": draft.get("first_sync_job_id"),
+        "connection_count": len(draft.get("connection_ids", [])),
+        "account_count": config_summary.get("account_count", 0),
+        "destinations": destinations if isinstance(destinations, list) else [],
+        "destination_statuses": destination_statuses,
+        "report_schedule": report_schedule,
+        "local_draft_only": bool(draft.get("local_draft_only", True)),
+        "writes_config": bool(draft.get("writes_config", False)),
+        "writes_secrets": bool(draft.get("writes_secrets", False)),
+    }
 
 
 def _backend_status_disabled() -> dict[str, Any]:

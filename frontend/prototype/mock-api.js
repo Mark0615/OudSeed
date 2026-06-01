@@ -115,6 +115,7 @@
 
   let draftCounter = 0;
   let syncJobCounter = 0;
+  const connectionDrafts = {};
   const syncJobs = {};
 
   function clone(value) {
@@ -224,15 +225,39 @@
         const configPreview = buildConfigPreview(payload);
         const draftId = nextDraftId();
         const firstSyncJob = createFirstSyncJob(draftId, payload);
+        const destinationHandoff = buildDestinationHandoff(payload);
+        const applyPlan = buildApplyPlan(payload, draftId);
+        connectionDrafts[draftId] = {
+          draft_id: draftId,
+          status: "draft",
+          created_at: new Date().toISOString(),
+          local_draft_only: true,
+          writes_config: false,
+          writes_secrets: false,
+          connection_ids: payload.accounts.map((account, index) => `conn_demo_${index + 1}`),
+          first_sync_job_id: firstSyncJob.sync_job_id,
+          config_preview: configPreview,
+          destination_handoff: destinationHandoff,
+          apply_plan: applyPlan,
+        };
         return delay({
           draft_id: draftId,
-          connection_ids: payload.accounts.map((account, index) => `conn_demo_${index + 1}`),
+          connection_ids: connectionDrafts[draftId].connection_ids,
           ok: true,
           config_preview: configPreview,
           next_sync_status: "queued",
           first_sync_job: firstSyncJob,
-          destination_handoff: buildDestinationHandoff(payload),
-          apply_plan: buildApplyPlan(payload, draftId),
+          destination_handoff: destinationHandoff,
+          apply_plan: applyPlan,
+        });
+      });
+    },
+
+    listAccountConnections() {
+      return apiRequest("/api/account-connections", undefined, () => {
+        return delay({
+          ok: true,
+          connections: Object.values(connectionDrafts).map(publicConnectionSummary),
         });
       });
     },
@@ -277,10 +302,45 @@
         Object.keys(syncJobs).forEach((syncJobId) => {
           delete syncJobs[syncJobId];
         });
+        Object.keys(connectionDrafts).forEach((draftId) => {
+          delete connectionDrafts[draftId];
+        });
         return delay({ ok: true });
       });
     },
   };
+
+  function publicConnectionSummary(draft) {
+    const summary = draft.config_preview?.summary || {};
+    const handoffDestinations = draft.destination_handoff?.destinations || {};
+    const reportHandoff = handoffDestinations.ai_report_email || null;
+    return {
+      draft_id: draft.draft_id,
+      status: draft.status,
+      created_at: draft.created_at,
+      first_sync_job_id: draft.first_sync_job_id,
+      connection_count: draft.connection_ids.length,
+      account_count: summary.account_count || 0,
+      destinations: summary.destinations || [],
+      destination_statuses: Object.fromEntries(
+        Object.entries(handoffDestinations).map(([destinationId, handoff]) => [
+          destinationId,
+          handoff.status || "unknown",
+        ])
+      ),
+      report_schedule: reportHandoff
+        ? {
+            report_type: reportHandoff.report_type || "monthly",
+            delivery_day: reportHandoff.delivery_day || 1,
+            timezone: reportHandoff.timezone || "Asia/Taipei",
+            depth: reportHandoff.depth || "standard",
+          }
+        : null,
+      local_draft_only: true,
+      writes_config: false,
+      writes_secrets: false,
+    };
+  }
 
   function buildConfigPreview(payload) {
     const warnings = [];

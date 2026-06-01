@@ -169,6 +169,11 @@ in-memory for safety, but the API no longer depends directly on internal dicts.
 This is the intended boundary for replacing local prototype state with a durable
 workspace/account connection store later.
 
+The local API also exposes `GET /api/account-connections` as a safe list view
+for created connections. It returns account counts, enabled destinations,
+destination statuses, report schedule metadata, and first-sync job ids, but not
+external ad account ids, recipients, tokens, or raw selections.
+
 The prototype also creates a local first-sync job status and polls it from the
 frontend. This models the product experience of queued, running, and completed
 sync states without automatically executing Cloud Run or writing BigQuery from

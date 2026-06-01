@@ -88,6 +88,29 @@ def test_onboarding_state_accepts_injected_state_store() -> None:
     assert state.get_sync_job(sync_job_id)["sync_job"]["status"] == "running"
 
 
+def test_onboarding_state_lists_created_account_connections_without_sensitive_ids() -> None:
+    state = OnboardingPrototypeState()
+
+    state.create_connection(sample_connection_payload())
+    response = state.list_account_connections()
+    output = json.dumps(response)
+
+    assert response["ok"] is True
+    assert len(response["connections"]) == 1
+    connection = response["connections"][0]
+    assert connection["draft_id"] == "draft_demo_0001"
+    assert connection["first_sync_job_id"] == "sync_demo_0001"
+    assert connection["account_count"] == 1
+    assert connection["connection_count"] == 1
+    assert connection["destinations"] == ["looker_studio", "ai_report_email", "bigquery"]
+    assert connection["destination_statuses"]["ai_report_email"] == "config_preview_ready"
+    assert connection["report_schedule"]["report_type"] == "weekly"
+    assert connection["local_draft_only"] is True
+    assert connection["writes_config"] is False
+    assert connection["writes_secrets"] is False
+    assert "act_demo_1001" not in output
+
+
 def test_onboarding_state_first_sync_job_advances_without_sensitive_ids() -> None:
     state = OnboardingPrototypeState()
 
