@@ -265,6 +265,11 @@ artifact, such as `.local/clients.generated.yaml`. The endpoint returns only a
 safe summary; the artifact itself is local and git-ignored because it may
 contain real ad account IDs.
 
+Once that artifact exists, `make onboarding-sync-local-config` can run the Meta
+sync using `CLIENTS_CONFIG_PATH=.local/clients.generated.yaml` and
+`SYNC_ENABLED_PLATFORMS=meta_ads`. This is kept as an explicit local operations
+command because it calls Meta and writes/replaces BigQuery rows.
+
 ### Inspect First Sync Status
 
 ```http
@@ -408,6 +413,9 @@ recipients.
   drafts. Completed in `src.onboarding.config_bridge` and
   `src.onboarding.api_server`; the API returns only safe metadata and writes
   the artifact only when `ONBOARDING_LOCAL_CONFIG_EXPORT_PATH` is configured.
+- Add a local operations target for syncing from the generated onboarding
+  config artifact. Completed as `make onboarding-sync-local-config`; running it
+  is explicit because it writes selected-account data to BigQuery.
 - Create a local first-sync job status after setup and poll it in the frontend
   so the user sees queued, running, and completed states.
 - Add optional read-only backend data checks after completion so the prototype

@@ -35,6 +35,15 @@ config artifact export to `.local/clients.generated.yaml`. Both paths are
 ignored by git because they may contain real ad account selections. It still
 does not store platform tokens or write `config/clients.yaml`.
 
+After the local artifact exists, this command runs a Meta sync from it:
+
+```bash
+make onboarding-sync-local-config
+```
+
+This calls Meta and writes/replaces BigQuery rows for the configured date range,
+so keep it as an explicit local operations step.
+
 Current prototype scope:
 
 - Select an ad/data platform.
@@ -70,6 +79,8 @@ Current prototype scope:
   `ONBOARDING_STATE_STORE_PATH=.local/onboarding_state.json`.
 - Optionally export selected account drafts to a local clients.yaml-compatible
   artifact with `ONBOARDING_LOCAL_CONFIG_EXPORT_PATH=.local/clients.generated.yaml`.
+- Optionally run selected-account Meta sync from that artifact with
+  `make onboarding-sync-local-config`.
 
 This prototype intentionally does not implement real OAuth, token storage, user login, or SaaS account management.
 

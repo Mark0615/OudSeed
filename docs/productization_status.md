@@ -192,6 +192,18 @@ an internal local export endpoint for turning an onboarding draft into a
 clients.yaml-compatible artifact. The API response is safe metadata only; the
 generated local file is ignored by git and may contain real ad account IDs.
 
+After a local config artifact exists, a selected-account Meta sync can be run
+from that artifact with:
+
+```bash
+make onboarding-sync-local-config
+```
+
+This runs `src.main` with `CLIENTS_CONFIG_PATH=.local/clients.generated.yaml`
+and `SYNC_ENABLED_PLATFORMS=meta_ads`. It is intentionally a manual command
+because it calls Meta and writes/replaces rows in BigQuery for the configured
+date range.
+
 The prototype also creates a local first-sync job status and polls it from the
 frontend. This models the product experience of queued, running, and completed
 sync states without automatically executing Cloud Run or writing BigQuery from
