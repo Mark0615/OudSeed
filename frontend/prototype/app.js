@@ -607,6 +607,14 @@ function renderEmailReportAction(syncJob) {
       </div>
     `;
   }
+  if (delivery?.status === "sending") {
+    return `
+      <div class="email-action sending">
+        <strong>Sending report email</strong>
+        <span>${delivery.message || "Please keep this page open."}</span>
+      </div>
+    `;
+  }
   if (delivery?.status === "failed" || delivery?.status === "unavailable") {
     return `
       <div class="email-action failed">
