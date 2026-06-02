@@ -34,6 +34,8 @@ This writes onboarding state to `.local/onboarding_state.json` and enables local
 config artifact export to `.local/clients.generated.yaml`. Both paths are
 ignored by git because they may contain real ad account selections. It still
 does not store platform tokens or write `config/clients.yaml`.
+When the export path is configured, finishing setup auto-exports the local
+artifact for the selected accounts.
 
 After the local artifact exists, this command runs a Meta sync from it:
 

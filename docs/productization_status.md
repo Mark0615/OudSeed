@@ -191,6 +191,8 @@ The persistent prototype target also sets
 an internal local export endpoint for turning an onboarding draft into a
 clients.yaml-compatible artifact. The API response is safe metadata only; the
 generated local file is ignored by git and may contain real ad account IDs.
+When this path is configured, `POST /api/account-connections` also auto-exports
+the artifact so the current selected accounts are ready for first-sync execution.
 
 After a local config artifact exists, a selected-account Meta sync can be run
 from that artifact with:

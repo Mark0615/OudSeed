@@ -149,6 +149,9 @@ class OnboardingPrototypeState:
         }
         sync_job = self._create_first_sync_job(draft_id, payload, account_count)
         draft["first_sync_job_id"] = sync_job["sync_job_id"]
+        local_config_export = self._export_local_config_from_selection(payload)
+        if local_config_export:
+            draft["local_config_export"] = local_config_export
         self._state_store.save_connection_draft(
             draft_id,
             {
@@ -165,6 +168,7 @@ class OnboardingPrototypeState:
             "config_preview": response["config_preview"],
             "destination_handoff": draft["destination_handoff"],
             "apply_plan": draft["apply_plan"],
+            **({"local_config_export": local_config_export} if local_config_export else {}),
         }
 
     def config_preview(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -210,6 +214,13 @@ class OnboardingPrototypeState:
                 },
             }
         export_summary = self._local_config_exporter(draft["raw_selection"])
+        safe_detail = draft.get("safe_detail")
+        if isinstance(safe_detail, dict):
+            safe_detail["local_config_export"] = {
+                "status": "exported",
+                **export_summary,
+            }
+            self._state_store.save_connection_draft(draft_id, draft)
         return {
             "ok": True,
             "local_config_export": {
@@ -217,6 +228,24 @@ class OnboardingPrototypeState:
                 **export_summary,
             },
         }
+
+    def _export_local_config_from_selection(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        if not self._local_config_exporter:
+            return None
+        try:
+            export_summary = self._local_config_exporter(payload)
+            return {
+                "status": "exported",
+                **export_summary,
+            }
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "message": f"Local config export failed: {exc.__class__.__name__}",
+                "writes_config": False,
+                "writes_secrets": False,
+                "local_artifact_only": True,
+            }
 
     def get_sync_job(self, sync_job_id: str) -> dict[str, Any]:
         """Return a sanitized first-sync job status for the local prototype."""
@@ -729,6 +758,7 @@ def _public_connection_summary(draft: dict[str, Any]) -> dict[str, Any]:
         "local_draft_only": bool(draft.get("local_draft_only", True)),
         "writes_config": bool(draft.get("writes_config", False)),
         "writes_secrets": bool(draft.get("writes_secrets", False)),
+        **({"local_config_export": draft["local_config_export"]} if "local_config_export" in draft else {}),
     }
 
 
