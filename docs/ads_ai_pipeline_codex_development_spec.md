@@ -1,4 +1,4 @@
-# Ads AI Pipeline × Codex 開發規格書 v0.2
+# Ads AI Pipeline × Codex 開發規格書 v0.3
 
 ## 0. 文件目的
 
@@ -12,6 +12,20 @@
 Ads APIs → BigQuery → Looker Studio / Google Sheet → AI Summary
 ```
 
+Current repo status as of the v0.4 product-shaped MVP work:
+
+- Meta Ads daily sync, BigQuery raw/unified tables, reporting marts, Looker
+  Studio views, Cloud Run/Scheduler deployment, AI report logs, and
+  account-grouped HTML email reports are implemented.
+- A basic Google Ads connector, Google normalization, raw/unified sync flow, and
+  Google Ads report context foundation exist, but Google Ads is not yet the main
+  productized onboarding path.
+- The local connector onboarding prototype exists for Meta account discovery,
+  destination selection, local config export, live-sync readiness, and opt-in
+  first-sync execution.
+- LINE Ads, Google Sheets export, SaaS login, OAuth token storage, payment, and
+  LINE delivery remain future scope unless explicitly requested.
+
 目前 MVP 優先順序：
 
 ```text
@@ -23,6 +37,10 @@ Meta Ads → Google Ads → LINE Ads
 ```text
 Meta Ads → BigQuery → unified_ads_daily → Looker Studio
 ```
+
+This line describes the original v0.1 target. The repository has since advanced
+past that baseline; use `AGENTS.md` and `docs/productization_status.md` for the
+current productization state.
 
 ---
 
@@ -193,12 +211,13 @@ v0.1 必須做到：
 
 ## 3.2 v0.2
 
-加入 Google Ads：
+加入 Google Ads foundation：
 
 - Google Ads connector
 - Google Ads normalize
 - Google Ads → BigQuery daily sync
-- Google Sheet export optional
+- Google Ads report context foundation for AI diagnosis
+- Google Sheet export remains future scope
 
 ## 3.3 v0.2.5
 
@@ -218,13 +237,16 @@ v0.1 必須做到：
 
 ## 3.5 v0.4
 
-加入雲端排程與 AI 報告部署：
+加入雲端排程、AI 報告部署與帳戶群組 email delivery：
 
 - Cloud Run Job 執行 Meta Ads daily sync
 - Cloud Scheduler 每日觸發 sync
 - Cloud Run Job 執行 AI weekly/monthly report generation
 - Cloud Scheduler 觸發 monthly report，weekly report 可依需求新增
 - AI report logs 可被 Looker Studio 查詢
+- Account-grouped AI report sending through SMTP HTML email
+- Local onboarding prototype bridge for Meta account selection, destination
+  setup, local config export, live-sync readiness, and opt-in first-sync runner
 - 下一階段需將排程設定抽象成 client/account-level config，讓每個客戶可設定 weekly/monthly cadence、寄送日與寄送通路
 
 ## 3.6 v0.5
@@ -703,6 +725,13 @@ Recommended order:
 | 12 | Google Ads connector later |
 | 13 | LINE Ads connector later |
 
+Current status note: orders 1-12 have already advanced beyond the initial plan,
+including a basic Google Ads connector/sync foundation and AI report delivery
+work. Treat this table as historical sequencing guidance, not the current
+backlog. LINE Ads, Google Sheets export, SaaS login/OAuth token storage,
+payment, and LINE delivery still remain future scope unless explicitly
+requested.
+
 ---
 
 ## 16. 第一個 Codex 任務建議
@@ -717,12 +746,21 @@ Please read:
 Goal:
 Create the initial engineering governance files and project skeleton only.
 
+Historical note: this was the first task prompt for the initial skeleton phase,
+not the current repository state.
+
 Do not implement real API calls yet.
 
 The current MVP priority is:
 Meta Ads → BigQuery → unified_ads_daily → Looker Studio
 
 Do not implement Google Ads, LINE Ads, OAuth, SaaS login, payment, Google Sheet export, or AI reports.
+
+Current note: the repo now has Meta sync, a basic Google Ads foundation, AI
+reports, HTML email delivery, and a local onboarding prototype. The remaining
+future-scope items are LINE Ads, OAuth/SaaS login, payment, Google Sheets
+export, LINE delivery, and production onboarding beyond the approved Meta
+bridge unless explicitly requested.
 
 Acceptance criteria:
 - Project folder structure is created.
