@@ -7,6 +7,7 @@ from unittest.mock import Mock
 
 from src.onboarding.api_server import (
     OnboardingPrototypeState,
+    _first_sync_runner_from_env,
     _local_config_exporter_from_env,
     _state_store_from_env,
 )
@@ -187,6 +188,50 @@ def test_onboarding_state_attaches_backend_data_check_after_sync_completion() ->
     assert "act_demo_1001" not in output
 
 
+def test_onboarding_state_runs_injected_first_sync_runner_without_sensitive_response() -> None:
+    runner_calls: list[dict] = []
+
+    def fake_first_sync_runner(sync_job: dict, selection: dict) -> dict:
+        runner_calls.append({"sync_job": sync_job, "selection": selection})
+        return {
+            "runner": "fake_runner",
+            "status": "success",
+            "account_count": len(selection["accounts"]),
+            "writes_bigquery": True,
+        }
+
+    state = OnboardingPrototypeState(first_sync_runner=fake_first_sync_runner)
+
+    created = state.create_connection(sample_connection_payload())
+    sync_job_id = created["first_sync_job"]["sync_job_id"]
+    state.get_sync_job(sync_job_id)
+    completed = state.get_sync_job(sync_job_id)
+    output = json.dumps(completed)
+
+    assert completed["sync_job"]["status"] == "completed"
+    assert completed["sync_job"]["sync_execution"]["status"] == "success"
+    assert completed["sync_job"]["sync_execution"]["runner"] == "fake_runner"
+    assert len(runner_calls) == 1
+    assert runner_calls[0]["selection"]["accounts"][0]["external_account_id"] == "act_demo_1001"
+    assert "act_demo_1001" not in output
+
+
+def test_onboarding_state_marks_first_sync_failed_when_runner_fails() -> None:
+    def failing_first_sync_runner(sync_job: dict, selection: dict) -> dict:
+        raise RuntimeError("boom")
+
+    state = OnboardingPrototypeState(first_sync_runner=failing_first_sync_runner)
+
+    created = state.create_connection(sample_connection_payload())
+    sync_job_id = created["first_sync_job"]["sync_job_id"]
+    state.get_sync_job(sync_job_id)
+    failed = state.get_sync_job(sync_job_id)
+
+    assert failed["sync_job"]["status"] == "failed"
+    assert failed["sync_job"]["sync_execution"]["status"] == "failed"
+    assert failed["sync_job"]["sync_execution"]["message"] == "First sync failed: RuntimeError"
+
+
 def test_onboarding_state_backend_data_check_failures_do_not_break_sync_status() -> None:
     def failing_reader(sync_job: dict) -> dict:
         raise RuntimeError("boom")
@@ -344,6 +389,37 @@ def test_local_config_exporter_from_env_writes_local_artifact(monkeypatch, tmp_p
     assert response["account_count"] == 1
     assert response["local_artifact_only"] is True
     assert "act_demo_1001" in output_path.read_text(encoding="utf-8")
+
+
+def test_first_sync_runner_from_env_requires_explicit_enable(monkeypatch) -> None:
+    monkeypatch.delenv("ONBOARDING_ENABLE_LOCAL_SYNC_RUN", raising=False)
+
+    assert _first_sync_runner_from_env() is None
+
+
+def test_first_sync_runner_from_env_uses_local_runner(monkeypatch, tmp_path) -> None:
+    output_path = tmp_path / "clients.generated.yaml"
+    monkeypatch.setenv("ONBOARDING_ENABLE_LOCAL_SYNC_RUN", "true")
+    monkeypatch.setenv("ONBOARDING_LOCAL_CONFIG_EXPORT_PATH", str(output_path))
+    monkeypatch.setenv("ONBOARDING_LOCAL_SYNC_TIMEOUT_SECONDS", "321")
+
+    runner = _first_sync_runner_from_env()
+
+    assert runner is not None
+    assert runner.config_path == output_path
+    assert runner.timeout_seconds == 321
+
+
+def test_first_sync_runner_from_env_requires_local_config_export_path(monkeypatch) -> None:
+    monkeypatch.setenv("ONBOARDING_ENABLE_LOCAL_SYNC_RUN", "true")
+    monkeypatch.delenv("ONBOARDING_LOCAL_CONFIG_EXPORT_PATH", raising=False)
+
+    try:
+        _first_sync_runner_from_env()
+    except ValueError as exc:
+        assert "ONBOARDING_LOCAL_CONFIG_EXPORT_PATH" in str(exc)
+    else:
+        raise AssertionError("Expected local sync runner to require a config export path.")
 
 
 def test_onboarding_state_exposes_sanitized_connection_draft_and_apply_plan() -> None:

@@ -637,10 +637,34 @@ function renderSyncJob(syncJob) {
         <span id="syncProgressBar" style="width: ${syncJob.progress_percent || 0}%"></span>
       </div>
       <ol class="sync-step-list" id="syncStepList">${stepsMarkup}</ol>
+      <div id="syncExecutionStatus">${renderSyncExecution(syncJob.sync_execution)}</div>
       <div id="backendDataCheck">${renderBackendDataCheck(syncJob.backend_data_check)}</div>
       <div id="emailReportAction">${renderEmailReportAction(syncJob)}</div>
     </div>
   `;
+}
+
+function renderSyncExecution(syncExecution) {
+  if (!syncExecution) {
+    return "";
+  }
+  if (syncExecution.status === "success") {
+    return `
+      <div class="sync-execution success">
+        <strong>Source data synced</strong>
+        <span>${formatCount(syncExecution.account_count)} account${syncExecution.account_count === 1 ? "" : "s"} · ${syncExecution.runner || "sync runner"}</span>
+      </div>
+    `;
+  }
+  if (syncExecution.status === "failed") {
+    return `
+      <div class="sync-execution failed">
+        <strong>Source sync failed</strong>
+        <span>${syncExecution.message || "Unable to sync selected account data."}</span>
+      </div>
+    `;
+  }
+  return "";
 }
 
 function renderEmailReportAction(syncJob) {
@@ -745,12 +769,16 @@ function userSyncStatus(status) {
   if (status === "completed") {
     return "Sync completed";
   }
+  if (status === "failed") {
+    return "Sync failed";
+  }
   return status || "Ready";
 }
 
 function syncStepLabel(status) {
   return {
     completed: "Done",
+    failed: "Failed",
     running: "Running",
     queued: "Waiting",
   }[status] || status;
@@ -760,10 +788,12 @@ async function pollSyncJob(syncJobId) {
   try {
     const response = await api.getSyncJob(syncJobId);
     updateSyncJob(response.sync_job);
-    if (response.sync_job.status !== "completed") {
+    if (!["completed", "failed"].includes(response.sync_job.status)) {
       state.syncPollTimer = window.setTimeout(() => pollSyncJob(syncJobId), 1100);
-    } else {
+    } else if (response.sync_job.status === "completed") {
       showToast("First sync completed.");
+    } else {
+      showToast("First sync failed.");
     }
   } catch (error) {
     showToast(error.message || "Unable to load sync status.");
@@ -808,6 +838,10 @@ function updateSyncJob(syncJob) {
   const backendDataCheck = document.querySelector("#backendDataCheck");
   if (backendDataCheck) {
     backendDataCheck.innerHTML = renderBackendDataCheck(syncJob.backend_data_check);
+  }
+  const syncExecutionStatus = document.querySelector("#syncExecutionStatus");
+  if (syncExecutionStatus) {
+    syncExecutionStatus.innerHTML = renderSyncExecution(syncJob.sync_execution);
   }
   const emailReportAction = document.querySelector("#emailReportAction");
   if (emailReportAction) {

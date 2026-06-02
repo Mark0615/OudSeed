@@ -811,6 +811,48 @@ code {
   color: #15803d;
 }
 
+.sync-step-list li.failed strong {
+  color: #92400e;
+}
+
+.sync-execution {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.sync-execution.success {
+  border-color: rgba(21, 128, 61, 0.22);
+  background: #f0fdf4;
+}
+
+.sync-execution.failed {
+  border-color: rgba(217, 119, 6, 0.24);
+  background: #fffbeb;
+}
+
+.sync-execution strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.sync-execution.success strong {
+  color: #166534;
+}
+
+.sync-execution.failed strong {
+  color: #92400e;
+}
+
+.sync-execution span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .backend-check {
   margin-top: 12px;
   border: 1px solid rgba(21, 128, 61, 0.2);
