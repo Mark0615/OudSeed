@@ -6,6 +6,7 @@ import argparse
 import json
 import mimetypes
 import os
+import sys
 import threading
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -29,6 +30,7 @@ from src.onboarding.state_store import (
     JsonFileOnboardingStateStore,
     OnboardingStateStore,
 )
+from src.onboarding.sync_runner import LocalMetaSyncRunner, OnboardingFirstSyncRunner
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -48,6 +50,7 @@ class OnboardingPrototypeState:
         backend_status_reader: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         email_report_sender: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         local_config_exporter: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+        first_sync_runner: OnboardingFirstSyncRunner | None = None,
         state_store: OnboardingStateStore | None = None,
     ) -> None:
         self._connectors = _default_connectors()
@@ -58,9 +61,11 @@ class OnboardingPrototypeState:
         self._backend_status_reader = backend_status_reader
         self._email_report_sender = email_report_sender
         self._local_config_exporter = local_config_exporter
+        self._first_sync_runner = first_sync_runner
         self._state_store = state_store or InMemoryOnboardingStateStore()
         self._real_meta_loaded = False
         self._email_delivery_lock = threading.Lock()
+        self._first_sync_lock = threading.Lock()
         if use_real_meta:
             self._mark_real_meta_mode()
 
@@ -324,11 +329,48 @@ class OnboardingPrototypeState:
             job["progress_percent"] = 55
             job["message"] = "Syncing selected ad account data."
         elif job["checks"] >= 2:
-            job["status"] = "completed"
-            job["progress_percent"] = 100
-            job["message"] = "First sync completed. Destinations are ready."
-            if self._backend_status_reader and "backend_data_check" not in job:
-                job["backend_data_check"] = self._read_backend_status(job)
+            if not self._maybe_run_first_sync(job):
+                return
+            if job.get("status") != "failed":
+                job["status"] = "completed"
+                job["progress_percent"] = 100
+                job["message"] = "First sync completed. Destinations are ready."
+                if self._backend_status_reader and "backend_data_check" not in job:
+                    job["backend_data_check"] = self._read_backend_status(job)
+
+    def _maybe_run_first_sync(self, job: dict[str, Any]) -> bool:
+        if not self._first_sync_runner or "sync_execution" in job:
+            return True
+        with self._first_sync_lock:
+            latest_job = self._state_store.get_sync_job(str(job["sync_job_id"]))
+            if isinstance(latest_job, dict) and "sync_execution" in latest_job:
+                job.update(latest_job)
+                return job.get("status") != "failed"
+            if "sync_execution" in job:
+                return True
+            try:
+                draft = self._state_store.get_connection_draft(str(job["draft_id"]))
+                selection = draft.get("raw_selection") if isinstance(draft, dict) else None
+                if not isinstance(selection, dict):
+                    raise ValueError("Missing raw selection for first sync.")
+                job["message"] = "Running selected ad account sync."
+                job["progress_percent"] = 75
+                result = self._first_sync_runner(job, selection)
+                job["sync_execution"] = {
+                    "status": "success",
+                    **result,
+                }
+                return True
+            except Exception as exc:
+                job["status"] = "failed"
+                job["progress_percent"] = 100
+                job["message"] = "First sync failed."
+                job["sync_execution"] = {
+                    "status": "failed",
+                    "message": f"First sync failed: {exc.__class__.__name__}",
+                    "writes_bigquery": True,
+                }
+                return False
 
     def _read_backend_status(self, job: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -643,6 +685,8 @@ def _public_sync_job(job: dict[str, Any]) -> dict[str, Any]:
         sync_job["backend_data_check"] = job["backend_data_check"]
     if "email_delivery" in job:
         sync_job["email_delivery"] = job["email_delivery"]
+    if "sync_execution" in job:
+        sync_job["sync_execution"] = job["sync_execution"]
     return sync_job
 
 
@@ -850,8 +894,12 @@ def _single_count(
 
 
 def _sync_job_steps(status: str, destinations: list[str]) -> list[dict[str, str]]:
-    warehouse_status = "completed" if status == "completed" else "running" if status == "running" else "queued"
-    output_status = "completed" if status == "completed" else "queued"
+    if status == "failed":
+        warehouse_status = "failed"
+        output_status = "queued"
+    else:
+        warehouse_status = "completed" if status == "completed" else "running" if status == "running" else "queued"
+        output_status = "completed" if status == "completed" else "queued"
     steps = [
         {
             "id": "source_connected",
@@ -1067,12 +1115,14 @@ def _state_from_env() -> OnboardingPrototypeState:
     backend_status_reader = _backend_status_reader_from_env()
     email_report_sender = _email_report_sender_from_env()
     local_config_exporter = _local_config_exporter_from_env()
+    first_sync_runner = _first_sync_runner_from_env()
     state_store = _state_store_from_env()
     if not use_real_meta:
         return OnboardingPrototypeState(
             backend_status_reader=backend_status_reader,
             email_report_sender=email_report_sender,
             local_config_exporter=local_config_exporter,
+            first_sync_runner=first_sync_runner,
             state_store=state_store,
         )
 
@@ -1092,6 +1142,7 @@ def _state_from_env() -> OnboardingPrototypeState:
         backend_status_reader=backend_status_reader,
         email_report_sender=email_report_sender,
         local_config_exporter=local_config_exporter,
+        first_sync_runner=first_sync_runner,
         state_store=state_store,
     )
 
@@ -1112,6 +1163,20 @@ def _local_config_exporter_from_env() -> Callable[[dict[str, Any]], dict[str, An
         return format_local_export_summary(export_local_clients_config(selection, Path(export_path)))
 
     return export
+
+
+def _first_sync_runner_from_env() -> OnboardingFirstSyncRunner | None:
+    if not _truthy(os.getenv("ONBOARDING_ENABLE_LOCAL_SYNC_RUN")):
+        return None
+    config_path = os.getenv("ONBOARDING_LOCAL_CONFIG_EXPORT_PATH", "").strip()
+    if not config_path:
+        raise ValueError("ONBOARDING_ENABLE_LOCAL_SYNC_RUN=true requires ONBOARDING_LOCAL_CONFIG_EXPORT_PATH.")
+    return LocalMetaSyncRunner(
+        config_path=Path(config_path),
+        repo_root=REPO_ROOT,
+        python_bin=os.getenv("ONBOARDING_LOCAL_SYNC_PYTHON", sys.executable),
+        timeout_seconds=_positive_int_env("ONBOARDING_LOCAL_SYNC_TIMEOUT_SECONDS", 900),
+    )
 
 
 def _backend_status_reader_from_env() -> Callable[[dict[str, Any]], dict[str, Any]] | None:

@@ -270,6 +270,13 @@ sync using `CLIENTS_CONFIG_PATH=.local/clients.generated.yaml` and
 `SYNC_ENABLED_PLATFORMS=meta_ads`. This is kept as an explicit local operations
 command because it calls Meta and writes/replaces BigQuery rows.
 
+For end-to-end local product testing, `make onboarding-prototype-live-sync`
+starts the prototype with `ONBOARDING_ENABLE_LOCAL_SYNC_RUN=true`. In that mode,
+the second first-sync poll exports the selected draft into the local config
+artifact, runs the Meta sync entrypoint, and returns only safe execution
+metadata to the browser. This mode calls Meta and writes/replaces BigQuery rows,
+so it remains opt-in.
+
 ### Inspect First Sync Status
 
 ```http
@@ -416,6 +423,10 @@ recipients.
 - Add a local operations target for syncing from the generated onboarding
   config artifact. Completed as `make onboarding-sync-local-config`; running it
   is explicit because it writes selected-account data to BigQuery.
+- Add an opt-in first-sync runner boundary for the prototype. Completed in
+  `src.onboarding.sync_runner` and enabled only by
+  `ONBOARDING_ENABLE_LOCAL_SYNC_RUN=true`; default prototype sync remains
+  simulated.
 - Create a local first-sync job status after setup and poll it in the frontend
   so the user sees queued, running, and completed states.
 - Add optional read-only backend data checks after completion so the prototype

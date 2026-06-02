@@ -44,6 +44,16 @@ make onboarding-sync-local-config
 This calls Meta and writes/replaces BigQuery rows for the configured date range,
 so keep it as an explicit local operations step.
 
+For an end-to-end local run where the prototype first-sync polling flow runs the
+Meta sync automatically, use:
+
+```bash
+make onboarding-prototype-live-sync
+```
+
+This is opt-in because it calls Meta and writes/replaces BigQuery rows. The
+browser receives only safe execution metadata, not sync logs or account IDs.
+
 Current prototype scope:
 
 - Select an ad/data platform.
@@ -81,6 +91,8 @@ Current prototype scope:
   artifact with `ONBOARDING_LOCAL_CONFIG_EXPORT_PATH=.local/clients.generated.yaml`.
 - Optionally run selected-account Meta sync from that artifact with
   `make onboarding-sync-local-config`.
+- Optionally enable live first-sync execution in the prototype with
+  `make onboarding-prototype-live-sync`.
 
 This prototype intentionally does not implement real OAuth, token storage, user login, or SaaS account management.
 
