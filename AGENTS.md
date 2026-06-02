@@ -17,13 +17,13 @@ Sheets later, then generates recurring AI performance insights for media buyers.
 Current MVP priority:
 
 ```text
-Meta Ads → BigQuery → Looker Studio → AI report logs
+Meta Ads → BigQuery → Looker Studio → AI report logs → account-grouped HTML email reports
 ```
 
-Future order:
+Future expansion order:
 
 ```text
-Google Ads → LINE Ads → Google Sheets export → Email/LINE delivery → SaaS features
+Google Ads product hardening → LINE Ads → Google Sheets export → LINE delivery → SaaS features
 ```
 
 Read this file and `docs/ads_ai_pipeline_codex_development_spec.md` before making changes.
@@ -39,12 +39,16 @@ Current implemented foundation:
 - Meta Ads daily sync to BigQuery
 - Raw Meta Ads payload storage
 - Unified daily ads table
+- Basic Google Ads connector, normalization, and sync flow foundation
 - Weekly/monthly BigQuery summary marts
 - Looker Studio reporting views
 - Cloud Run Job + Cloud Scheduler for Meta sync
 - OpenAI-powered weekly/monthly report generation
 - AI report Cloud Run Job + monthly Cloud Scheduler
+- Account-grouped AI report sending through SMTP HTML email
 - Sync and AI report logs for failure tracking
+- Local connector onboarding prototype for Meta account selection and destination setup
+- Local onboarding config export, live-sync readiness checks, and opt-in first-sync runner
 
 Current product focus:
 
@@ -52,17 +56,18 @@ Current product focus:
 - Make Looker Studio expose both performance data and generated AI reports
 - Improve AI report structure so it matches media buyer workflows
 - Keep platform-specific raw/wide fields available without bloating the unified table
+- Productize the Meta onboarding bridge without introducing SaaS auth or payment yet
 
-Do not implement these unless explicitly requested:
+Do not implement or expand these unless explicitly requested:
 
-- Google Ads connector
+- Google Ads product hardening beyond the existing connector/sync/report-context foundation
 - LINE Ads connector
 - OAuth login
 - SaaS user system
 - Payment
 - Google Sheet export
-- Frontend dashboard
-- Email delivery
+- Production frontend dashboard beyond the local onboarding prototype
+- Bulk or new-channel email delivery beyond the existing account-report SMTP path
 - LINE delivery
 
 ## Product reporting rules
