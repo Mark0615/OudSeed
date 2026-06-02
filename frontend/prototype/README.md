@@ -65,6 +65,8 @@ make onboarding-prototype-live-sync
 
 This is opt-in because it calls Meta and writes/replaces BigQuery rows. The
 browser receives only safe execution metadata, not sync logs or account IDs.
+The runner enforces the same readiness gate as `make onboarding-live-sync-ready`
+before it starts the subprocess.
 
 Current prototype scope:
 

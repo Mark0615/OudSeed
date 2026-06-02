@@ -228,7 +228,10 @@ make onboarding-prototype-live-sync
 This enables `ONBOARDING_ENABLE_LOCAL_SYNC_RUN=true`. The runner exports the
 selected draft to `.local/clients.generated.yaml`, runs the Meta sync entrypoint,
 and returns only safe execution metadata to the browser. This mode is opt-in
-because it writes/replaces BigQuery rows.
+because it writes/replaces BigQuery rows. Before the subprocess starts, the
+runner now enforces the same safe readiness checks used by
+`make onboarding-live-sync-ready`; if required local config, Meta token, or
+BigQuery settings are missing, it stops before calling Meta or writing BigQuery.
 
 The prototype also creates a local first-sync job status and polls it from the
 frontend. This models the product experience of queued, running, and completed

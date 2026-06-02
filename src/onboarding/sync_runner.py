@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from src.onboarding.config_bridge import export_local_clients_config
+from src.onboarding.live_sync_readiness import inspect_live_sync_readiness
 
 
 class OnboardingFirstSyncRunner(Protocol):
@@ -39,6 +40,17 @@ class LocalMetaSyncRunner:
         """Export selected accounts and run the Meta sync entrypoint."""
         started_at = _utc_now()
         export = export_local_clients_config(selection, self.config_path)
+        readiness = inspect_live_sync_readiness(
+            config_path=self.config_path,
+            local_sync_enabled=True,
+            meta_access_token_configured=bool(os.getenv("META_ACCESS_TOKEN", "").strip()),
+            gcp_project_id=os.getenv("GCP_PROJECT_ID", "").strip() or None,
+            bigquery_dataset=os.getenv("BIGQUERY_DATASET", "").strip() or None,
+            sync_enabled_platforms="meta_ads",
+            refresh_reporting_marts=os.getenv("REFRESH_REPORTING_MARTS"),
+        ).as_dict()
+        if not readiness["ready"]:
+            raise RuntimeError("local_meta_sync_not_ready")
         env = {
             **os.environ,
             "CLIENTS_CONFIG_PATH": str(self.config_path),
@@ -65,6 +77,7 @@ class LocalMetaSyncRunner:
             "destination_count": len(export.destinations),
             "config_path": str(self.config_path),
             "writes_bigquery": True,
+            "readiness": readiness,
             "return_code": completed.returncode,
         }
 
