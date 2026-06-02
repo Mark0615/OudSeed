@@ -69,6 +69,19 @@ prototype API contract can later swap in durable product storage without
 rewriting the frontend flow. The current implementation remains process-local
 and does not persist real account ids, recipients, tokens, or client config.
 
+Safe live-sync readiness is available before the opt-in write path:
+
+```http
+GET /api/onboarding/live-sync-readiness
+```
+
+The response reports whether local live sync is explicitly enabled, the ignored
+local config artifact exists and validates, `META_ACCESS_TOKEN` is configured,
+and BigQuery project/dataset settings are resolvable. It is a read-only check:
+it does not call Meta, query BigQuery, write BigQuery, print tokens, or return
+real ad account IDs. The response includes `writes_bigquery=true` because the
+subsequent live sync runner writes/replaces BigQuery rows.
+
 ### List Connectors
 
 ```http
