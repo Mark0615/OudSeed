@@ -81,6 +81,54 @@ def test_onboarding_state_connection_returns_sanitized_config_preview() -> None:
     assert "act_demo_1001" not in output
 
 
+def test_onboarding_state_auto_exports_local_config_when_enabled() -> None:
+    exported_selections: list[dict] = []
+
+    def fake_exporter(selection: dict) -> dict:
+        exported_selections.append(selection)
+        return {
+            "output_path": ".local/clients.generated.yaml",
+            "client_count": 1,
+            "account_count": len(selection["accounts"]),
+            "destinations": selection["destinations"],
+            "report_schedule_count": 1,
+            "warnings": [],
+            "writes_config": False,
+            "writes_secrets": False,
+            "local_artifact_only": True,
+        }
+
+    state = OnboardingPrototypeState(local_config_exporter=fake_exporter)
+
+    response = state.create_connection(sample_connection_payload())
+    draft = state.get_connection_draft(response["draft_id"])
+    connections = state.list_account_connections()
+    output = json.dumps({"response": response, "draft": draft, "connections": connections})
+
+    assert response["local_config_export"]["status"] == "exported"
+    assert draft["draft"]["local_config_export"]["status"] == "exported"
+    assert connections["connections"][0]["local_config_export"]["status"] == "exported"
+    assert exported_selections[0]["accounts"][0]["external_account_id"] == "act_demo_1001"
+    assert "act_demo_1001" not in output
+
+
+def test_onboarding_state_auto_export_failure_is_safe() -> None:
+    def failing_exporter(selection: dict) -> dict:
+        raise RuntimeError("sensitive details")
+
+    state = OnboardingPrototypeState(local_config_exporter=failing_exporter)
+
+    response = state.create_connection(sample_connection_payload())
+    output = json.dumps(response)
+
+    assert response["local_config_export"]["status"] == "failed"
+    assert response["local_config_export"]["message"] == "Local config export failed: RuntimeError"
+    assert response["local_config_export"]["writes_config"] is False
+    assert response["local_config_export"]["writes_secrets"] is False
+    assert "act_demo_1001" not in output
+    assert "sensitive details" not in output
+
+
 def test_onboarding_state_accepts_injected_state_store() -> None:
     store = InMemoryOnboardingStateStore()
     state = OnboardingPrototypeState(state_store=store)

@@ -264,6 +264,9 @@ can export a draft's selected accounts into a local clients.yaml-compatible
 artifact, such as `.local/clients.generated.yaml`. The endpoint returns only a
 safe summary; the artifact itself is local and git-ignored because it may
 contain real ad account IDs.
+The local API also auto-exports this artifact during `POST /api/account-connections`
+when the export path is configured, so the first-sync runner can use the current
+selection without a separate manual export call.
 
 Once that artifact exists, `make onboarding-sync-local-config` can run the Meta
 sync using `CLIENTS_CONFIG_PATH=.local/clients.generated.yaml` and
