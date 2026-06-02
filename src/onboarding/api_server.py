@@ -25,6 +25,7 @@ from src.onboarding.config_bridge import (
     export_local_clients_config,
     format_local_export_summary,
 )
+from src.onboarding.live_sync_readiness import build_live_sync_readiness_from_env
 from src.onboarding.state_store import (
     InMemoryOnboardingStateStore,
     JsonFileOnboardingStateStore,
@@ -192,6 +193,10 @@ class OnboardingPrototypeState:
                 if isinstance(draft.get("safe_detail"), dict)
             ],
         }
+
+    def live_sync_readiness(self) -> dict[str, Any]:
+        """Return safe local live-sync readiness metadata."""
+        return {"ok": True, "live_sync_readiness": build_live_sync_readiness_from_env()}
 
     def get_apply_plan(self, draft_id: str) -> dict[str, Any]:
         """Return the sanitized apply plan for a local draft."""
@@ -441,6 +446,8 @@ def create_handler(
                     self._send_json(app_state.list_destinations())
                 elif path == "/api/account-connections":
                     self._send_json(app_state.list_account_connections())
+                elif path == "/api/onboarding/live-sync-readiness":
+                    self._send_json(app_state.live_sync_readiness())
                 elif path.startswith("/api/sync-jobs/"):
                     self._send_json(self._handle_get_sync_job(path))
                 elif path.startswith("/api/account-connections/"):

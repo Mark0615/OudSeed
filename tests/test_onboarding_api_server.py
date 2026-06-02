@@ -426,6 +426,27 @@ def test_onboarding_state_returns_safe_response_when_local_config_export_disable
     assert response["local_config_export"]["writes_secrets"] is False
 
 
+def test_onboarding_state_live_sync_readiness_is_safe(monkeypatch, tmp_path) -> None:
+    output_path = tmp_path / "clients.generated.yaml"
+    monkeypatch.setenv("ONBOARDING_LOCAL_CONFIG_EXPORT_PATH", str(output_path))
+    monkeypatch.setenv("ONBOARDING_ENABLE_LOCAL_SYNC_RUN", "true")
+    monkeypatch.setenv("META_ACCESS_TOKEN", "fake-token")
+    monkeypatch.setenv("SYNC_ENABLED_PLATFORMS", "meta_ads")
+    monkeypatch.setenv("REFRESH_REPORTING_MARTS", "false")
+
+    state = OnboardingPrototypeState(local_config_exporter=_local_config_exporter_from_env())
+    state.create_connection(sample_connection_payload())
+
+    response = state.live_sync_readiness()
+    output = json.dumps(response)
+
+    assert response["ok"] is True
+    assert response["live_sync_readiness"]["ready"] is True
+    assert response["live_sync_readiness"]["writes_bigquery"] is True
+    assert response["live_sync_readiness"]["summary"]["enabled_meta_account_count"] == 1
+    assert "act_demo_1001" not in output
+
+
 def test_local_config_exporter_from_env_writes_local_artifact(monkeypatch, tmp_path) -> None:
     output_path = tmp_path / "clients.generated.yaml"
     monkeypatch.setenv("ONBOARDING_LOCAL_CONFIG_EXPORT_PATH", str(output_path))

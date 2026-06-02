@@ -206,6 +206,18 @@ and `SYNC_ENABLED_PLATFORMS=meta_ads`. It is intentionally a manual command
 because it calls Meta and writes/replaces rows in BigQuery for the configured
 date range.
 
+Before running that write path, use the safe readiness check:
+
+```bash
+make onboarding-live-sync-ready
+```
+
+This inspects the ignored local config artifact, required environment toggles,
+Meta token presence, and BigQuery project/dataset configuration. It does not
+call Meta, query BigQuery, write BigQuery, print tokens, or return real ad
+account IDs. The output includes `writes_bigquery=true` as an explicit reminder
+that the next live sync step will write/replace BigQuery rows.
+
 For an end-to-end local prototype where first sync is triggered by the onboarding
 polling flow, run:
 

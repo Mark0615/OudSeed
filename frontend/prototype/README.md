@@ -46,6 +46,16 @@ make onboarding-sync-local-config
 This calls Meta and writes/replaces BigQuery rows for the configured date range,
 so keep it as an explicit local operations step.
 
+Before running the write path, check readiness safely:
+
+```bash
+make onboarding-live-sync-ready
+```
+
+This verifies the local config artifact and required environment settings
+without calling Meta, querying BigQuery, writing BigQuery, printing tokens, or
+showing real ad account IDs.
+
 For an end-to-end local run where the prototype first-sync polling flow runs the
 Meta sync automatically, use:
 
