@@ -238,6 +238,46 @@ def test_onboarding_state_attaches_backend_data_check_when_ready_for_sync() -> N
     assert "act_demo_1001" not in output
 
 
+def test_onboarding_state_refreshes_backend_data_check_when_ready_for_sync() -> None:
+    calls = 0
+
+    def backend_status_reader(sync_job: dict) -> dict:
+        nonlocal calls
+        calls += 1
+        return {
+            "status": "healthy",
+            "source": "bigquery",
+            "checked_at": f"2026-05-31T00:00:0{calls}+00:00",
+            "message": "Latest Meta sync data is visible.",
+            "latest_sync": {
+                "status": "success",
+                "rows_fetched": calls,
+                "rows_inserted": calls,
+                "sync_start_date": "2026-05-30",
+                "sync_end_date": "2026-05-30",
+            },
+            "destinations": {
+                "bigquery": {"status": "verified", "raw_rows": calls, "unified_rows": calls},
+            },
+            "scope": {
+                "selected_account_count": len(sync_job["selected_account_ids"]),
+                "selected_accounts_scoped": True,
+            },
+            "warnings": [],
+        }
+
+    state = OnboardingPrototypeState(backend_status_reader=backend_status_reader)
+
+    created = state.create_connection(sample_connection_payload())
+    sync_job_id = created["first_sync_job"]["sync_job_id"]
+    state.get_sync_job(sync_job_id)
+    first_ready = state.get_sync_job(sync_job_id)
+    second_ready = state.get_sync_job(sync_job_id)
+
+    assert first_ready["sync_job"]["backend_data_check"]["latest_sync"]["rows_inserted"] == 1
+    assert second_ready["sync_job"]["backend_data_check"]["latest_sync"]["rows_inserted"] == 2
+
+
 def test_onboarding_state_runs_injected_first_sync_runner_without_sensitive_response() -> None:
     runner_calls: list[dict] = []
 

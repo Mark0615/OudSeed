@@ -367,7 +367,7 @@ class OnboardingPrototypeState:
                 job["status"] = "ready_for_sync"
                 job["progress_percent"] = 100
                 job["message"] = "Setup is ready. Run live sync readiness before writing BigQuery."
-                if self._backend_status_reader and "backend_data_check" not in job:
+                if self._backend_status_reader:
                     job["backend_data_check"] = self._read_backend_status(job)
                 return
             if not self._maybe_run_first_sync(job):
@@ -376,7 +376,7 @@ class OnboardingPrototypeState:
                 job["status"] = "completed"
                 job["progress_percent"] = 100
                 job["message"] = "First sync completed. Destinations are ready."
-                if self._backend_status_reader and "backend_data_check" not in job:
+                if self._backend_status_reader:
                     job["backend_data_check"] = self._read_backend_status(job)
 
     def _maybe_run_first_sync(self, job: dict[str, Any]) -> bool:
