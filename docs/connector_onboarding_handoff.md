@@ -508,3 +508,6 @@ API-shaped JSON command:
   committed.
 - Google Ads may be previewed through the local onboarding bridge; LINE Ads and
   Google Sheets remain visibly future-facing unless explicitly implemented.
+- Google Ads local live-sync readiness is available as a safe gate; the actual
+  Google Ads write path still requires explicit credential/customer validation
+  and user confirmation.

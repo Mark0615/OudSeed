@@ -56,6 +56,15 @@ This verifies the local config artifact and required environment settings
 without calling Meta, querying BigQuery, writing BigQuery, printing tokens, or
 showing real ad account IDs.
 
+For Google Ads preview selections, use the Google-specific safe gate:
+
+```bash
+make onboarding-google-live-sync-ready
+```
+
+This validates local Google Ads customer config and required credentials without
+calling Google Ads or writing BigQuery.
+
 For an end-to-end local run where the prototype first-sync polling flow runs the
 Meta sync automatically, use:
 

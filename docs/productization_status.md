@@ -223,6 +223,17 @@ call Meta, query BigQuery, write BigQuery, print tokens, or return real ad
 account IDs. The output includes `writes_bigquery=true` as an explicit reminder
 that the next live sync step will write/replace BigQuery rows.
 
+Google Ads preview onboarding has its own safe readiness gate:
+
+```bash
+make onboarding-google-live-sync-ready
+```
+
+This inspects the ignored local config artifact for enabled Google Ads
+customers, required Google Ads environment credentials, the platform filter, and
+BigQuery project/dataset configuration. It does not call Google Ads, query
+BigQuery, write BigQuery, print credentials, or return real customer IDs.
+
 For an end-to-end local prototype where first sync is triggered by the onboarding
 polling flow, run:
 
