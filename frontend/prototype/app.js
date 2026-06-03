@@ -50,6 +50,7 @@ const els = {
   handoffSummary: document.querySelector("#handoffSummary"),
   payloadPreview: document.querySelector("#payloadPreview"),
   nextActions: document.querySelector("#nextActions"),
+  developerStatus: document.querySelector("#developerStatus"),
   configPreview: document.querySelector("#configPreview"),
   authModal: document.querySelector("#authModal"),
   closeAuthButton: document.querySelector("#closeAuthButton"),
@@ -509,25 +510,21 @@ function buildConnectionPayload() {
 function renderConnectionResult(payload, result, liveSyncReadiness) {
   const summary = result.config_preview.summary;
   const source = selectedSource();
-  const accountNames = selectedSourceAccounts()
-    .filter((account) => state.selectedAccounts.has(account.id))
-    .map((account) => account.name);
+  const selectedAccounts = selectedSourceAccounts().filter((account) => state.selectedAccounts.has(account.id));
   const destinationNames = destinations
     .filter((destination) => summary.destinations.includes(destination.id))
     .map((destination) => destination.name);
   els.connectionResult.hidden = false;
   els.connectionStatus.textContent = userSyncStatus(result.first_sync_job?.status || result.next_sync_status);
-  els.handoffSummary.innerHTML = `
-    <div><span>Data source</span><strong>${source?.label || payload.connector_id} connected</strong></div>
-    <div><span>Ad accounts</span><strong>${summary.account_count} selected</strong></div>
-    <div><span>Destinations</span><strong>${destinationNames.join(", ")}</strong></div>
-    <div><span>First sync</span><strong id="firstSyncSummary">${userSyncStatus(result.first_sync_job?.status || result.next_sync_status)}</strong></div>
-  `;
+  els.handoffSummary.innerHTML = renderSelectedAccountPreview(source, selectedAccounts, summary);
   els.payloadPreview.textContent = JSON.stringify(sanitizePayloadForDisplay(payload), null, 2);
-  els.nextActions.innerHTML = renderDestinationStatus(
+  els.nextActions.innerHTML = renderUserSetupPreview(
     result.destination_handoff,
     payload,
-    accountNames,
+    selectedAccounts,
+    destinationNames
+  );
+  els.developerStatus.innerHTML = renderDeveloperStatus(
     result.first_sync_job,
     result.local_config_export,
     liveSyncReadiness
@@ -562,8 +559,8 @@ function renderConnections() {
             <strong>${reportSchedule}</strong>
           </div>
           <div>
-            <span>First sync</span>
-            <strong>${connection.first_sync_job_id ? "Ready to check" : "Not queued"}</strong>
+            <span>Status</span>
+            <strong>${connection.first_sync_job_id ? "Ready" : "Draft"}</strong>
           </div>
         </article>
       `;
@@ -580,6 +577,7 @@ function clearConnectionResult() {
   els.handoffSummary.innerHTML = "";
   els.payloadPreview.textContent = "";
   els.nextActions.innerHTML = "";
+  els.developerStatus.innerHTML = "";
   els.configPreview.textContent = "";
 }
 
@@ -594,7 +592,30 @@ function sanitizePayloadForDisplay(payload) {
   };
 }
 
-function renderDestinationStatus(destinationHandoff, payload, accountNames, syncJob, localConfigExport, liveSyncReadiness) {
+function renderSelectedAccountPreview(source, selectedAccounts, summary) {
+  const accountList = selectedAccounts.length
+    ? selectedAccounts
+        .map((account) => {
+          const meta = [account.currency, account.timezone].filter(Boolean).join(" · ");
+          return `
+            <li>
+              <strong>${escapeHtml(account.name)}</strong>
+              <span>${escapeHtml(meta || account.status || "Ready")}</span>
+            </li>
+          `;
+        })
+        .join("")
+    : `<li><strong>${formatCount(summary.account_count)} account${summary.account_count === 1 ? "" : "s"}</strong><span>Selected</span></li>`;
+  return `
+    <div><span>Data source</span><strong>${escapeHtml(source?.label || "Meta Ads")} connected</strong></div>
+    <div class="account-preview-card">
+      <span>Selected ad accounts</span>
+      <ul>${accountList}</ul>
+    </div>
+  `;
+}
+
+function renderUserSetupPreview(destinationHandoff, payload, selectedAccounts, destinationNames) {
   if (!destinationHandoff) {
     return `<p class="muted-copy">Finish setup to prepare your selected destinations.</p>`;
   }
@@ -609,18 +630,44 @@ function renderDestinationStatus(destinationHandoff, payload, accountNames, sync
       `;
     })
     .join("");
+  const accountNames = selectedAccounts.map((account) => account.name);
   const accountSummary = accountNames.length > 0
-    ? accountNames.slice(0, 3).join(", ") + (accountNames.length > 3 ? ` and ${accountNames.length - 3} more` : "")
+    ? accountNames.slice(0, 3).map(escapeHtml).join(", ") + (accountNames.length > 3 ? ` and ${accountNames.length - 3} more` : "")
     : "Selected ad accounts";
+  return `
+    <div class="handoff-destinations">${destinationsMarkup}</div>
+    ${renderReportSchedulePreview(payload)}
+    <div class="setup-next-step">
+      <strong>What happens next</strong>
+      <p>${accountSummary} is ready to import into ${escapeHtml(destinationNames.join(", ") || "the selected destinations")}. After the first data sync, dashboard and report outputs become available.</p>
+    </div>
+  `;
+}
+
+function renderDeveloperStatus(syncJob, localConfigExport, liveSyncReadiness) {
   return `
     ${renderSyncJob(syncJob)}
     ${renderLocalConfigExport(localConfigExport)}
     ${renderLiveSyncReadiness(liveSyncReadiness)}
-    <div class="handoff-destinations">${destinationsMarkup}</div>
-    <div class="setup-next-step">
-      <strong>What happens next</strong>
-      <p>${accountSummary} will be synced into the selected destinations. Dashboard and report outputs become available after the first successful sync.</p>
-    </div>
+  `;
+}
+
+function renderReportSchedulePreview(payload) {
+  if (!payload.report_schedule) {
+    return "";
+  }
+  const schedule = payload.report_schedule;
+  const delivery = schedule.report_type === "weekly"
+    ? `Every ${schedule.delivery_day}`
+    : `Monthly on day ${schedule.delivery_day}`;
+  return `
+    <article class="report-preview-card">
+      <div>
+        <strong>AI report schedule</strong>
+        <span>${escapeHtml(delivery)} · ${escapeHtml(schedule.timezone || "Asia/Taipei")}</span>
+      </div>
+      <small>${escapeHtml(schedule.depth || "standard")} depth</small>
+    </article>
   `;
 }
 
@@ -822,7 +869,7 @@ function userSyncStatus(status) {
     return "Syncing data";
   }
   if (status === "ready_for_sync") {
-    return "Ready for live sync";
+    return "Setup ready";
   }
   if (status === "completed") {
     return "Sync completed";

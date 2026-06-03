@@ -708,6 +708,31 @@ code {
   overflow-wrap: anywhere;
 }
 
+.account-preview-card ul {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.account-preview-card li {
+  display: grid;
+  gap: 3px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.account-preview-card li:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.account-preview-card li span {
+  margin: 0;
+  font-size: 12px;
+}
+
 .preview-stack {
   display: grid;
   gap: 14px;
@@ -1010,6 +1035,41 @@ code {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.4;
+}
+
+.report-preview-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 8px;
+  background: #eff6ff;
+  padding: 12px;
+}
+
+.report-preview-card strong,
+.report-preview-card span,
+.report-preview-card small {
+  display: block;
+}
+
+.report-preview-card strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.report-preview-card span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.report-preview-card small {
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .handoff-destination small {
