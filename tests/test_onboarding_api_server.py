@@ -37,6 +37,23 @@ def sample_connection_payload() -> dict:
     }
 
 
+def sample_google_connection_payload() -> dict:
+    """Return a fake Google Ads connection payload."""
+    return {
+        "workspace_id": "workspace_demo",
+        "connector_id": "google_ads",
+        "authorization_id": "auth_google_ads_demo",
+        "client_name": "Demo Google Ads",
+        "accounts": [
+            {
+                "external_account_id": "1234567890",
+                "account_name": "Demo Google Ads",
+            }
+        ],
+        "destinations": ["bigquery", "looker_studio"],
+    }
+
+
 def test_onboarding_state_lists_connectors_and_destinations() -> None:
     state = OnboardingPrototypeState()
 
@@ -45,6 +62,7 @@ def test_onboarding_state_lists_connectors_and_destinations() -> None:
 
     assert connectors[0]["id"] == "meta_ads"
     assert connectors[0]["status"] == "available"
+    assert next(connector for connector in connectors if connector["id"] == "google_ads")["status"] == "available"
     assert any(destination["id"] == "ai_report_email" for destination in destinations)
 
 
@@ -58,6 +76,18 @@ def test_onboarding_state_oauth_flow_exposes_accounts() -> None:
     assert before == {"accounts": []}
     assert oauth["status"] == "connected"
     assert after["accounts"][0]["id"] == "act_demo_1001"
+
+
+def test_onboarding_state_google_oauth_flow_exposes_preview_accounts() -> None:
+    state = OnboardingPrototypeState()
+
+    before = state.list_accounts("google_ads", authorization_id="auth_google_ads_demo")
+    oauth = state.complete_oauth("google_ads")
+    after = state.list_accounts("google_ads", authorization_id="auth_google_ads_demo")
+
+    assert before == {"accounts": []}
+    assert oauth["status"] == "connected"
+    assert after["accounts"][0]["name"] == "Demo Search Account"
 
 
 def test_onboarding_state_connection_returns_sanitized_config_preview() -> None:
@@ -79,6 +109,19 @@ def test_onboarding_state_connection_returns_sanitized_config_preview() -> None:
     assert "act_demo_1001" not in response["config_preview"]["yaml_text"]
     assert "recipient@example.com" in response["config_preview"]["yaml_text"]
     assert "act_demo_1001" not in output
+
+
+def test_onboarding_state_google_connection_returns_sanitized_config_preview() -> None:
+    state = OnboardingPrototypeState()
+
+    response = state.create_connection(sample_google_connection_payload())
+    output = json.dumps(response)
+
+    assert response["ok"] is True
+    assert response["config_preview"]["summary"]["account_count"] == 1
+    assert "google_ads:" in response["config_preview"]["yaml_text"]
+    assert "0000000001" in response["config_preview"]["yaml_text"]
+    assert "1234567890" not in output
 
 
 def test_onboarding_state_auto_exports_local_config_when_enabled() -> None:

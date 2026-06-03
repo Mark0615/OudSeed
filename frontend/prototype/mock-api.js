@@ -16,9 +16,9 @@
       label: "Google Ads",
       logo: "G",
       color: "google",
-      status: "coming_soon",
+      status: "available",
       connected: false,
-      note: "Next connector",
+      note: "Preview connector",
     },
     {
       id: "ga4",
@@ -59,6 +59,10 @@
       { id: "act_demo_1003", name: "Pet Brand Sample", currency: "TWD", timezone: "Asia/Taipei", status: "Ready" },
       { id: "act_demo_1004", name: "Lifestyle Sample EU", currency: "EUR", timezone: "Europe/Berlin", status: "Ready" },
       { id: "act_demo_1005", name: "Agency Sandbox", currency: "TWD", timezone: "Asia/Taipei", status: "Ready" },
+    ],
+    google_ads: [
+      { id: "1234567890", name: "Demo Search Account", currency: "TWD", timezone: "Asia/Taipei", status: "Preview" },
+      { id: "2345678901", name: "Demo Shopping Account", currency: "TWD", timezone: "Asia/Taipei", status: "Preview" },
     ],
   };
 
@@ -602,20 +606,40 @@
       `  client_name: ${clientName}`,
       "  enabled: true",
       "  platforms:",
-      "    meta_ads:",
-      "      enabled: true",
-      "      accounts:",
     ];
-    payload.accounts.forEach((account, index) => {
+    if (payload.connector_id === "google_ads") {
       lines.push(
-        `      - ad_account_id: act_preview_${String(index + 1).padStart(4, "0")}`,
-        `        account_name: ${account.account_name}`,
-        "        report_level: ad",
-        "        attribution_setting: platform_default",
-        "        timezone_setting: platform_account_default",
-        "        conversion_action_type: purchase",
+        "    google_ads:",
+        "      enabled: true",
+        "      accounts:",
       );
-    });
+      payload.accounts.forEach((account, index) => {
+        lines.push(
+          `      - customer_id: 000000${String(index + 1).padStart(4, "0")}`,
+          `        account_name: ${account.account_name}`,
+          "        login_customer_id: null",
+          "        report_level: ad",
+          "        attribution_setting: platform_default",
+          "        timezone_setting: platform_account_default",
+        );
+      });
+    } else {
+      lines.push(
+        "    meta_ads:",
+        "      enabled: true",
+        "      accounts:",
+      );
+      payload.accounts.forEach((account, index) => {
+        lines.push(
+          `      - ad_account_id: act_preview_${String(index + 1).padStart(4, "0")}`,
+          `        account_name: ${account.account_name}`,
+          "        report_level: ad",
+          "        attribution_setting: platform_default",
+          "        timezone_setting: platform_account_default",
+          "        conversion_action_type: purchase",
+        );
+      });
+    }
     lines.push(
       "  destinations:",
       "    bigquery:",

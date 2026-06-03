@@ -34,8 +34,8 @@ Recommended bridge:
 - For the current internal MVP, convert approved account selections into
   managed client/account config entries.
 - Keep real secrets in Secret Manager or local `.env`, never in frontend state.
-- Keep Google Ads, LINE Ads, and Google Sheets visible but disabled until their
-  backend paths are implemented.
+- Keep Google Ads visible as the next preview onboarding path while LINE Ads and
+  Google Sheets stay disabled until their backend paths are implemented.
 
 ## API Contract
 
@@ -506,5 +506,5 @@ API-shaped JSON command:
   mapping.
 - No real OAuth, tokens, account IDs, recipients, `.env`, or `clients.yaml` are
   committed.
-- Google Ads, LINE Ads, and Google Sheets remain visibly future-facing unless
-  explicitly implemented.
+- Google Ads may be previewed through the local onboarding bridge; LINE Ads and
+  Google Sheets remain visibly future-facing unless explicitly implemented.

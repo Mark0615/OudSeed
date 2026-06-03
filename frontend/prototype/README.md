@@ -75,7 +75,9 @@ Current prototype scope:
 - Select accessible ad accounts after authorization.
 - Choose destinations such as Looker Studio, BigQuery, and AI Report Email.
 - Configure weekly or monthly cadence when AI Report Email is selected.
-- Keep Google Ads, Google Analytics 4, LINE Ads, Google Sheets, and other future destinations visible as disabled product roadmap items.
+- Keep Google Ads available as the next preview onboarding path while Google
+  Analytics 4, LINE Ads, Google Sheets, and other future destinations remain
+  visible as disabled product roadmap items.
 - Load connector, account, destination, and connection responses through
   `mock-api.js`, so the UI can later swap to real API calls with minimal
   component changes.

@@ -38,6 +38,20 @@ def sample_selection() -> dict:
     }
 
 
+def google_selection() -> dict:
+    return {
+        "workspace_id": "Workspace Demo",
+        "connector_id": "google_ads",
+        "accounts": [
+            {
+                "external_account_id": "123-456-7890",
+                "account_name": "Demo Google Ads",
+            }
+        ],
+        "destinations": ["bigquery", "looker_studio"],
+    }
+
+
 def test_build_config_preview_outputs_valid_sanitized_clients_yaml() -> None:
     preview = build_config_preview(sample_selection())
     config = load_config_from_yaml(preview.yaml_text, source="preview")
@@ -50,6 +64,18 @@ def test_build_config_preview_outputs_valid_sanitized_clients_yaml() -> None:
     assert config["clients"][0]["report_schedules"][0]["email_to"] == "recipient@example.com"
     assert "act_real_should_not_print" not in preview.yaml_text
     assert "real-recipient@example.test" not in preview.yaml_text
+
+
+def test_build_config_preview_outputs_valid_sanitized_google_ads_yaml() -> None:
+    preview = build_config_preview(google_selection())
+    config = load_config_from_yaml(preview.yaml_text, source="preview")
+
+    account = config["clients"][0]["platforms"]["google_ads"]["accounts"][0]
+    assert config["clients"][0]["platforms"]["google_ads"]["enabled"] is True
+    assert account["customer_id"] == "0000000001"
+    assert account["account_name"] == "Demo Google Ads"
+    assert "123-456-7890" not in preview.yaml_text
+    assert "1234567890" not in preview.yaml_text
 
 
 def test_build_config_preview_skips_report_schedule_without_ai_email() -> None:
@@ -93,7 +119,7 @@ def test_build_config_preview_warns_when_looker_uses_bigquery_views() -> None:
 
 def test_build_config_preview_rejects_unsupported_connector() -> None:
     selection = sample_selection()
-    selection["connector_id"] = "google_ads"
+    selection["connector_id"] = "line_ads"
 
     with pytest.raises(ValueError, match="Unsupported connector_id"):
         build_config_preview(selection)
@@ -132,6 +158,18 @@ def test_export_local_clients_config_writes_real_account_ids_to_ignored_artifact
     assert accounts[1]["ad_account_id"] == "act_another_real_should_not_print"
     assert export.account_count == 2
     assert export.report_schedule_count == 1
+
+
+def test_export_local_clients_config_writes_google_customer_ids_to_ignored_artifact(tmp_path) -> None:
+    output_path = tmp_path / "clients.generated.yaml"
+
+    export = export_local_clients_config(google_selection(), output_path)
+    config = load_config_from_yaml(output_path.read_text(encoding="utf-8"), source="local export")
+
+    accounts = config["clients"][0]["platforms"]["google_ads"]["accounts"]
+    assert accounts[0]["customer_id"] == "1234567890"
+    assert export.account_count == 1
+    assert export.destinations == ["bigquery", "looker_studio"]
 
 
 def test_format_local_export_summary_is_safe_for_api_response(tmp_path) -> None:

@@ -156,10 +156,11 @@ It accepts onboarding selection JSON and prints a sanitized
 `clients.yaml`-compatible preview without writing `config/clients.yaml`.
 
 The local onboarding API now creates an in-memory connection draft after the
-user selects Meta accounts and destinations. The draft includes destination
-handoff metadata for BigQuery, Looker Studio, and AI Report Email plus an apply
-plan for promoting the selection into managed config. It is intentionally
-non-durable and reports `writes_config=false` and `writes_secrets=false`.
+user selects Meta or Google Ads preview accounts and destinations. The draft
+includes destination handoff metadata for BigQuery, Looker Studio, and AI Report
+Email plus an apply plan for promoting the selection into managed config. It is
+intentionally non-durable and reports `writes_config=false` and
+`writes_secrets=false`.
 The frontend presents this as a user-facing setup-complete state; draft/config
 details are kept in a collapsed developer details section for debugging.
 
@@ -205,6 +206,10 @@ This runs `src.main` with `CLIENTS_CONFIG_PATH=.local/clients.generated.yaml`
 and `SYNC_ENABLED_PLATFORMS=meta_ads`. It is intentionally a manual command
 because it calls Meta and writes/replaces rows in BigQuery for the configured
 date range.
+
+Google Ads can now be previewed through the same onboarding selection and local
+config export bridge. Google live sync remains a separate gated step because it
+requires Google Ads API credentials and customer access validation.
 
 Before running that write path, use the safe readiness check:
 

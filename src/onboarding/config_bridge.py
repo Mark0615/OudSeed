@@ -13,7 +13,7 @@ import yaml
 from src.utils.config_loader import load_config_from_yaml
 
 
-SUPPORTED_CONNECTORS = {"meta_ads"}
+SUPPORTED_CONNECTORS = {"meta_ads", "google_ads"}
 SUPPORTED_DESTINATIONS = {
     "bigquery",
     "looker_studio",
@@ -215,6 +215,26 @@ def _build_platform_config(
     *,
     redact_account_ids: bool,
 ) -> dict[str, Any]:
+    if connector_id == "google_ads":
+        return {
+            "enabled": True,
+            "accounts": [
+                {
+                    "customer_id": (
+                        f"000000{index:04d}"
+                        if redact_account_ids
+                        else _account_external_id(account, index).replace("-", "")
+                    ),
+                    "account_name": _account_name(account, index),
+                    "login_customer_id": _optional_str(account.get("login_customer_id")) if isinstance(account, dict) else None,
+                    "report_level": "ad",
+                    "attribution_setting": "platform_default",
+                    "timezone_setting": "platform_account_default",
+                }
+                for index, account in enumerate(accounts, start=1)
+            ],
+        }
+
     if connector_id != "meta_ads":
         raise ValueError(f"Unsupported connector_id: {connector_id}")
 

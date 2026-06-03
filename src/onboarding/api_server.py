@@ -1017,9 +1017,9 @@ def _default_connectors() -> list[dict[str, Any]]:
             "label": "Google Ads",
             "logo": "G",
             "color": "google",
-            "status": "coming_soon",
+            "status": "available",
             "connected": False,
-            "note": "Next connector",
+            "note": "Preview connector",
         },
         {
             "id": "ga4",
@@ -1092,7 +1092,23 @@ def _default_accounts_by_connector() -> dict[str, list[dict[str, Any]]]:
                 "timezone": "Asia/Taipei",
                 "status": "Ready",
             },
-        ]
+        ],
+        "google_ads": [
+            {
+                "id": "1234567890",
+                "name": "Demo Search Account",
+                "currency": "TWD",
+                "timezone": "Asia/Taipei",
+                "status": "Preview",
+            },
+            {
+                "id": "2345678901",
+                "name": "Demo Shopping Account",
+                "currency": "TWD",
+                "timezone": "Asia/Taipei",
+                "status": "Preview",
+            },
+        ],
     }
 
 

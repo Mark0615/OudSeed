@@ -153,7 +153,7 @@ function renderSourceHero() {
     els.heroLogo.textContent = "OS";
     els.heroTitle.textContent = "Start with a data source";
     els.heroText.textContent =
-      "Meta Ads is the current MVP path. Google Ads and LINE Ads are shown here so the user flow already matches the future product.";
+      "Meta Ads supports live sync today. Google Ads is available as the next onboarding preview path.";
     els.connectButton.textContent = "Connect";
     return;
   }
