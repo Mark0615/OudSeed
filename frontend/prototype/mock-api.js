@@ -262,6 +262,34 @@
       });
     },
 
+    liveSyncReadiness() {
+      return apiRequest("/api/onboarding/live-sync-readiness", undefined, () => {
+        return delay({
+          ok: true,
+          live_sync_readiness: {
+            ready: false,
+            writes_bigquery: true,
+            config_path: null,
+            checks: [
+              {
+                id: "local_config_artifact_exists",
+                ok: false,
+                message: "Local API is required to create a local sync artifact.",
+              },
+            ],
+            summary: {
+              platform: "meta_ads",
+              client_count: 0,
+              enabled_meta_account_count: 0,
+              destination_count: 0,
+              report_schedule_count: 0,
+            },
+            warnings: ["static_mock_no_local_artifact"],
+          },
+        });
+      });
+    },
+
     getSyncJob(syncJobId) {
       return apiRequest(`/api/sync-jobs/${syncJobId}`, undefined, () => {
         const job = syncJobs[syncJobId];

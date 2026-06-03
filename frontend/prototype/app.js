@@ -12,6 +12,7 @@ const state = {
   syncPollTimer: null,
   currentSyncJobId: null,
   connections: [],
+  liveSyncReadiness: null,
 };
 
 const els = {
@@ -431,6 +432,7 @@ async function resetDemo() {
   state.selectedDestinations = new Set(["looker_studio", "ai_report_email"]);
   state.destinationCategory = "all";
   state.reportType = "monthly";
+  state.liveSyncReadiness = null;
   els.platformSearch.value = "";
   els.connectedOnly.checked = false;
   els.accountSearch.value = "";
@@ -455,13 +457,15 @@ async function createConnection() {
   }
   stopSyncPolling();
   const result = await api.createConnection(payload);
+  const readinessResponse = await api.liveSyncReadiness().catch(() => null);
+  state.liveSyncReadiness = readinessResponse?.live_sync_readiness || null;
   state.currentSyncJobId = result.first_sync_job?.sync_job_id || null;
-  renderConnectionResult(payload, result);
+  renderConnectionResult(payload, result, state.liveSyncReadiness);
   await refreshConnections();
   if (result.first_sync_job?.sync_job_id) {
     pollSyncJob(result.first_sync_job.sync_job_id);
   }
-  showToast("Connection ready. First sync started.");
+  showToast("Connection ready. Checking sync status.");
 }
 
 async function refreshConnections() {
@@ -502,7 +506,7 @@ function buildConnectionPayload() {
   return payload;
 }
 
-function renderConnectionResult(payload, result) {
+function renderConnectionResult(payload, result, liveSyncReadiness) {
   const summary = result.config_preview.summary;
   const source = selectedSource();
   const accountNames = selectedSourceAccounts()
@@ -520,7 +524,14 @@ function renderConnectionResult(payload, result) {
     <div><span>First sync</span><strong id="firstSyncSummary">${userSyncStatus(result.first_sync_job?.status || result.next_sync_status)}</strong></div>
   `;
   els.payloadPreview.textContent = JSON.stringify(sanitizePayloadForDisplay(payload), null, 2);
-  els.nextActions.innerHTML = renderDestinationStatus(result.destination_handoff, payload, accountNames, result.first_sync_job);
+  els.nextActions.innerHTML = renderDestinationStatus(
+    result.destination_handoff,
+    payload,
+    accountNames,
+    result.first_sync_job,
+    result.local_config_export,
+    liveSyncReadiness
+  );
   els.configPreview.textContent = result.config_preview.yaml_text;
 }
 
@@ -563,6 +574,7 @@ function renderConnections() {
 function clearConnectionResult() {
   stopSyncPolling();
   state.currentSyncJobId = null;
+  state.liveSyncReadiness = null;
   els.connectionResult.hidden = true;
   els.connectionStatus.textContent = "Not queued";
   els.handoffSummary.innerHTML = "";
@@ -582,7 +594,7 @@ function sanitizePayloadForDisplay(payload) {
   };
 }
 
-function renderDestinationStatus(destinationHandoff, payload, accountNames, syncJob) {
+function renderDestinationStatus(destinationHandoff, payload, accountNames, syncJob, localConfigExport, liveSyncReadiness) {
   if (!destinationHandoff) {
     return `<p class="muted-copy">Finish setup to prepare your selected destinations.</p>`;
   }
@@ -602,11 +614,54 @@ function renderDestinationStatus(destinationHandoff, payload, accountNames, sync
     : "Selected ad accounts";
   return `
     ${renderSyncJob(syncJob)}
+    ${renderLocalConfigExport(localConfigExport)}
+    ${renderLiveSyncReadiness(liveSyncReadiness)}
     <div class="handoff-destinations">${destinationsMarkup}</div>
     <div class="setup-next-step">
       <strong>What happens next</strong>
       <p>${accountSummary} will be synced into the selected destinations. Dashboard and report outputs become available after the first successful sync.</p>
     </div>
+  `;
+}
+
+function renderLocalConfigExport(localConfigExport) {
+  if (!localConfigExport) {
+    return "";
+  }
+  const accountCount = Number(localConfigExport.account_count || 0);
+  const exported = localConfigExport.status === "exported";
+  const failed = localConfigExport.status === "failed";
+  const status = exported ? "Ready" : failed ? "Needs attention" : "Unavailable";
+  const path = localConfigExport.output_path
+    ? `<code>${escapeHtml(localConfigExport.output_path)}</code>`
+    : "Local sync file";
+  const verb = exported ? "was generated" : "is not ready";
+  return `
+    <article class="handoff-destination local-sync-card ${exported ? "ready" : "pending"}">
+      <strong>Local sync file</strong>
+      <span>${status}</span>
+      <p>${path} ${verb} for ${formatCount(accountCount)} selected account${accountCount === 1 ? "" : "s"}.</p>
+    </article>
+  `;
+}
+
+function renderLiveSyncReadiness(readiness) {
+  if (!readiness) {
+    return "";
+  }
+  const failedChecks = (readiness.checks || []).filter((check) => !check.ok);
+  const summary = readiness.summary || {};
+  const accountCount = Number(summary.enabled_meta_account_count || 0);
+  const details = readiness.ready
+    ? `${formatCount(accountCount)} selected Meta account${accountCount === 1 ? "" : "s"} ready for the guarded live sync path.`
+    : failedChecks.slice(0, 3).map((check) => escapeHtml(readinessCheckLabel(check.id))).join(", ") || "Readiness has not passed yet.";
+  return `
+    <article class="handoff-destination local-sync-card ${readiness.ready ? "ready" : "pending"}">
+      <strong>Live sync readiness</strong>
+      <span>${readiness.ready ? "Passed" : "Needs attention"}</span>
+      <p>${details}</p>
+      ${readiness.writes_bigquery ? "<small>Next live sync writes to BigQuery.</small>" : ""}
+    </article>
   `;
 }
 
@@ -766,6 +821,9 @@ function userSyncStatus(status) {
   if (status === "running") {
     return "Syncing data";
   }
+  if (status === "ready_for_sync") {
+    return "Ready for live sync";
+  }
   if (status === "completed") {
     return "Sync completed";
   }
@@ -781,6 +839,7 @@ function syncStepLabel(status) {
     failed: "Failed",
     running: "Running",
     queued: "Waiting",
+    ready_for_sync: "Ready",
   }[status] || status;
 }
 
@@ -788,10 +847,12 @@ async function pollSyncJob(syncJobId) {
   try {
     const response = await api.getSyncJob(syncJobId);
     updateSyncJob(response.sync_job);
-    if (!["completed", "failed"].includes(response.sync_job.status)) {
+    if (!["completed", "failed", "ready_for_sync"].includes(response.sync_job.status)) {
       state.syncPollTimer = window.setTimeout(() => pollSyncJob(syncJobId), 1100);
     } else if (response.sync_job.status === "completed") {
       showToast("First sync completed.");
+    } else if (response.sync_job.status === "ready_for_sync") {
+      showToast("Setup ready for live sync.");
     } else {
       showToast("First sync failed.");
     }
@@ -937,6 +998,29 @@ function formatCount(value) {
     return "0";
   }
   return Number(value).toLocaleString("en-US");
+}
+
+function readinessCheckLabel(checkId) {
+  return {
+    local_sync_explicitly_enabled: "Local sync mode",
+    local_config_export_path_configured: "Local sync file path",
+    local_config_artifact_exists: "Local sync file",
+    local_config_artifact_valid: "Local sync file validation",
+    enabled_meta_accounts_present: "Selected Meta accounts",
+    meta_access_token_configured: "Meta access token",
+    bigquery_project_configured: "BigQuery project",
+    bigquery_dataset_configured: "BigQuery dataset",
+    sync_platform_filter_allows_meta: "Meta sync filter",
+  }[checkId] || checkId || "Readiness check";
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function userDestinationCopy(destinationId, handoff, payload) {

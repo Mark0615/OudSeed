@@ -182,23 +182,24 @@ def test_onboarding_state_first_sync_job_advances_without_sensitive_ids() -> Non
     created = state.create_connection(sample_connection_payload())
     sync_job_id = created["first_sync_job"]["sync_job_id"]
     running = state.get_sync_job(sync_job_id)
-    completed = state.get_sync_job(sync_job_id)
-    output = json.dumps(completed)
+    ready = state.get_sync_job(sync_job_id)
+    output = json.dumps(ready)
 
     assert running["sync_job"]["status"] == "running"
-    assert completed["sync_job"]["status"] == "completed"
-    assert completed["sync_job"]["progress_percent"] == 100
-    assert completed["sync_job"]["summary"]["account_count"] == 1
-    assert [step["id"] for step in completed["sync_job"]["steps"]] == [
+    assert ready["sync_job"]["status"] == "ready_for_sync"
+    assert ready["sync_job"]["progress_percent"] == 100
+    assert ready["sync_job"]["summary"]["account_count"] == 1
+    assert [step["id"] for step in ready["sync_job"]["steps"]] == [
         "source_connected",
         "warehouse_sync",
         "dashboard_refresh",
         "report_schedule",
     ]
+    assert ready["sync_job"]["steps"][1]["status"] == "queued"
     assert "act_demo_1001" not in output
 
 
-def test_onboarding_state_attaches_backend_data_check_after_sync_completion() -> None:
+def test_onboarding_state_attaches_backend_data_check_when_ready_for_sync() -> None:
     state = OnboardingPrototypeState(
         backend_status_reader=lambda sync_job: {
             "status": "healthy",
@@ -227,12 +228,13 @@ def test_onboarding_state_attaches_backend_data_check_after_sync_completion() ->
     created = state.create_connection(sample_connection_payload())
     sync_job_id = created["first_sync_job"]["sync_job_id"]
     state.get_sync_job(sync_job_id)
-    completed = state.get_sync_job(sync_job_id)
-    output = json.dumps(completed)
+    ready = state.get_sync_job(sync_job_id)
+    output = json.dumps(ready)
 
-    assert completed["sync_job"]["backend_data_check"]["status"] == "healthy"
-    assert completed["sync_job"]["backend_data_check"]["latest_sync"]["rows_inserted"] == 3
-    assert completed["sync_job"]["backend_data_check"]["scope"]["selected_account_count"] == 1
+    assert ready["sync_job"]["status"] == "ready_for_sync"
+    assert ready["sync_job"]["backend_data_check"]["status"] == "healthy"
+    assert ready["sync_job"]["backend_data_check"]["latest_sync"]["rows_inserted"] == 3
+    assert ready["sync_job"]["backend_data_check"]["scope"]["selected_account_count"] == 1
     assert "act_demo_1001" not in output
 
 
@@ -289,11 +291,11 @@ def test_onboarding_state_backend_data_check_failures_do_not_break_sync_status()
     created = state.create_connection(sample_connection_payload())
     sync_job_id = created["first_sync_job"]["sync_job_id"]
     state.get_sync_job(sync_job_id)
-    completed = state.get_sync_job(sync_job_id)
+    ready = state.get_sync_job(sync_job_id)
 
-    assert completed["sync_job"]["status"] == "completed"
-    assert completed["sync_job"]["backend_data_check"]["status"] == "unavailable"
-    assert completed["sync_job"]["backend_data_check"]["warnings"] == ["backend_status_check_failed"]
+    assert ready["sync_job"]["status"] == "ready_for_sync"
+    assert ready["sync_job"]["backend_data_check"]["status"] == "unavailable"
+    assert ready["sync_job"]["backend_data_check"]["warnings"] == ["backend_status_check_failed"]
 
 
 def test_onboarding_state_sends_report_email_for_completed_sync_job() -> None:
@@ -310,7 +312,10 @@ def test_onboarding_state_sends_report_email_for_completed_sync_job() -> None:
             "recipient_configured": True,
         }
 
-    state = OnboardingPrototypeState(email_report_sender=fake_email_sender)
+    state = OnboardingPrototypeState(
+        email_report_sender=fake_email_sender,
+        first_sync_runner=lambda sync_job, selection: {"runner": "fake_runner", "status": "success"},
+    )
 
     created = state.create_connection(sample_connection_payload())
     sync_job_id = created["first_sync_job"]["sync_job_id"]
@@ -343,7 +348,10 @@ def test_onboarding_state_blocks_duplicate_report_email_while_sending() -> None:
             "recipient_configured": True,
         }
 
-    state = OnboardingPrototypeState(email_report_sender=fake_email_sender)
+    state = OnboardingPrototypeState(
+        email_report_sender=fake_email_sender,
+        first_sync_runner=lambda sync_job, selection: {"runner": "fake_runner", "status": "success"},
+    )
 
     created = state.create_connection(sample_connection_payload())
     sync_job_id = created["first_sync_job"]["sync_job_id"]
@@ -371,7 +379,9 @@ def test_onboarding_state_requires_completed_sync_before_report_email() -> None:
 
 
 def test_onboarding_state_persists_unavailable_report_email_status() -> None:
-    state = OnboardingPrototypeState()
+    state = OnboardingPrototypeState(
+        first_sync_runner=lambda sync_job, selection: {"runner": "fake_runner", "status": "success"},
+    )
 
     created = state.create_connection(sample_connection_payload())
     sync_job_id = created["first_sync_job"]["sync_job_id"]

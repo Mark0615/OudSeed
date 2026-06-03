@@ -363,6 +363,13 @@ class OnboardingPrototypeState:
             job["progress_percent"] = 55
             job["message"] = "Syncing selected ad account data."
         elif job["checks"] >= 2:
+            if not self._first_sync_runner:
+                job["status"] = "ready_for_sync"
+                job["progress_percent"] = 100
+                job["message"] = "Setup is ready. Run live sync readiness before writing BigQuery."
+                if self._backend_status_reader and "backend_data_check" not in job:
+                    job["backend_data_check"] = self._read_backend_status(job)
+                return
             if not self._maybe_run_first_sync(job):
                 return
             if job.get("status") != "failed":
@@ -933,6 +940,9 @@ def _single_count(
 def _sync_job_steps(status: str, destinations: list[str]) -> list[dict[str, str]]:
     if status == "failed":
         warehouse_status = "failed"
+        output_status = "queued"
+    elif status == "ready_for_sync":
+        warehouse_status = "queued"
         output_status = "queued"
     else:
         warehouse_status = "completed" if status == "completed" else "running" if status == "running" else "queued"
