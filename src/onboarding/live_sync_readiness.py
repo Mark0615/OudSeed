@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -419,9 +421,9 @@ def _dedupe(values: list[str]) -> list[str]:
 
 
 def _utc_now() -> str:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 if __name__ == "__main__":

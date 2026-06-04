@@ -8,11 +8,12 @@ import mimetypes
 import os
 import sys
 import threading
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import unquote, urlparse
 
 from dotenv import load_dotenv
@@ -33,8 +34,10 @@ from src.onboarding.state_store import (
     JsonFileOnboardingStateStore,
     OnboardingStateStore,
 )
-from src.onboarding.sync_runner import LocalPlatformSyncRunner, OnboardingFirstSyncRunner
-
+from src.onboarding.sync_runner import (
+    LocalPlatformSyncRunner,
+    OnboardingFirstSyncRunner,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_STATIC_DIR = REPO_ROOT / "frontend" / "prototype"
@@ -1537,7 +1540,11 @@ def _email_report_sender_from_env() -> Callable[[dict[str, Any]], dict[str, Any]
 
     def send_email(sync_job: dict[str, Any]) -> dict[str, Any]:
         # Import lazily so prototype UI can run without OpenAI/SMTP setup unless email send is used.
-        from src.ai.generate_report import _first_enabled_client_id, _load_runtime_config, _report_type
+        from src.ai.generate_report import (
+            _first_enabled_client_id,
+            _load_runtime_config,
+            _report_type,
+        )
         from src.ai.openai_client import OpenAITextClient
         from src.ai.report_generator import generate_and_log_report
         from src.ai.send_account_reports import (
@@ -1547,7 +1554,10 @@ def _email_report_sender_from_env() -> Callable[[dict[str, Any]], dict[str, Any]
             _send_account_report_email,
             format_html_email,
         )
-        from src.notifications.email_delivery import SMTPEmailSender, load_smtp_email_config_from_env
+        from src.notifications.email_delivery import (
+            SMTPEmailSender,
+            load_smtp_email_config_from_env,
+        )
 
         config = _load_runtime_config()
         destination = _destination_from_config(config)
@@ -1644,7 +1654,7 @@ def _report_period_start_from_sync(sync_job: dict[str, Any], report_type: str) -
             return date_value.replace(day=1).date().isoformat()
         weekday = date_value.weekday()
         return (date_value.date()).fromordinal(date_value.date().toordinal() - weekday).isoformat()
-    return os.getenv("AI_REPORT_PERIOD_START_DATE") or datetime.now(timezone.utc).date().replace(day=1).isoformat()
+    return os.getenv("AI_REPORT_PERIOD_START_DATE") or datetime.now(UTC).date().replace(day=1).isoformat()
 
 
 def _report_schedule_email_to(config: dict[str, Any]) -> str | None:
@@ -1675,7 +1685,7 @@ def _positive_int_env(name: str, default: int) -> int:
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 if __name__ == "__main__":

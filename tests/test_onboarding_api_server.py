@@ -13,7 +13,10 @@ from src.onboarding.api_server import (
     _local_config_exporter_from_env,
     _state_store_from_env,
 )
-from src.onboarding.state_store import InMemoryOnboardingStateStore, JsonFileOnboardingStateStore
+from src.onboarding.state_store import (
+    InMemoryOnboardingStateStore,
+    JsonFileOnboardingStateStore,
+)
 
 
 def sample_connection_payload() -> dict:
@@ -362,7 +365,7 @@ def test_onboarding_state_attaches_backend_data_check_when_ready_for_sync() -> N
 
 def test_bigquery_status_reader_uses_google_platform_without_exposing_ids(monkeypatch) -> None:
     class FakeDestination:
-        instances: list["FakeDestination"] = []
+        instances: list[FakeDestination] = []
 
         def __init__(self, project_id: str, dataset_id: str) -> None:
             self.project_id = project_id

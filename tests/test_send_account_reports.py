@@ -2,12 +2,13 @@
 
 import pytest
 
+from src.ai.report_schedules import ReportSchedule
 from src.ai.send_account_reports import (
     _bool_env,
     _default_period_start,
     _filter_report_groups,
-    _format_report_group_lines,
     _format_preflight_lines,
+    _format_report_group_lines,
     _generate_and_send_account_group_reports,
     _limit_report_groups,
     _optional_positive_int_env,
@@ -15,7 +16,6 @@ from src.ai.send_account_reports import (
     discover_account_report_groups,
     format_html_email,
 )
-from src.ai.report_schedules import ReportSchedule
 
 
 class FakeDestination:

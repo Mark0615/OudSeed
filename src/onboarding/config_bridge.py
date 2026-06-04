@@ -12,7 +12,6 @@ import yaml
 
 from src.utils.config_loader import load_config_from_yaml
 
-
 SUPPORTED_CONNECTORS = {"meta_ads", "google_ads"}
 SUPPORTED_DESTINATIONS = {
     "bigquery",

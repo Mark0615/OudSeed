@@ -9,9 +9,11 @@ from dotenv import load_dotenv
 from google.cloud import bigquery
 
 from src.destinations.bigquery import BigQueryDestination
-from src.notifications.email_delivery import SMTPEmailSender, load_smtp_email_config_from_env
+from src.notifications.email_delivery import (
+    SMTPEmailSender,
+    load_smtp_email_config_from_env,
+)
 from src.utils.config_loader import load_config, load_config_from_yaml
-
 
 DEFAULT_CONFIG_PATH = "config/clients.yaml"
 
@@ -125,7 +127,7 @@ def _default_subject(report: dict[str, Any]) -> str:
 def _format_email_body(report: dict[str, Any]) -> str:
     return "\n".join(
         [
-            f"OudSeed AI 廣告成效報告",
+            "OudSeed AI 廣告成效報告",
             f"Report ID: {report['report_id']}",
             f"Client: {report['client_id']}",
             f"Period: {report['week_start_date']} - {report.get('week_end_date')}",

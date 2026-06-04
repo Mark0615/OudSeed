@@ -2,7 +2,11 @@
 
 from datetime import date
 
-from src.ai.send_report_email import _default_subject, _format_email_body, fetch_report_for_email
+from src.ai.send_report_email import (
+    _default_subject,
+    _format_email_body,
+    fetch_report_for_email,
+)
 
 
 class FakeDestination:

@@ -1,7 +1,7 @@
 """Tests for date utility helpers."""
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pytest
 
@@ -122,5 +122,5 @@ def test_get_default_report_period_start_rejects_unknown_type() -> None:
 
 def test_invalid_timezone_raises_error() -> None:
     """Invalid IANA timezone names raise an exception from zoneinfo."""
-    with pytest.raises(Exception):
+    with pytest.raises(ZoneInfoNotFoundError):
         today_in_timezone("Not/A_Timezone")

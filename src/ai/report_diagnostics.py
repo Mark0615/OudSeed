@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 PRIMARY_METRICS = ("cpc", "cpa", "roas")
 DETAIL_SECTIONS = ("ad_groups", "ads", "keywords", "search_terms")
 

@@ -1,8 +1,7 @@
 """Normalize Meta Ads rows into the unified ads schema."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
-
 
 ACTION_ALIASES = {
     "add_to_cart": ("add_to_cart", "omni_add_to_cart", "onsite_conversion.add_to_cart"),
@@ -25,7 +24,7 @@ def normalize_meta_ads_rows(raw_rows: list[dict], context: dict) -> list[dict]:
     account_name = context.get("account_name")
     conversion_action_type = context.get("conversion_action_type", "purchase")
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     normalized_rows: list[dict] = []
 
     for raw_row in raw_rows:

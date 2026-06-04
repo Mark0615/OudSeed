@@ -8,7 +8,6 @@ import requests
 
 from src.connectors.base import BaseAdsConnector
 
-
 DEFAULT_META_INSIGHTS_FIELDS = [
     "date_start",
     "date_stop",

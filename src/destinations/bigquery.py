@@ -6,7 +6,6 @@ from typing import Any
 
 from google.cloud import bigquery
 
-
 LOGGER = logging.getLogger(__name__)
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 

@@ -2,8 +2,8 @@
 
 from unittest.mock import Mock
 
-from google.cloud import bigquery
 import pytest
+from google.cloud import bigquery
 
 from src.destinations.bigquery import BigQueryDestination
 

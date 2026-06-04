@@ -2,7 +2,11 @@
 
 import pytest
 
-from src.ai.generate_report import _load_runtime_config, _positive_int_env, _report_depth
+from src.ai.generate_report import (
+    _load_runtime_config,
+    _positive_int_env,
+    _report_depth,
+)
 
 
 def test_load_runtime_config_prefers_yaml_env(monkeypatch) -> None:

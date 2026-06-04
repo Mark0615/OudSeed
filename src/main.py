@@ -2,7 +2,7 @@
 
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +15,6 @@ from src.transforms.normalize_google import normalize_google_ads_rows
 from src.transforms.normalize_meta import normalize_meta_ads_rows
 from src.utils.config_loader import load_config, load_config_from_yaml
 from src.utils.date_utils import get_default_sync_range
-
 
 DEFAULT_CONFIG_PATH = "config/clients.yaml"
 RAW_META_TABLE = "raw_meta_ads_daily"
@@ -678,7 +677,7 @@ def _redacted_identifier(value: Any) -> str:
 
 def _utc_now() -> str:
     """Return current UTC timestamp as an ISO string."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 if __name__ == "__main__":
