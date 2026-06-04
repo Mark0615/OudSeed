@@ -6,6 +6,7 @@ let destinations = [];
 const state = {
   selectedSourceId: null,
   selectedAccounts: new Set(),
+  accountLabels: {},
   selectedDestinations: new Set(["looker_studio", "ai_report_email"]),
   destinationCategory: "all",
   reportType: "monthly",
@@ -31,6 +32,7 @@ const els = {
   selectAllAccountsButton: document.querySelector("#selectAllAccountsButton"),
   accountMasterCheckbox: document.querySelector("#accountMasterCheckbox"),
   accountRows: document.querySelector("#accountRows"),
+  accountLabels: document.querySelector("#accountLabels"),
   accountSelectionCount: document.querySelector("#accountSelectionCount"),
   destinationGrid: document.querySelector("#destinationGrid"),
   destinationSelectionCount: document.querySelector("#destinationSelectionCount"),
@@ -75,6 +77,11 @@ function selectedSourceAccounts() {
   return selectedSource()?.accounts || [];
 }
 
+function accountDisplayName(account) {
+  const label = state.accountLabels[account.id]?.trim();
+  return label || account.name;
+}
+
 function visibleAccounts() {
   const source = selectedSource();
   const query = els.accountSearch.value.trim().toLowerCase();
@@ -82,7 +89,11 @@ function visibleAccounts() {
     return [];
   }
   return selectedSourceAccounts().filter((account) => {
-    return account.name.toLowerCase().includes(query) || account.id.toLowerCase().includes(query);
+    return (
+      account.name.toLowerCase().includes(query) ||
+      accountDisplayName(account).toLowerCase().includes(query) ||
+      account.id.toLowerCase().includes(query)
+    );
   });
 }
 
@@ -197,12 +208,16 @@ function renderAccounts() {
   if (!source) {
     els.accountSelectionCount.textContent = "No source selected";
     els.accountRows.innerHTML = `<tr><td colspan="4" class="empty-state">Connect a platform to load ad accounts.</td></tr>`;
+    els.accountLabels.hidden = true;
+    els.accountLabels.innerHTML = "";
     return;
   }
 
   if (!source.connected) {
     els.accountSelectionCount.textContent = "Authorization required";
     els.accountRows.innerHTML = `<tr><td colspan="4" class="empty-state">Authorize ${source.label} before selecting accounts.</td></tr>`;
+    els.accountLabels.hidden = true;
+    els.accountLabels.innerHTML = "";
     return;
   }
 
@@ -213,6 +228,7 @@ function renderAccounts() {
 
   if (accounts.length === 0) {
     els.accountRows.innerHTML = `<tr><td colspan="4" class="empty-state">No accounts match your search.</td></tr>`;
+    renderAccountLabels();
     return;
   }
 
@@ -238,6 +254,47 @@ function renderAccounts() {
   document.querySelectorAll("[data-account-id]").forEach((checkbox) => {
     checkbox.addEventListener("change", () => {
       toggleAccount(checkbox.dataset.accountId, checkbox.checked);
+    });
+  });
+  renderAccountLabels();
+}
+
+function renderAccountLabels() {
+  const selectedAccounts = selectedSourceAccounts().filter((account) => state.selectedAccounts.has(account.id));
+  if (selectedAccounts.length === 0) {
+    els.accountLabels.hidden = true;
+    els.accountLabels.innerHTML = "";
+    return;
+  }
+
+  els.accountLabels.hidden = false;
+  els.accountLabels.innerHTML = `
+    <div class="account-labels-header">
+      <div>
+        <strong>Report names</strong>
+        <span>Use client or brand names here. Platform account IDs stay hidden.</span>
+      </div>
+    </div>
+    <div class="account-label-list">
+      ${selectedAccounts
+        .map((account) => {
+          const value = accountDisplayName(account);
+          return `
+            <label class="account-label-item">
+              <span>${escapeHtml(account.name)}</span>
+              <input type="text" data-label-account-id="${escapeHtml(account.id)}" value="${escapeHtml(value)}" autocomplete="off" />
+            </label>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+
+  document.querySelectorAll("[data-label-account-id]").forEach((input) => {
+    input.addEventListener("input", () => {
+      state.accountLabels[input.dataset.labelAccountId] = input.value;
+      clearConnectionResult();
+      renderSummary();
     });
   });
 }
@@ -333,6 +390,7 @@ async function selectSource(sourceId) {
   }
   state.selectedSourceId = sourceId;
   state.selectedAccounts.clear();
+  state.accountLabels = {};
   clearConnectionResult();
   els.accountSearch.value = "";
   renderAll();
@@ -352,8 +410,13 @@ function toggleAccount(accountId, checked) {
   clearConnectionResult();
   if (checked) {
     state.selectedAccounts.add(accountId);
+    const account = selectedSourceAccounts().find((item) => item.id === accountId);
+    if (account && !state.accountLabels[accountId]) {
+      state.accountLabels[accountId] = account.name;
+    }
   } else {
     state.selectedAccounts.delete(accountId);
+    delete state.accountLabels[accountId];
   }
   renderAccounts();
   renderStepper();
@@ -388,7 +451,12 @@ function renderEmailSettings() {
 }
 
 function selectAllVisibleAccounts() {
-  visibleAccounts().forEach((account) => state.selectedAccounts.add(account.id));
+  visibleAccounts().forEach((account) => {
+    state.selectedAccounts.add(account.id);
+    if (!state.accountLabels[account.id]) {
+      state.accountLabels[account.id] = account.name;
+    }
+  });
   renderAccounts();
   renderStepper();
   renderSummary();
@@ -436,6 +504,7 @@ async function resetDemo() {
   await api.reset();
   state.selectedSourceId = null;
   state.selectedAccounts.clear();
+  state.accountLabels = {};
   state.selectedDestinations = new Set(["looker_studio", "ai_report_email"]);
   state.destinationCategory = "all";
   state.reportType = "monthly";
@@ -491,10 +560,10 @@ function buildConnectionPayload() {
     workspace_id: "workspace_demo",
     connector_id: source.id,
     authorization_id: `auth_${source.id}_demo`,
-    client_name: accounts[0]?.name || "Onboarding Preview Client",
+    client_name: accounts[0] ? accountDisplayName(accounts[0]) : "Onboarding Preview Client",
     accounts: accounts.map((account) => ({
       external_account_id: account.id,
-      account_name: account.name,
+      account_name: accountDisplayName(account),
     })),
     destinations: [...state.selectedDestinations],
   };
@@ -558,8 +627,8 @@ function renderConnections() {
       return `
         <article class="connection-card">
           <div>
-            <strong>${formatCount(connection.account_count)} account${connection.account_count === 1 ? "" : "s"}</strong>
-            <span>${destinationNames || "No destinations"}</span>
+            <strong>${escapeHtml(connection.account_group_name || "Selected account")}</strong>
+            <span>${formatCount(connection.account_count)} account${connection.account_count === 1 ? "" : "s"} · ${destinationNames || "No destinations"}</span>
           </div>
           <div>
             <span>Report</span>
@@ -606,7 +675,7 @@ function renderSelectedAccountPreview(source, selectedAccounts, summary) {
           const meta = [account.currency, account.timezone].filter(Boolean).join(" · ");
           return `
             <li>
-              <strong>${escapeHtml(account.name)}</strong>
+              <strong>${escapeHtml(accountDisplayName(account))}</strong>
               <span>${escapeHtml(meta || account.status || "Ready")}</span>
             </li>
           `;
@@ -627,7 +696,7 @@ function renderUserSetupPreview(destinationHandoff, payload, selectedAccounts, d
     return `<p class="muted-copy">Finish setup to prepare your selected destinations.</p>`;
   }
   const destinationsMarkup = renderDestinationOutputPreview(destinationHandoff, payload, destinationNames);
-  const accountNames = selectedAccounts.map((account) => account.name);
+  const accountNames = selectedAccounts.map((account) => accountDisplayName(account));
   const accountSummary = accountNames.length > 0
     ? accountNames.slice(0, 3).map(escapeHtml).join(", ") + (accountNames.length > 3 ? ` and ${accountNames.length - 3} more` : "")
     : "Selected ad accounts";
@@ -1231,7 +1300,10 @@ function bindEvents() {
     if (els.accountMasterCheckbox.checked) {
       selectAllVisibleAccounts();
     } else {
-      visibleAccounts().forEach((account) => state.selectedAccounts.delete(account.id));
+      visibleAccounts().forEach((account) => {
+        state.selectedAccounts.delete(account.id);
+        delete state.accountLabels[account.id];
+      });
       renderAccounts();
       renderStepper();
       renderSummary();

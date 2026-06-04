@@ -136,6 +136,11 @@ Current prototype scope:
   `src.onboarding.config_bridge`.
 - Show a mock `config_preview` response shaped like
   `.venv/bin/python -m src.onboarding.config_bridge ... --json`.
+- Let users rename selected accounts with safe client/report names before
+  finishing setup. The edited names feed the handoff payload and report grouping,
+  while platform account IDs remain hidden.
+- Show connected setups by the safe account group name plus account count and
+  outputs, not by platform account identifiers.
 - Show a user-facing completion state after setup, focused on connected source,
   selected accounts, output readiness, report schedule, and whether recent
   performance data is available.

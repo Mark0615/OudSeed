@@ -210,6 +210,7 @@ def test_onboarding_state_lists_created_account_connections_without_sensitive_id
     connection = response["connections"][0]
     assert connection["draft_id"] == "draft_demo_0001"
     assert connection["first_sync_job_id"] == "sync_demo_0001"
+    assert connection["account_group_name"] == "Demo Shop Taiwan"
     assert connection["account_count"] == 1
     assert connection["connection_count"] == 1
     assert connection["destinations"] == ["looker_studio", "ai_report_email", "bigquery"]
