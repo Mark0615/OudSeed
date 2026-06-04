@@ -106,6 +106,26 @@ def test_build_config_preview_accepts_weekly_email_schedule() -> None:
     assert schedule["depth"] == "brief"
 
 
+def test_build_config_preview_accepts_initial_sync_days_back() -> None:
+    selection = sample_selection()
+    selection["initial_sync"] = {"sync_days_back": 30}
+
+    preview = build_config_preview(selection)
+    config = load_config_from_yaml(preview.yaml_text, source="preview")
+    response = build_config_preview_response(selection)
+
+    assert config["defaults"]["sync_days_back"] == 30
+    assert response["config_preview"]["summary"]["sync_days_back"] == 30
+
+
+def test_build_config_preview_rejects_invalid_initial_sync_days_back() -> None:
+    selection = sample_selection()
+    selection["initial_sync"] = {"sync_days_back": 366}
+
+    with pytest.raises(ValueError, match="sync_days_back"):
+        build_config_preview(selection)
+
+
 def test_build_config_preview_warns_when_looker_uses_bigquery_views() -> None:
     selection = sample_selection()
     selection["destinations"] = ["looker_studio"]
@@ -131,6 +151,7 @@ def test_format_preview_summary_is_non_sensitive() -> None:
 
     assert "onboarding_config_preview=true" in output
     assert "account_count=2" in output
+    assert "sync_days_back=7" in output
     assert "act_real_should_not_print" not in output
     assert "real-recipient@example.test" not in output
 
@@ -149,14 +170,18 @@ def test_build_config_preview_response_matches_api_shape() -> None:
 
 def test_export_local_clients_config_writes_real_account_ids_to_ignored_artifact(tmp_path) -> None:
     output_path = tmp_path / "clients.generated.yaml"
+    selection = sample_selection()
+    selection["initial_sync"] = {"sync_days_back": 30}
 
-    export = export_local_clients_config(sample_selection(), output_path)
+    export = export_local_clients_config(selection, output_path)
     config = load_config_from_yaml(output_path.read_text(encoding="utf-8"), source="local export")
 
+    assert config["defaults"]["sync_days_back"] == 30
     accounts = config["clients"][0]["platforms"]["meta_ads"]["accounts"]
     assert accounts[0]["ad_account_id"] == "act_real_should_not_print"
     assert accounts[1]["ad_account_id"] == "act_another_real_should_not_print"
     assert export.account_count == 2
+    assert export.sync_days_back == 30
     assert export.report_schedule_count == 1
 
 
@@ -178,6 +203,7 @@ def test_format_local_export_summary_is_safe_for_api_response(tmp_path) -> None:
     output = json.dumps(response)
 
     assert response["account_count"] == 2
+    assert response["sync_days_back"] == 7
     assert response["local_artifact_only"] is True
     assert response["writes_config"] is False
     assert response["writes_secrets"] is False

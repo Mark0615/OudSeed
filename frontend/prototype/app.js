@@ -7,6 +7,7 @@ const state = {
   selectedSourceId: null,
   selectedAccounts: new Set(),
   accountLabels: {},
+  initialSyncDaysBack: 7,
   selectedDestinations: new Set(["looker_studio", "ai_report_email"]),
   destinationCategory: "all",
   reportType: "monthly",
@@ -37,6 +38,7 @@ const els = {
   destinationGrid: document.querySelector("#destinationGrid"),
   destinationSelectionCount: document.querySelector("#destinationSelectionCount"),
   emailSettings: document.querySelector("#emailSettings"),
+  initialSyncDaysBack: document.querySelector("#initialSyncDaysBack"),
   monthlyDeliveryField: document.querySelector("#monthlyDeliveryField"),
   weeklyDeliveryField: document.querySelector("#weeklyDeliveryField"),
   monthlyDeliveryDay: document.querySelector("#monthlyDeliveryDay"),
@@ -508,11 +510,13 @@ async function resetDemo() {
   state.selectedDestinations = new Set(["looker_studio", "ai_report_email"]);
   state.destinationCategory = "all";
   state.reportType = "monthly";
+  state.initialSyncDaysBack = 7;
   state.liveSyncReadiness = null;
   els.platformSearch.value = "";
   els.connectedOnly.checked = false;
   els.accountSearch.value = "";
   els.monthlyDeliveryDay.value = "1";
+  els.initialSyncDaysBack.value = "7";
   els.weeklyDeliveryDay.value = "monday";
   els.reportDepth.value = "standard";
   els.reportTimezone.value = "Asia/Taipei";
@@ -565,6 +569,9 @@ function buildConnectionPayload() {
       external_account_id: account.id,
       account_name: accountDisplayName(account),
     })),
+    initial_sync: {
+      sync_days_back: Number(els.initialSyncDaysBack.value || state.initialSyncDaysBack || 7),
+    },
     destinations: [...state.selectedDestinations],
   };
 
@@ -624,6 +631,7 @@ function renderConnections() {
       const reportSchedule = connection.report_schedule
         ? reportScheduleLabel(connection.report_schedule)
         : "Not scheduled";
+      const syncDaysBack = connection.initial_sync?.sync_days_back || 7;
       return `
         <article class="connection-card">
           <div>
@@ -636,7 +644,7 @@ function renderConnections() {
           </div>
           <div>
             <span>Next</span>
-            <strong>${connection.first_sync_job_id ? "First sync" : "Review"}</strong>
+            <strong>${connection.first_sync_job_id ? `${formatCount(syncDaysBack)} day import` : "Review"}</strong>
           </div>
         </article>
       `;
@@ -718,10 +726,11 @@ function renderCustomerDataPreview(syncJob, selectedAccounts) {
   const rowsInserted = Number(latest.rows_inserted || 0);
   const rowsFetched = Number(latest.rows_fetched || 0);
   const accountCount = selectedAccounts.length || Number(syncJob?.summary?.account_count || 0);
+  const syncDaysBack = Number(syncJob?.summary?.sync_days_back || 7);
   const completed = syncJob?.status === "completed";
   const readyForSync = syncJob?.status === "ready_for_sync";
   let title = "Waiting for first data import";
-  let description = `${formatCount(accountCount)} selected account${accountCount === 1 ? "" : "s"} will be checked during the first sync.`;
+  let description = `${formatCount(accountCount)} selected account${accountCount === 1 ? "" : "s"} will be checked across the past ${formatCount(syncDaysBack)} days.`;
   let meta = "No performance data preview yet";
   let variant = "pending";
 
@@ -737,7 +746,7 @@ function renderCustomerDataPreview(syncJob, selectedAccounts) {
     variant = "empty";
   } else if (readyForSync) {
     title = "Ready for first data import";
-    description = "Account selection is saved. The first sync can run after the live-write gate is approved.";
+    description = `Account selection is saved. The first sync will check the past ${formatCount(syncDaysBack)} days after the live-write gate is approved.`;
     meta = "Dashboard and report previews appear after sync";
   } else if (syncJob?.status === "running") {
     title = "Importing performance data";
@@ -1342,6 +1351,12 @@ function bindEvents() {
   [els.monthlyDeliveryDay, els.weeklyDeliveryDay, els.reportDepth, els.reportTimezone].forEach((input) => {
     input.addEventListener("change", clearConnectionResult);
     input.addEventListener("input", clearConnectionResult);
+  });
+
+  els.initialSyncDaysBack.addEventListener("change", () => {
+    state.initialSyncDaysBack = Number(els.initialSyncDaysBack.value || 7);
+    clearConnectionResult();
+    renderSummary();
   });
 
   document.querySelectorAll("[data-category]").forEach((tab) => {

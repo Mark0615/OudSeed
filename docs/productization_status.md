@@ -171,9 +171,10 @@ This is the intended boundary for replacing local prototype state with a durable
 workspace/account connection store later.
 
 The local API also exposes `GET /api/account-connections` as a safe list view
-for created connections. It returns account counts, enabled destinations,
-destination statuses, report schedule metadata, and first-sync job ids, but not
-external ad account ids, recipients, tokens, or raw selections.
+for created connections. It returns safe account group names, account counts,
+enabled destinations, destination statuses, report schedule metadata, initial
+import range metadata, and first-sync job ids, but not external ad account ids,
+recipients, tokens, or raw selections.
 
 For longer local product tests, the prototype can persist draft/sync-job state
 with:
@@ -194,6 +195,10 @@ clients.yaml-compatible artifact. The API response is safe metadata only; the
 generated local file is ignored by git and may contain real ad account IDs.
 When this path is configured, `POST /api/account-connections` also auto-exports
 the artifact so the current selected accounts are ready for first-sync execution.
+The onboarding selection can carry `initial_sync.sync_days_back`, currently
+driven by the prototype's 7/14/30/90 day initial import setting. The generated
+local artifact writes that value into `defaults.sync_days_back`, so the manual
+first-sync command uses the selected backfill window without extra flags.
 
 For Google Ads onboarding without automatically running the write path, use:
 

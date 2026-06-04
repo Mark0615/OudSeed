@@ -24,6 +24,8 @@ DEFAULT_WORKSPACE_ID = "workspace_preview"
 DEFAULT_PROJECT_ID = "oudseed"
 DEFAULT_DATASET = "ads_pipeline"
 DEFAULT_TIMEZONE = "Asia/Taipei"
+DEFAULT_SYNC_DAYS_BACK = 7
+MAX_INITIAL_SYNC_DAYS_BACK = 365
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,7 @@ class ConfigPreview:
     account_count: int
     destinations: list[str]
     report_schedule_count: int
+    sync_days_back: int
     warnings: list[str]
 
 
@@ -47,6 +50,7 @@ class LocalConfigExport:
     account_count: int
     destinations: list[str]
     report_schedule_count: int
+    sync_days_back: int
     warnings: list[str]
 
 
@@ -63,6 +67,7 @@ def build_config_preview(selection: dict[str, Any]) -> ConfigPreview:
         account_count=account_count,
         destinations=destinations,
         report_schedule_count=report_schedule_count,
+        sync_days_back=_sync_days_back(selection),
         warnings=warnings,
     )
 
@@ -85,6 +90,7 @@ def export_local_clients_config(selection: dict[str, Any], output_path: Path | s
         account_count=account_count,
         destinations=destinations,
         report_schedule_count=report_schedule_count,
+        sync_days_back=_sync_days_back(selection),
         warnings=_warnings(destinations),
     )
 
@@ -97,6 +103,7 @@ def format_local_export_summary(export: LocalConfigExport) -> dict[str, Any]:
         "account_count": export.account_count,
         "destinations": export.destinations,
         "report_schedule_count": export.report_schedule_count,
+        "sync_days_back": export.sync_days_back,
         "warnings": export.warnings,
         "writes_config": False,
         "writes_secrets": False,
@@ -116,6 +123,7 @@ def _build_clients_yaml(
 
     accounts = _required_list(selection, "accounts", "selection")
     destinations = _normalize_destinations(_required_list(selection, "destinations", "selection"))
+    sync_days_back = _sync_days_back(selection)
     workspace_id = _optional_str(selection.get("workspace_id")) or DEFAULT_WORKSPACE_ID
     report_schedule = _build_report_schedule(selection, destinations)
     platform_config = _build_platform_config(
@@ -142,7 +150,7 @@ def _build_clients_yaml(
         "workspace_id": _slug(workspace_id),
         "defaults": {
             "timezone": DEFAULT_TIMEZONE,
-            "sync_days_back": 7,
+            "sync_days_back": sync_days_back,
             "attribution_setting": "platform_default",
             "timezone_setting": "platform_account_default",
             "conversion_action_type": "purchase",
@@ -166,6 +174,7 @@ def format_preview_summary(preview: ConfigPreview) -> list[str]:
         f"account_count={preview.account_count}",
         f"destinations={','.join(preview.destinations)}",
         f"report_schedule_count={preview.report_schedule_count}",
+        f"sync_days_back={preview.sync_days_back}",
     ]
     lines.extend(f"warning={warning}" for warning in preview.warnings)
     return lines
@@ -182,6 +191,7 @@ def build_config_preview_response(selection: dict[str, Any], *, include_yaml: bo
                 "account_count": preview.account_count,
                 "destinations": preview.destinations,
                 "report_schedule_count": preview.report_schedule_count,
+                "sync_days_back": preview.sync_days_back,
             },
             "summary_lines": format_preview_summary(preview),
             "warnings": preview.warnings,
@@ -336,6 +346,26 @@ def _client_name(selection: dict[str, Any], accounts: list[Any]) -> str:
         if account_name:
             return account_name
     return "Onboarding Preview Client"
+
+
+def _sync_days_back(selection: dict[str, Any]) -> int:
+    initial_sync = selection.get("initial_sync")
+    raw_value: Any = None
+    if isinstance(initial_sync, dict):
+        raw_value = initial_sync.get("sync_days_back")
+    if raw_value is None:
+        raw_value = selection.get("sync_days_back")
+    if raw_value is None:
+        return DEFAULT_SYNC_DAYS_BACK
+    try:
+        days_back = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("initial_sync.sync_days_back must be an integer.") from exc
+    if days_back < 0:
+        raise ValueError("initial_sync.sync_days_back must be greater than or equal to 0.")
+    if days_back > MAX_INITIAL_SYNC_DAYS_BACK:
+        raise ValueError(f"initial_sync.sync_days_back must be less than or equal to {MAX_INITIAL_SYNC_DAYS_BACK}.")
+    return days_back
 
 
 def _account_name(account: Any, index: int) -> str:
