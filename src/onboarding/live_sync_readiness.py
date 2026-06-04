@@ -50,7 +50,10 @@ def build_live_sync_readiness_from_env(env: Mapping[str, str] | None = None) -> 
     return inspect_live_sync_readiness(
         platform=platform,
         config_path=Path(config_path) if config_path else None,
-        local_sync_enabled=_truthy(environment.get("ONBOARDING_ENABLE_LOCAL_SYNC_RUN")),
+        local_sync_enabled=(
+            _truthy(environment.get("ONBOARDING_ENABLE_LOCAL_SYNC_RUN"))
+            or _truthy(environment.get("ONBOARDING_ENABLE_LOCAL_SYNC_READINESS"))
+        ),
         meta_access_token_configured=bool(_optional_str(environment.get("META_ACCESS_TOKEN"))),
         google_ads_developer_token_configured=bool(_optional_str(environment.get("GOOGLE_ADS_DEVELOPER_TOKEN"))),
         google_ads_client_id_configured=bool(_optional_str(environment.get("GOOGLE_ADS_CLIENT_ID"))),

@@ -18,6 +18,7 @@ def test_makefile_includes_account_report_ops_targets() -> None:
     assert "ai-report-post-run:" in makefile
     assert "ai-report-verify:" in makefile
     assert "onboarding-prototype-persistent:" in makefile
+    assert "onboarding-prototype-google-persistent:" in makefile
     assert "onboarding-prototype-live-sync:" in makefile
     assert "onboarding-prototype-google-live-sync:" in makefile
     assert "onboarding-live-sync-ready:" in makefile
@@ -27,6 +28,7 @@ def test_makefile_includes_account_report_ops_targets() -> None:
     assert "ONBOARDING_STATE_STORE_PATH=.local/onboarding_state.json" in makefile
     assert "ONBOARDING_LOCAL_CONFIG_EXPORT_PATH=.local/clients.generated.yaml" in makefile
     assert "ONBOARDING_ENABLE_LOCAL_SYNC_RUN=true" in makefile
+    assert "ONBOARDING_ENABLE_LOCAL_SYNC_READINESS=true" in makefile
     assert "src.onboarding.live_sync_readiness" in makefile
     assert "CLIENTS_CONFIG_PATH=.local/clients.generated.yaml" in makefile
     assert "SYNC_ENABLED_PLATFORMS=meta_ads" in makefile

@@ -195,6 +195,17 @@ generated local file is ignored by git and may contain real ad account IDs.
 When this path is configured, `POST /api/account-connections` also auto-exports
 the artifact so the current selected accounts are ready for first-sync execution.
 
+For Google Ads onboarding without automatically running the write path, use:
+
+```bash
+make onboarding-prototype-google-persistent
+```
+
+This enables the same persistent state and local config export path, sets the
+readiness platform to Google Ads, and keeps first-sync execution disabled. It is
+the safe local flow for generating a Google `.local/clients.generated.yaml`
+artifact before running `make onboarding-google-live-sync-ready`.
+
 After a local config artifact exists, a selected-account Meta sync can be run
 from that artifact with:
 

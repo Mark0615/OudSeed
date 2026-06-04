@@ -603,6 +603,15 @@ def test_first_sync_runner_from_env_requires_explicit_enable(monkeypatch) -> Non
     assert _first_sync_runner_from_env() is None
 
 
+def test_first_sync_runner_from_env_ignores_readiness_only_enable(monkeypatch, tmp_path) -> None:
+    output_path = tmp_path / "clients.generated.yaml"
+    monkeypatch.delenv("ONBOARDING_ENABLE_LOCAL_SYNC_RUN", raising=False)
+    monkeypatch.setenv("ONBOARDING_ENABLE_LOCAL_SYNC_READINESS", "true")
+    monkeypatch.setenv("ONBOARDING_LOCAL_CONFIG_EXPORT_PATH", str(output_path))
+
+    assert _first_sync_runner_from_env() is None
+
+
 def test_first_sync_runner_from_env_uses_local_runner(monkeypatch, tmp_path) -> None:
     output_path = tmp_path / "clients.generated.yaml"
     monkeypatch.setenv("ONBOARDING_ENABLE_LOCAL_SYNC_RUN", "true")

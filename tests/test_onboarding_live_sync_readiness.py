@@ -175,6 +175,23 @@ def test_live_sync_readiness_from_env_prefers_onboarding_export_path(tmp_path) -
     assert readiness["summary"]["sync_platform_filter"] == "meta_ads"
 
 
+def test_live_sync_readiness_from_env_accepts_readiness_only_enable(tmp_path) -> None:
+    config_path = tmp_path / "clients.generated.yaml"
+    export_local_clients_config(sample_selection(), config_path)
+    env = {
+        "ONBOARDING_LOCAL_CONFIG_EXPORT_PATH": str(config_path),
+        "ONBOARDING_ENABLE_LOCAL_SYNC_READINESS": "true",
+        "META_ACCESS_TOKEN": "fake-token",
+        "SYNC_ENABLED_PLATFORMS": "meta_ads",
+        "REFRESH_REPORTING_MARTS": "false",
+    }
+
+    readiness = build_live_sync_readiness_from_env(env)
+
+    assert readiness["ready"] is True
+    assert "local_sync_runner_disabled" not in readiness["warnings"]
+
+
 def test_google_live_sync_readiness_from_env_uses_google_platform(tmp_path) -> None:
     config_path = tmp_path / "clients.generated.yaml"
     export_local_clients_config(google_selection(), config_path)

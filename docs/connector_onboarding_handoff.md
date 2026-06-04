@@ -286,6 +286,14 @@ sync using `CLIENTS_CONFIG_PATH=.local/clients.generated.yaml` and
 `SYNC_ENABLED_PLATFORMS=meta_ads`. This is kept as an explicit local operations
 command because it calls Meta and writes/replaces BigQuery rows.
 
+For Google Ads readiness without starting the write path,
+`make onboarding-prototype-google-persistent` starts the persistent prototype
+with `ONBOARDING_LIVE_SYNC_PLATFORM=google_ads` and
+`ONBOARDING_ENABLE_LOCAL_SYNC_READINESS=true`. It can export the selected Google
+Ads accounts into `.local/clients.generated.yaml`, but it does not create a
+first-sync runner. Use `make onboarding-google-live-sync-ready` after the
+artifact is generated.
+
 For end-to-end local product testing, `make onboarding-prototype-live-sync`
 starts the prototype with `ONBOARDING_ENABLE_LOCAL_SYNC_RUN=true`. In that mode,
 the second first-sync poll exports the selected draft into the local config

@@ -37,6 +37,17 @@ does not store platform tokens or write `config/clients.yaml`.
 When the export path is configured, finishing setup auto-exports the local
 artifact for the selected accounts.
 
+For the same persistent prototype flow focused on Google Ads readiness, run:
+
+```bash
+make onboarding-prototype-google-persistent
+```
+
+This sets the Google Ads readiness platform and keeps live sync execution
+disabled. Finishing setup can generate `.local/clients.generated.yaml` for the
+selected Google Ads accounts, then `make onboarding-google-live-sync-ready` can
+verify the safe gate before any write path is confirmed.
+
 After the local artifact exists, this command runs a Meta sync from it:
 
 ```bash
@@ -133,6 +144,8 @@ Current prototype scope:
   `ONBOARDING_STATE_STORE_PATH=.local/onboarding_state.json`.
 - Optionally export selected account drafts to a local clients.yaml-compatible
   artifact with `ONBOARDING_LOCAL_CONFIG_EXPORT_PATH=.local/clients.generated.yaml`.
+- Optionally run Google Ads persistent readiness mode with
+  `make onboarding-prototype-google-persistent`.
 - Optionally run selected-account Meta sync from that artifact with
   `make onboarding-sync-local-config`.
 - Optionally enable live first-sync execution in the prototype with
