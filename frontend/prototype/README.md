@@ -65,6 +65,15 @@ make onboarding-google-live-sync-ready
 This validates local Google Ads customer config and required credentials without
 calling Google Ads or writing BigQuery.
 
+After Google readiness passes and the write path is confirmed, run:
+
+```bash
+make onboarding-google-sync-local-config
+```
+
+This calls Google Ads and writes/replaces BigQuery rows for the selected local
+config artifact.
+
 For an end-to-end local run where the prototype first-sync polling flow runs the
 Meta sync automatically, use:
 

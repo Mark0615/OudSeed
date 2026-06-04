@@ -510,4 +510,4 @@ API-shaped JSON command:
   Google Sheets remain visibly future-facing unless explicitly implemented.
 - Google Ads local live-sync readiness is available as a safe gate; the actual
   Google Ads write path still requires explicit credential/customer validation
-  and user confirmation.
+  and user confirmation through `make onboarding-google-sync-local-config`.

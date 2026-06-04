@@ -234,6 +234,16 @@ customers, required Google Ads environment credentials, the platform filter, and
 BigQuery project/dataset configuration. It does not call Google Ads, query
 BigQuery, write BigQuery, print credentials, or return real customer IDs.
 
+After Google Ads readiness passes and the user confirms the write path, run:
+
+```bash
+make onboarding-google-sync-local-config
+```
+
+This runs `src.main` with `CLIENTS_CONFIG_PATH=.local/clients.generated.yaml`
+and `SYNC_ENABLED_PLATFORMS=google_ads`. It calls Google Ads and writes/replaces
+BigQuery rows for the configured date range, so it remains a manual operation.
+
 For an end-to-end local prototype where first sync is triggered by the onboarding
 polling flow, run:
 

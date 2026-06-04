@@ -22,6 +22,7 @@ def test_makefile_includes_account_report_ops_targets() -> None:
     assert "onboarding-live-sync-ready:" in makefile
     assert "onboarding-google-live-sync-ready:" in makefile
     assert "onboarding-sync-local-config:" in makefile
+    assert "onboarding-google-sync-local-config:" in makefile
     assert "ONBOARDING_STATE_STORE_PATH=.local/onboarding_state.json" in makefile
     assert "ONBOARDING_LOCAL_CONFIG_EXPORT_PATH=.local/clients.generated.yaml" in makefile
     assert "ONBOARDING_ENABLE_LOCAL_SYNC_RUN=true" in makefile

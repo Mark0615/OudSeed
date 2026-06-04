@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 
-.PHONY: install test lint run check onboarding-prototype onboarding-prototype-real-meta onboarding-prototype-persistent onboarding-prototype-live-sync onboarding-live-sync-ready onboarding-google-live-sync-ready onboarding-sync-local-config ai-report-deploy-dry-run ai-report-status ai-report-ready ai-report-preflight ai-report-logs ai-report-post-run ai-report-verify clean
+.PHONY: install test lint run check onboarding-prototype onboarding-prototype-real-meta onboarding-prototype-persistent onboarding-prototype-live-sync onboarding-live-sync-ready onboarding-google-live-sync-ready onboarding-sync-local-config onboarding-google-sync-local-config ai-report-deploy-dry-run ai-report-status ai-report-ready ai-report-preflight ai-report-logs ai-report-post-run ai-report-verify clean
 
 install:
 	$(PIP) install -r requirements.txt
@@ -38,6 +38,9 @@ onboarding-google-live-sync-ready:
 
 onboarding-sync-local-config:
 	CLIENTS_CONFIG_PATH=.local/clients.generated.yaml SYNC_ENABLED_PLATFORMS=meta_ads $(PYTHON) -m src.main
+
+onboarding-google-sync-local-config:
+	CLIENTS_CONFIG_PATH=.local/clients.generated.yaml SYNC_ENABLED_PLATFORMS=google_ads $(PYTHON) -m src.main
 
 ai-report-deploy-dry-run:
 	DEPLOY_DRY_RUN=true bash deploy/deploy_account_ai_report_job.sh
