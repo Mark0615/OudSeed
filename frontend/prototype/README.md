@@ -35,6 +35,17 @@ to the browser. Finishing setup can export the selected real customer IDs to
 the ignored `.local/clients.generated.yaml` artifact, but this target keeps live
 sync execution disabled.
 
+To test real Meta and Google Ads account discovery in one local prototype run:
+
+```bash
+make onboarding-prototype-real-sources
+```
+
+This enables both real source discovery paths, persistent local state, and
+`.local/clients.generated.yaml` export. It does not enable the live sync runner,
+so finishing setup can prepare the ignored local artifact without writing
+BigQuery rows.
+
 To keep local connection drafts and first-sync state after restarting the
 prototype server, run:
 
@@ -47,7 +58,11 @@ config artifact export to `.local/clients.generated.yaml`. Both paths are
 ignored by git because they may contain real ad account selections. It still
 does not store platform tokens or write `config/clients.yaml`.
 When the export path is configured, finishing setup auto-exports the local
-artifact for the selected accounts.
+artifact for the selected accounts. The artifact is rebuilt from all local
+connection drafts, so you can finish a Meta setup and then a Google Ads setup;
+when both use the same report/client name, they are merged into one client in
+`.local/clients.generated.yaml`. The Connected setups list uses the same grouped
+client view and shows the selected source platforms together.
 
 For the same persistent prototype flow focused on Google Ads readiness, run:
 

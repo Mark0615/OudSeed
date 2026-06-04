@@ -14,6 +14,7 @@ const state = {
   syncPollTimer: null,
   currentSyncJobId: null,
   connections: [],
+  connectionGroups: [],
   liveSyncReadiness: null,
 };
 
@@ -111,6 +112,7 @@ async function hydrateData() {
   }));
   destinations = destinationResponse.destinations;
   state.connections = connectionResponse.connections || [];
+  state.connectionGroups = connectionResponse.connection_groups || groupConnectionSummaries(state.connections);
 }
 
 function renderSources() {
@@ -538,7 +540,7 @@ async function createConnection() {
   stopSyncPolling();
   const result = await api.createConnection(payload);
   const readinessResponse = await api.liveSyncReadiness().catch(() => null);
-  state.liveSyncReadiness = readinessResponse?.live_sync_readiness || null;
+  state.liveSyncReadiness = readinessResponse?.platform_readiness || readinessResponse?.live_sync_readiness || null;
   state.currentSyncJobId = result.first_sync_job?.sync_job_id || null;
   renderConnectionResult(payload, result, state.liveSyncReadiness);
   await refreshConnections();
@@ -551,6 +553,7 @@ async function createConnection() {
 async function refreshConnections() {
   const response = await api.listAccountConnections();
   state.connections = response.connections || [];
+  state.connectionGroups = response.connection_groups || groupConnectionSummaries(state.connections);
   renderConnections();
 }
 
@@ -616,27 +619,29 @@ function renderConnectionResult(payload, result, liveSyncReadiness) {
 }
 
 function renderConnections() {
-  const connections = state.connections || [];
-  els.connectionListCount.textContent = connections.length === 0
+  const groups = state.connectionGroups || groupConnectionSummaries(state.connections || []);
+  els.connectionListCount.textContent = groups.length === 0
     ? "No connections"
-    : `${connections.length} connected`;
-  if (connections.length === 0) {
+    : `${groups.length} client${groups.length === 1 ? "" : "s"} connected`;
+  if (groups.length === 0) {
     els.connectionList.innerHTML = `<div class="empty-state">Finish setup to see connected account groups here.</div>`;
     return;
   }
 
-  els.connectionList.innerHTML = connections
-    .map((connection) => {
-      const destinationNames = (connection.destinations || []).map(destinationLabel).join(", ");
-      const reportSchedule = connection.report_schedule
-        ? reportScheduleLabel(connection.report_schedule)
+  els.connectionList.innerHTML = groups
+    .map((group) => {
+      const destinationNames = (group.destinations || []).map(destinationLabel).join(", ");
+      const reportSchedule = group.report_schedule
+        ? reportScheduleLabel(group.report_schedule)
         : "Not scheduled";
-      const syncDaysBack = connection.initial_sync?.sync_days_back || 7;
+      const syncDaysBack = group.initial_sync?.sync_days_back || 7;
+      const platforms = (group.platforms || []).map(platformChip).join("");
       return `
         <article class="connection-card">
-          <div>
-            <strong>${escapeHtml(connection.account_group_name || "Selected account")}</strong>
-            <span>${formatCount(connection.account_count)} account${connection.account_count === 1 ? "" : "s"} · ${destinationNames || "No destinations"}</span>
+          <div class="connection-main">
+            <strong>${escapeHtml(group.account_group_name || "Selected account")}</strong>
+            <span>${formatCount(group.account_count)} account${group.account_count === 1 ? "" : "s"} · ${destinationNames || "No destinations"}</span>
+            <div class="platform-chip-row">${platforms}</div>
           </div>
           <div>
             <span>Report</span>
@@ -644,12 +649,55 @@ function renderConnections() {
           </div>
           <div>
             <span>Next</span>
-            <strong>${connection.first_sync_job_id ? `${formatCount(syncDaysBack)} day import` : "Review"}</strong>
+            <strong>${(group.first_sync_job_ids || []).length > 0 ? `${formatCount(syncDaysBack)} day import` : "Review"}</strong>
           </div>
         </article>
       `;
     })
     .join("");
+}
+
+function groupConnectionSummaries(connections) {
+  const groups = {};
+  (connections || []).forEach((connection) => {
+    const name = connection.account_group_name || "Selected account";
+    if (!groups[name]) {
+      groups[name] = {
+        account_group_name: name,
+        connection_count: 0,
+        account_count: 0,
+        platforms: [],
+        destinations: [],
+        first_sync_job_ids: [],
+        initial_sync: { sync_days_back: 7 },
+        destination_statuses: {},
+        report_schedule: null,
+      };
+    }
+    const group = groups[name];
+    group.connection_count += Number(connection.connection_count || 0);
+    group.account_count += Number(connection.account_count || 0);
+    appendUnique(group.platforms, connection.connector_id || "unknown");
+    (connection.destinations || []).forEach((destinationId) => appendUnique(group.destinations, destinationId));
+    group.initial_sync.sync_days_back = Math.max(
+      group.initial_sync.sync_days_back,
+      Number(connection.initial_sync?.sync_days_back || 7)
+    );
+    if (connection.first_sync_job_id) {
+      group.first_sync_job_ids.push(connection.first_sync_job_id);
+    }
+    if (connection.report_schedule && !group.report_schedule) {
+      group.report_schedule = connection.report_schedule;
+    }
+    Object.assign(group.destination_statuses, connection.destination_statuses || {});
+  });
+  return Object.values(groups);
+}
+
+function appendUnique(values, value) {
+  if (value && !values.includes(value)) {
+    values.push(value);
+  }
 }
 
 function clearConnectionResult() {
@@ -845,10 +893,21 @@ function renderLiveSyncReadiness(readiness) {
   if (!readiness) {
     return "";
   }
+  if (readiness.meta_ads || readiness.google_ads) {
+    return ["meta_ads", "google_ads"]
+      .filter((platform) => readiness[platform])
+      .map((platform) => renderSingleLiveSyncReadiness(readiness[platform]))
+      .join("");
+  }
+  return renderSingleLiveSyncReadiness(readiness);
+}
+
+function renderSingleLiveSyncReadiness(readiness) {
   const failedChecks = (readiness.checks || []).filter((check) => !check.ok);
   const summary = readiness.summary || {};
   const accountCount = Number(summary.enabled_meta_account_count || summary.enabled_google_account_count || 0);
-  const platformLabel = readiness.platform === "google_ads" ? "Google Ads" : "Meta";
+  const platform = summary.platform || "meta_ads";
+  const platformLabel = platform === "google_ads" ? "Google Ads" : "Meta";
   const details = readiness.ready
     ? `${formatCount(accountCount)} selected ${platformLabel} account${accountCount === 1 ? "" : "s"} ready for the guarded live sync path.`
     : failedChecks.slice(0, 3).map((check) => escapeHtml(readinessCheckLabel(check.id))).join(", ") || "Readiness has not passed yet.";
@@ -1009,6 +1068,23 @@ function renderBackendDataCheck(dataCheck) {
 function destinationLabel(destinationId) {
   const destination = destinations.find((item) => item.id === destinationId);
   return destination?.name || destinationId;
+}
+
+function platformLabel(platformId) {
+  const source = sources.find((item) => item.id === platformId);
+  if (source?.label) {
+    return source.label;
+  }
+  return {
+    meta_ads: "Facebook Ads",
+    google_ads: "Google Ads",
+  }[platformId] || "Source";
+}
+
+function platformChip(platformId) {
+  const source = sources.find((item) => item.id === platformId);
+  const color = source?.color || "";
+  return `<span class="platform-chip ${escapeHtml(color)}">${escapeHtml(platformLabel(platformId))}</span>`;
 }
 
 function userSyncStatus(status) {

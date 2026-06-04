@@ -158,6 +158,49 @@ def test_onboarding_state_auto_exports_local_config_when_enabled() -> None:
     assert "act_demo_1001" not in output
 
 
+def test_onboarding_state_auto_exports_all_current_drafts_when_multiple_connections_exist() -> None:
+    exported_payloads: list[dict] = []
+
+    def fake_exporter(selection: dict) -> dict:
+        exported_payloads.append(selection)
+        selections = selection.get("selections") if isinstance(selection.get("selections"), list) else [selection]
+        account_count = sum(len(item["accounts"]) for item in selections)
+        client_names = [item["client_name"] for item in selections]
+        return {
+            "output_path": ".local/clients.generated.yaml",
+            "client_count": len(set(client_names)),
+            "account_count": account_count,
+            "destinations": ["bigquery", "looker_studio", "ai_report_email"],
+            "report_schedule_count": 1,
+            "sync_days_back": 30,
+            "warnings": [],
+            "writes_config": False,
+            "writes_secrets": False,
+            "local_artifact_only": True,
+        }
+
+    google_payload = sample_google_connection_payload()
+    google_payload["client_name"] = "Demo Shop Taiwan"
+    google_payload["accounts"][0]["account_name"] = "Demo Shop Taiwan"
+    google_payload["destinations"] = ["bigquery", "looker_studio", "ai_report_email"]
+
+    state = OnboardingPrototypeState(local_config_exporter=fake_exporter)
+    first = state.create_connection(sample_connection_payload())
+    second = state.create_connection(google_payload)
+    connections = state.list_account_connections()
+    output = json.dumps({"second": second, "connections": connections})
+
+    assert first["local_config_export"]["account_count"] == 1
+    assert second["local_config_export"]["account_count"] == 2
+    assert exported_payloads[0]["accounts"][0]["external_account_id"] == "act_demo_1001"
+    assert exported_payloads[1]["selections"][0]["connector_id"] == "meta_ads"
+    assert exported_payloads[1]["selections"][1]["connector_id"] == "google_ads"
+    assert connections["connections"][0]["local_config_export"]["account_count"] == 2
+    assert connections["connections"][1]["local_config_export"]["account_count"] == 2
+    assert "act_demo_1001" not in output
+    assert "1234567890" not in output
+
+
 def test_onboarding_state_auto_export_failure_is_safe() -> None:
     def failing_exporter(selection: dict) -> dict:
         raise RuntimeError("sensitive details")
@@ -211,6 +254,7 @@ def test_onboarding_state_lists_created_account_connections_without_sensitive_id
     connection = response["connections"][0]
     assert connection["draft_id"] == "draft_demo_0001"
     assert connection["first_sync_job_id"] == "sync_demo_0001"
+    assert connection["connector_id"] == "meta_ads"
     assert connection["account_group_name"] == "Demo Shop Taiwan"
     assert connection["initial_sync"]["sync_days_back"] == 30
     assert connection["account_count"] == 1
@@ -221,7 +265,36 @@ def test_onboarding_state_lists_created_account_connections_without_sensitive_id
     assert connection["local_draft_only"] is True
     assert connection["writes_config"] is False
     assert connection["writes_secrets"] is False
+    assert response["connection_groups"][0]["account_group_name"] == "Demo Shop Taiwan"
+    assert response["connection_groups"][0]["platforms"] == ["meta_ads"]
     assert "act_demo_1001" not in output
+
+
+def test_onboarding_state_groups_connections_by_account_group_name() -> None:
+    state = OnboardingPrototypeState()
+    google_payload = sample_google_connection_payload()
+    google_payload["client_name"] = "Demo Shop Taiwan"
+    google_payload["accounts"][0]["account_name"] = "Demo Shop Taiwan"
+    google_payload["destinations"] = ["bigquery", "looker_studio", "ai_report_email"]
+
+    state.create_connection(sample_connection_payload())
+    state.create_connection(google_payload)
+    response = state.list_account_connections()
+    output = json.dumps(response)
+
+    assert len(response["connections"]) == 2
+    assert len(response["connection_groups"]) == 1
+    group = response["connection_groups"][0]
+    assert group["account_group_name"] == "Demo Shop Taiwan"
+    assert group["platforms"] == ["meta_ads", "google_ads"]
+    assert group["account_count"] == 2
+    assert group["connection_count"] == 2
+    assert group["destinations"] == ["looker_studio", "ai_report_email", "bigquery"]
+    assert group["initial_sync"]["sync_days_back"] == 30
+    assert group["report_schedule"]["report_type"] == "weekly"
+    assert group["first_sync_job_ids"] == ["sync_demo_0001", "sync_demo_0002"]
+    assert "act_demo_1001" not in output
+    assert "1234567890" not in output
 
 
 def test_onboarding_state_first_sync_job_advances_without_sensitive_ids() -> None:
@@ -585,6 +658,10 @@ def test_onboarding_state_live_sync_readiness_is_safe(monkeypatch, tmp_path) -> 
     assert response["live_sync_readiness"]["ready"] is True
     assert response["live_sync_readiness"]["writes_bigquery"] is True
     assert response["live_sync_readiness"]["summary"]["enabled_meta_account_count"] == 1
+    assert response["platform_readiness"]["meta_ads"]["ready"] is True
+    assert response["platform_readiness"]["meta_ads"]["summary"]["platform"] == "meta_ads"
+    assert response["platform_readiness"]["google_ads"]["ready"] is False
+    assert response["platform_readiness"]["google_ads"]["summary"]["platform"] == "google_ads"
     assert "act_demo_1001" not in output
 
 

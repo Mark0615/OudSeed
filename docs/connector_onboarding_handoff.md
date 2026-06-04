@@ -283,7 +283,10 @@ safe summary; the artifact itself is local and git-ignored because it may
 contain real ad account IDs.
 The local API also auto-exports this artifact during `POST /api/account-connections`
 when the export path is configured, so the first-sync runner can use the current
-selection without a separate manual export call.
+selection without a separate manual export call. The auto-export is now rebuilt
+from all locally stored connection drafts. Drafts sharing the same safe
+client/report name are merged into one client entry with multiple platform
+configs, while different safe client names stay as separate clients.
 
 Once that artifact exists, `make onboarding-sync-local-config` can run the Meta
 sync using `CLIENTS_CONFIG_PATH=.local/clients.generated.yaml` and
@@ -462,6 +465,10 @@ recipients.
   drafts. Completed in `src.onboarding.config_bridge` and
   `src.onboarding.api_server`; the API returns only safe metadata and writes
   the artifact only when `ONBOARDING_LOCAL_CONFIG_EXPORT_PATH` is configured.
+- Rebuild the local export from all connection drafts and merge same-named
+  client setups across platforms. Completed in `src.onboarding.config_bridge`
+  and `src.onboarding.api_server`, keeping real IDs inside the ignored local
+  artifact only.
 - Add a local operations target for syncing from the generated onboarding
   config artifact. Completed as `make onboarding-sync-local-config`; running it
   is explicit because it writes selected-account data to BigQuery.

@@ -175,6 +175,10 @@ for created connections. It returns safe account group names, account counts,
 enabled destinations, destination statuses, report schedule metadata, initial
 import range metadata, and first-sync job ids, but not external ad account ids,
 recipients, tokens, or raw selections.
+The response also includes grouped client summaries. The frontend uses those
+groups for the Connected setups list, so Meta and Google Ads drafts with the
+same safe client/report name appear as one client with multiple source
+platforms.
 
 For longer local product tests, the prototype can persist draft/sync-job state
 with:
@@ -195,6 +199,13 @@ clients.yaml-compatible artifact. The API response is safe metadata only; the
 generated local file is ignored by git and may contain real ad account IDs.
 When this path is configured, `POST /api/account-connections` also auto-exports
 the artifact so the current selected accounts are ready for first-sync execution.
+The export now rebuilds the artifact from all locally stored connection drafts,
+not only the latest setup. Drafts with the same safe client/report name are
+merged into one client entry, so a Meta setup and a Google Ads setup can feed
+the same account-grouped report when they use the same client name. Different
+client names remain separate client entries. The API response still returns
+only safe aggregate metadata; the ignored artifact may contain real platform
+account IDs.
 The onboarding selection can carry `initial_sync.sync_days_back`, currently
 driven by the prototype's 7/14/30/90 day initial import setting. The generated
 local artifact writes that value into `defaults.sync_days_back`, so the manual
@@ -334,3 +345,14 @@ only local aliases to the browser, and can export the selected real customer IDs
 to the ignored `.local/clients.generated.yaml` artifact. It keeps live sync
 execution disabled; run `make onboarding-google-live-sync-ready` before any
 confirmed Google Ads write path.
+
+Real Meta and Google Ads account discovery can be tested together with:
+
+```bash
+make onboarding-prototype-real-sources
+```
+
+This enables both read-only account discovery paths, persistent local onboarding
+state, and `.local/clients.generated.yaml` export. It does not enable the live
+sync runner, so selected accounts can be reviewed and readiness-checked before
+any confirmed BigQuery write path.
