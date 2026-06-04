@@ -47,7 +47,10 @@ config artifact export to `.local/clients.generated.yaml`. Both paths are
 ignored by git because they may contain real ad account selections. It still
 does not store platform tokens or write `config/clients.yaml`.
 When the export path is configured, finishing setup auto-exports the local
-artifact for the selected accounts.
+artifact for the selected accounts. The artifact is rebuilt from all local
+connection drafts, so you can finish a Meta setup and then a Google Ads setup;
+when both use the same report/client name, they are merged into one client in
+`.local/clients.generated.yaml`.
 
 For the same persistent prototype flow focused on Google Ads readiness, run:
 

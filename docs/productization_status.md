@@ -195,6 +195,13 @@ clients.yaml-compatible artifact. The API response is safe metadata only; the
 generated local file is ignored by git and may contain real ad account IDs.
 When this path is configured, `POST /api/account-connections` also auto-exports
 the artifact so the current selected accounts are ready for first-sync execution.
+The export now rebuilds the artifact from all locally stored connection drafts,
+not only the latest setup. Drafts with the same safe client/report name are
+merged into one client entry, so a Meta setup and a Google Ads setup can feed
+the same account-grouped report when they use the same client name. Different
+client names remain separate client entries. The API response still returns
+only safe aggregate metadata; the ignored artifact may contain real platform
+account IDs.
 The onboarding selection can carry `initial_sync.sync_days_back`, currently
 driven by the prototype's 7/14/30/90 day initial import setting. The generated
 local artifact writes that value into `defaults.sync_days_back`, so the manual

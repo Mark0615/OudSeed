@@ -24,6 +24,7 @@ from src.destinations.bigquery import BigQueryDestination
 from src.onboarding.config_bridge import (
     build_config_preview_response,
     export_local_clients_config,
+    export_local_clients_config_from_selections,
     format_local_export_summary,
 )
 from src.onboarding.live_sync_readiness import build_live_sync_readiness_from_env
@@ -171,9 +172,6 @@ class OnboardingPrototypeState:
         }
         sync_job = self._create_first_sync_job(draft_id, resolved_payload, account_count)
         draft["first_sync_job_id"] = sync_job["sync_job_id"]
-        local_config_export = self._export_local_config_from_selection(resolved_payload)
-        if local_config_export:
-            draft["local_config_export"] = local_config_export
         self._state_store.save_connection_draft(
             draft_id,
             {
@@ -181,6 +179,10 @@ class OnboardingPrototypeState:
                 "safe_detail": draft,
             },
         )
+        local_config_export = self._export_local_config_from_current_drafts()
+        if local_config_export:
+            draft["local_config_export"] = local_config_export
+            self._attach_local_config_export_to_drafts(local_config_export)
         return {
             "ok": True,
             "draft_id": draft_id,
@@ -239,27 +241,36 @@ class OnboardingPrototypeState:
                     "writes_secrets": False,
                 },
             }
-        export_summary = self._local_config_exporter(draft["raw_selection"])
-        safe_detail = draft.get("safe_detail")
-        if isinstance(safe_detail, dict):
-            safe_detail["local_config_export"] = {
-                "status": "exported",
-                **export_summary,
+        local_config_export = self._export_local_config_from_current_drafts()
+        if not local_config_export:
+            return {
+                "ok": False,
+                "local_config_export": {
+                    "status": "unavailable",
+                    "message": "Local config export is not enabled for this prototype run.",
+                    "writes_config": False,
+                    "writes_secrets": False,
+                },
             }
-            self._state_store.save_connection_draft(draft_id, draft)
+        self._attach_local_config_export_to_drafts(local_config_export)
         return {
             "ok": True,
-            "local_config_export": {
-                "status": "exported",
-                **export_summary,
-            },
+            "local_config_export": local_config_export,
         }
 
-    def _export_local_config_from_selection(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+    def _export_local_config_from_current_drafts(self) -> dict[str, Any] | None:
         if not self._local_config_exporter:
             return None
+        selections = [
+            draft.get("raw_selection")
+            for draft in self._state_store.list_connection_drafts()
+            if isinstance(draft.get("raw_selection"), dict)
+        ]
+        if not selections:
+            return None
         try:
-            export_summary = self._local_config_exporter(payload)
+            export_payload = selections[0] if len(selections) == 1 else {"selections": selections}
+            export_summary = self._local_config_exporter(export_payload)
             return {
                 "status": "exported",
                 **export_summary,
@@ -272,6 +283,17 @@ class OnboardingPrototypeState:
                 "writes_secrets": False,
                 "local_artifact_only": True,
             }
+
+    def _attach_local_config_export_to_drafts(self, local_config_export: dict[str, Any]) -> None:
+        for stored_draft in self._state_store.list_connection_drafts():
+            safe_detail = stored_draft.get("safe_detail")
+            if not isinstance(safe_detail, dict):
+                continue
+            draft_id = str(safe_detail.get("draft_id") or "")
+            if not draft_id:
+                continue
+            safe_detail["local_config_export"] = local_config_export
+            self._state_store.save_connection_draft(draft_id, stored_draft)
 
     def get_sync_job(self, sync_job_id: str) -> dict[str, Any]:
         """Return a sanitized first-sync job status for the local prototype."""
@@ -1379,6 +1401,12 @@ def _local_config_exporter_from_env() -> Callable[[dict[str, Any]], dict[str, An
         return None
 
     def export(selection: dict[str, Any]) -> dict[str, Any]:
+        raw_selections = selection.get("selections")
+        if isinstance(raw_selections, list):
+            selections = [item for item in raw_selections if isinstance(item, dict)]
+            return format_local_export_summary(
+                export_local_clients_config_from_selections(selections, Path(export_path))
+            )
         return format_local_export_summary(export_local_clients_config(selection, Path(export_path)))
 
     return export

@@ -158,6 +158,49 @@ def test_onboarding_state_auto_exports_local_config_when_enabled() -> None:
     assert "act_demo_1001" not in output
 
 
+def test_onboarding_state_auto_exports_all_current_drafts_when_multiple_connections_exist() -> None:
+    exported_payloads: list[dict] = []
+
+    def fake_exporter(selection: dict) -> dict:
+        exported_payloads.append(selection)
+        selections = selection.get("selections") if isinstance(selection.get("selections"), list) else [selection]
+        account_count = sum(len(item["accounts"]) for item in selections)
+        client_names = [item["client_name"] for item in selections]
+        return {
+            "output_path": ".local/clients.generated.yaml",
+            "client_count": len(set(client_names)),
+            "account_count": account_count,
+            "destinations": ["bigquery", "looker_studio", "ai_report_email"],
+            "report_schedule_count": 1,
+            "sync_days_back": 30,
+            "warnings": [],
+            "writes_config": False,
+            "writes_secrets": False,
+            "local_artifact_only": True,
+        }
+
+    google_payload = sample_google_connection_payload()
+    google_payload["client_name"] = "Demo Shop Taiwan"
+    google_payload["accounts"][0]["account_name"] = "Demo Shop Taiwan"
+    google_payload["destinations"] = ["bigquery", "looker_studio", "ai_report_email"]
+
+    state = OnboardingPrototypeState(local_config_exporter=fake_exporter)
+    first = state.create_connection(sample_connection_payload())
+    second = state.create_connection(google_payload)
+    connections = state.list_account_connections()
+    output = json.dumps({"second": second, "connections": connections})
+
+    assert first["local_config_export"]["account_count"] == 1
+    assert second["local_config_export"]["account_count"] == 2
+    assert exported_payloads[0]["accounts"][0]["external_account_id"] == "act_demo_1001"
+    assert exported_payloads[1]["selections"][0]["connector_id"] == "meta_ads"
+    assert exported_payloads[1]["selections"][1]["connector_id"] == "google_ads"
+    assert connections["connections"][0]["local_config_export"]["account_count"] == 2
+    assert connections["connections"][1]["local_config_export"]["account_count"] == 2
+    assert "act_demo_1001" not in output
+    assert "1234567890" not in output
+
+
 def test_onboarding_state_auto_export_failure_is_safe() -> None:
     def failing_exporter(selection: dict) -> dict:
         raise RuntimeError("sensitive details")

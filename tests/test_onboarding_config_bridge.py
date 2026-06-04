@@ -7,7 +7,9 @@ import pytest
 from src.onboarding.config_bridge import (
     build_config_preview,
     build_config_preview_response,
+    build_merged_config_preview,
     export_local_clients_config,
+    export_local_clients_config_from_selections,
     format_local_export_summary,
     format_preview_summary,
 )
@@ -195,6 +197,71 @@ def test_export_local_clients_config_writes_google_customer_ids_to_ignored_artif
     assert accounts[0]["customer_id"] == "1234567890"
     assert export.account_count == 1
     assert export.destinations == ["bigquery", "looker_studio"]
+
+
+def test_export_local_clients_config_merges_meta_and_google_for_same_client(tmp_path) -> None:
+    output_path = tmp_path / "clients.generated.yaml"
+    meta_selection = sample_selection()
+    meta_selection["client_name"] = "Demo Client"
+    meta_selection["accounts"] = [
+        {
+            "external_account_id": "act_real_should_not_print",
+            "account_name": "Demo Client",
+        }
+    ]
+    meta_selection["initial_sync"] = {"sync_days_back": 30}
+    google = google_selection()
+    google["client_name"] = "Demo Client"
+    google["accounts"][0]["account_name"] = "Demo Client"
+    google["destinations"] = ["bigquery", "looker_studio", "ai_report_email"]
+    google["report_schedule"] = {
+        "report_type": "weekly",
+        "delivery_day": "monday",
+        "depth": "deep",
+    }
+    google["initial_sync"] = {"sync_days_back": 90}
+
+    export = export_local_clients_config_from_selections([meta_selection, google], output_path)
+    config = load_config_from_yaml(output_path.read_text(encoding="utf-8"), source="merged local export")
+    preview = build_merged_config_preview([meta_selection, google])
+    preview_output = json.dumps(preview.yaml_text)
+
+    assert export.client_count == 1
+    assert export.account_count == 2
+    assert export.sync_days_back == 90
+    client = config["clients"][0]
+    assert client["client_id"] == "demo_client"
+    assert client["platforms"]["meta_ads"]["accounts"][0]["ad_account_id"] == "act_real_should_not_print"
+    assert client["platforms"]["google_ads"]["accounts"][0]["customer_id"] == "1234567890"
+    assert client["report_schedules"][0]["report_type"] == "weekly"
+    assert client["report_schedules"][0]["depth"] == "deep"
+    assert "act_real_should_not_print" not in preview_output
+    assert "1234567890" not in preview_output
+
+
+def test_export_local_clients_config_keeps_different_clients_separate(tmp_path) -> None:
+    output_path = tmp_path / "clients.generated.yaml"
+    meta_selection = sample_selection()
+    google = google_selection()
+    google["destinations"] = ["bigquery", "ai_report_email"]
+    google["report_schedule"] = {
+        "report_type": "monthly",
+        "delivery_day": 10,
+        "depth": "standard",
+    }
+
+    export = export_local_clients_config_from_selections([meta_selection, google], output_path)
+    config = load_config_from_yaml(output_path.read_text(encoding="utf-8"), source="multi-client local export")
+
+    assert export.client_count == 2
+    assert export.account_count == 3
+    assert [client["client_id"] for client in config["clients"]] == ["demo_shop_taiwan", "demo_google_ads"]
+    schedule_ids = [
+        client["report_schedules"][0]["schedule_id"]
+        for client in config["clients"]
+        if client.get("report_schedules")
+    ]
+    assert schedule_ids == ["monthly_email_default", "demo_google_ads_monthly_email_default"]
 
 
 def test_format_local_export_summary_is_safe_for_api_response(tmp_path) -> None:
