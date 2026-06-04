@@ -12,6 +12,7 @@ const state = {
   syncPollTimer: null,
   currentSyncJobId: null,
   connections: [],
+  liveSyncReadiness: null,
 };
 
 const els = {
@@ -49,6 +50,7 @@ const els = {
   handoffSummary: document.querySelector("#handoffSummary"),
   payloadPreview: document.querySelector("#payloadPreview"),
   nextActions: document.querySelector("#nextActions"),
+  developerStatus: document.querySelector("#developerStatus"),
   configPreview: document.querySelector("#configPreview"),
   authModal: document.querySelector("#authModal"),
   closeAuthButton: document.querySelector("#closeAuthButton"),
@@ -110,8 +112,13 @@ function renderSources() {
 
   els.sourceCount.textContent = `${filtered.length} shown`;
   const realMetaEnabled = sources.some((source) => source.id === "meta_ads" && source.data_mode === "real_meta_api");
-  if (realMetaEnabled) {
+  const realGoogleEnabled = sources.some((source) => source.id === "google_ads" && source.data_mode === "real_google_ads_api");
+  if (realMetaEnabled && realGoogleEnabled) {
+    els.runtimePill.textContent = "Local API + Real Sources";
+  } else if (realMetaEnabled) {
     els.runtimePill.textContent = "Local API + Real Meta";
+  } else if (realGoogleEnabled) {
+    els.runtimePill.textContent = "Local API + Real Google";
   }
   els.platformList.innerHTML =
     filtered
@@ -151,7 +158,7 @@ function renderSourceHero() {
     els.heroLogo.textContent = "OS";
     els.heroTitle.textContent = "Start with a data source";
     els.heroText.textContent =
-      "Meta Ads is the current MVP path. Google Ads and LINE Ads are shown here so the user flow already matches the future product.";
+      "Connect Meta Ads or Google Ads, choose the accounts, then send performance data to dashboards and AI reports.";
     els.connectButton.textContent = "Connect";
     return;
   }
@@ -173,7 +180,7 @@ function renderSourceHero() {
   els.heroText.textContent = source.connected
     ? "Choose which ad accounts should be synced into the selected destinations."
     : isAvailable(source)
-      ? "Authorize read access first. The real product will open the platform OAuth flow here."
+      ? "Authorize read access first, then choose the ad accounts for reporting."
       : "This connector is visible in the prototype but not part of the current MVP backend.";
   els.connectButton.textContent = source.connected ? "Reconnect" : "Connect";
 }
@@ -212,11 +219,12 @@ function renderAccounts() {
   els.accountRows.innerHTML = accounts
     .map((account) => {
       const checked = state.selectedAccounts.has(account.id) ? "checked" : "";
+      const details = [account.currency, account.timezone].filter(Boolean).join(" · ") || "Ready for reporting";
       return `
         <tr>
           <td><input class="account-checkbox" type="checkbox" data-account-id="${account.id}" ${checked} /></td>
           <td>${account.name}</td>
-          <td><code>${account.id}</code></td>
+          <td>${escapeHtml(details)}</td>
           <td><span class="account-status">${account.status}</span></td>
         </tr>
       `;
@@ -431,6 +439,7 @@ async function resetDemo() {
   state.selectedDestinations = new Set(["looker_studio", "ai_report_email"]);
   state.destinationCategory = "all";
   state.reportType = "monthly";
+  state.liveSyncReadiness = null;
   els.platformSearch.value = "";
   els.connectedOnly.checked = false;
   els.accountSearch.value = "";
@@ -455,13 +464,15 @@ async function createConnection() {
   }
   stopSyncPolling();
   const result = await api.createConnection(payload);
+  const readinessResponse = await api.liveSyncReadiness().catch(() => null);
+  state.liveSyncReadiness = readinessResponse?.live_sync_readiness || null;
   state.currentSyncJobId = result.first_sync_job?.sync_job_id || null;
-  renderConnectionResult(payload, result);
+  renderConnectionResult(payload, result, state.liveSyncReadiness);
   await refreshConnections();
   if (result.first_sync_job?.sync_job_id) {
     pollSyncJob(result.first_sync_job.sync_job_id);
   }
-  showToast("Connection ready. First sync started.");
+  showToast("Connection ready. Checking sync status.");
 }
 
 async function refreshConnections() {
@@ -502,25 +513,29 @@ function buildConnectionPayload() {
   return payload;
 }
 
-function renderConnectionResult(payload, result) {
+function renderConnectionResult(payload, result, liveSyncReadiness) {
   const summary = result.config_preview.summary;
   const source = selectedSource();
-  const accountNames = selectedSourceAccounts()
-    .filter((account) => state.selectedAccounts.has(account.id))
-    .map((account) => account.name);
+  const selectedAccounts = selectedSourceAccounts().filter((account) => state.selectedAccounts.has(account.id));
   const destinationNames = destinations
     .filter((destination) => summary.destinations.includes(destination.id))
     .map((destination) => destination.name);
   els.connectionResult.hidden = false;
-  els.connectionStatus.textContent = userSyncStatus(result.first_sync_job?.status || result.next_sync_status);
-  els.handoffSummary.innerHTML = `
-    <div><span>Data source</span><strong>${source?.label || payload.connector_id} connected</strong></div>
-    <div><span>Ad accounts</span><strong>${summary.account_count} selected</strong></div>
-    <div><span>Destinations</span><strong>${destinationNames.join(", ")}</strong></div>
-    <div><span>First sync</span><strong id="firstSyncSummary">${userSyncStatus(result.first_sync_job?.status || result.next_sync_status)}</strong></div>
-  `;
+  els.connectionStatus.textContent = userSetupStatus(result.first_sync_job?.status || result.next_sync_status);
+  els.handoffSummary.innerHTML = renderSelectedAccountPreview(source, selectedAccounts, summary);
   els.payloadPreview.textContent = JSON.stringify(sanitizePayloadForDisplay(payload), null, 2);
-  els.nextActions.innerHTML = renderDestinationStatus(result.destination_handoff, payload, accountNames, result.first_sync_job);
+  els.nextActions.innerHTML = renderUserSetupPreview(
+    result.destination_handoff,
+    payload,
+    selectedAccounts,
+    destinationNames,
+    result.first_sync_job
+  );
+  els.developerStatus.innerHTML = renderDeveloperStatus(
+    result.first_sync_job,
+    result.local_config_export,
+    liveSyncReadiness
+  );
   els.configPreview.textContent = result.config_preview.yaml_text;
 }
 
@@ -538,7 +553,7 @@ function renderConnections() {
     .map((connection) => {
       const destinationNames = (connection.destinations || []).map(destinationLabel).join(", ");
       const reportSchedule = connection.report_schedule
-        ? `${connection.report_schedule.report_type} · ${connection.report_schedule.timezone}`
+        ? reportScheduleLabel(connection.report_schedule)
         : "Not scheduled";
       return `
         <article class="connection-card">
@@ -551,8 +566,8 @@ function renderConnections() {
             <strong>${reportSchedule}</strong>
           </div>
           <div>
-            <span>First sync</span>
-            <strong>${connection.first_sync_job_id ? "Ready to check" : "Not queued"}</strong>
+            <span>Next</span>
+            <strong>${connection.first_sync_job_id ? "First sync" : "Review"}</strong>
           </div>
         </article>
       `;
@@ -563,11 +578,13 @@ function renderConnections() {
 function clearConnectionResult() {
   stopSyncPolling();
   state.currentSyncJobId = null;
+  state.liveSyncReadiness = null;
   els.connectionResult.hidden = true;
-  els.connectionStatus.textContent = "Not queued";
+  els.connectionStatus.textContent = "Ready";
   els.handoffSummary.innerHTML = "";
   els.payloadPreview.textContent = "";
   els.nextActions.innerHTML = "";
+  els.developerStatus.innerHTML = "";
   els.configPreview.textContent = "";
 }
 
@@ -582,31 +599,188 @@ function sanitizePayloadForDisplay(payload) {
   };
 }
 
-function renderDestinationStatus(destinationHandoff, payload, accountNames, syncJob) {
+function renderSelectedAccountPreview(source, selectedAccounts, summary) {
+  const accountList = selectedAccounts.length
+    ? selectedAccounts
+        .map((account) => {
+          const meta = [account.currency, account.timezone].filter(Boolean).join(" · ");
+          return `
+            <li>
+              <strong>${escapeHtml(account.name)}</strong>
+              <span>${escapeHtml(meta || account.status || "Ready")}</span>
+            </li>
+          `;
+        })
+        .join("")
+    : `<li><strong>${formatCount(summary.account_count)} account${summary.account_count === 1 ? "" : "s"}</strong><span>Selected</span></li>`;
+  return `
+    <div><span>Data source</span><strong>${escapeHtml(source?.label || "Meta Ads")} connected</strong></div>
+    <div class="account-preview-card">
+      <span>Selected ad accounts</span>
+      <ul>${accountList}</ul>
+    </div>
+  `;
+}
+
+function renderUserSetupPreview(destinationHandoff, payload, selectedAccounts, destinationNames, syncJob) {
   if (!destinationHandoff) {
     return `<p class="muted-copy">Finish setup to prepare your selected destinations.</p>`;
   }
-  const destinationsMarkup = Object.entries(destinationHandoff.destinations || {})
+  const destinationsMarkup = renderDestinationOutputPreview(destinationHandoff, payload, destinationNames);
+  const accountNames = selectedAccounts.map((account) => account.name);
+  const accountSummary = accountNames.length > 0
+    ? accountNames.slice(0, 3).map(escapeHtml).join(", ") + (accountNames.length > 3 ? ` and ${accountNames.length - 3} more` : "")
+    : "Selected ad accounts";
+  return `
+    ${renderCustomerDataPreview(syncJob, selectedAccounts)}
+    <div class="handoff-destinations output-preview-grid">${destinationsMarkup}</div>
+    ${renderReportSchedulePreview(payload)}
+    <div class="setup-next-step">
+      <strong>Next visible result</strong>
+      <p>${accountSummary} is ready to import into ${escapeHtml(destinationNames.join(", ") || "the selected destinations")}. After the first data sync, dashboard and report outputs become available.</p>
+    </div>
+  `;
+}
+
+function renderCustomerDataPreview(syncJob, selectedAccounts) {
+  const dataCheck = syncJob?.backend_data_check;
+  const syncExecution = syncJob?.sync_execution;
+  const latest = dataCheck?.latest_sync || {};
+  const rowsInserted = Number(latest.rows_inserted || 0);
+  const rowsFetched = Number(latest.rows_fetched || 0);
+  const accountCount = selectedAccounts.length || Number(syncJob?.summary?.account_count || 0);
+  const completed = syncJob?.status === "completed";
+  const readyForSync = syncJob?.status === "ready_for_sync";
+  let title = "Waiting for first data import";
+  let description = `${formatCount(accountCount)} selected account${accountCount === 1 ? "" : "s"} will be checked during the first sync.`;
+  let meta = "No performance data preview yet";
+  let variant = "pending";
+
+  if (completed && dataCheck?.status === "healthy" && rowsInserted > 0) {
+    title = "Recent performance data found";
+    description = `${formatCount(rowsInserted)} daily performance record${rowsInserted === 1 ? "" : "s"} are available for the selected accounts.`;
+    meta = backendSyncPeriod(latest);
+    variant = "ready";
+  } else if (completed && (dataCheck?.status === "no_data" || rowsInserted === 0)) {
+    title = "No recent performance data found";
+    description = `${formatCount(accountCount)} account${accountCount === 1 ? "" : "s"} connected, but no rows were returned for the latest sync window.`;
+    meta = latest.sync_start_date ? backendSyncPeriod(latest) : `${formatCount(rowsFetched)} records returned`;
+    variant = "empty";
+  } else if (readyForSync) {
+    title = "Ready for first data import";
+    description = "Account selection is saved. The first sync can run after the live-write gate is approved.";
+    meta = "Dashboard and report previews appear after sync";
+  } else if (syncJob?.status === "running") {
+    title = "Importing performance data";
+    description = "OudSeed is fetching the selected account data now.";
+    meta = `${formatCount(syncJob.progress_percent)}% complete`;
+  } else if (syncExecution?.status === "failed" || syncJob?.status === "failed") {
+    title = "Data import needs attention";
+    description = syncExecution?.message || "The selected accounts are saved, but the first sync did not complete.";
+    meta = "Try again after fixing the connection";
+    variant = "attention";
+  }
+
+  return `
+    <article class="data-preview-card ${variant}">
+      <div>
+        <span>Selected data</span>
+        <strong>${escapeHtml(title)}</strong>
+        <p>${escapeHtml(description)}</p>
+      </div>
+      <small>${escapeHtml(meta)}</small>
+    </article>
+  `;
+}
+
+function renderDestinationOutputPreview(destinationHandoff, payload, destinationNames) {
+  const selectedDestinations = Object.entries(destinationHandoff.destinations || {});
+  if (selectedDestinations.length === 0) {
+    return `
+      <article class="handoff-destination">
+        <strong>No outputs selected</strong>
+        <span>Choose a destination</span>
+        <p>Select a dashboard, warehouse, or AI report output.</p>
+      </article>
+    `;
+  }
+  return selectedDestinations
     .map(([destinationId, handoff]) => {
       return `
         <article class="handoff-destination">
           <strong>${destinationLabel(destinationId)}</strong>
           <span>${userDestinationStatus(destinationId, handoff)}</span>
-          <p>${userDestinationCopy(destinationId, handoff, payload)}</p>
+          <p>${userDestinationCopy(destinationId, handoff, payload, destinationNames)}</p>
         </article>
       `;
     })
     .join("");
-  const accountSummary = accountNames.length > 0
-    ? accountNames.slice(0, 3).join(", ") + (accountNames.length > 3 ? ` and ${accountNames.length - 3} more` : "")
-    : "Selected ad accounts";
+}
+
+function renderDeveloperStatus(syncJob, localConfigExport, liveSyncReadiness) {
   return `
     ${renderSyncJob(syncJob)}
-    <div class="handoff-destinations">${destinationsMarkup}</div>
-    <div class="setup-next-step">
-      <strong>What happens next</strong>
-      <p>${accountSummary} will be synced into the selected destinations. Dashboard and report outputs become available after the first successful sync.</p>
-    </div>
+    ${renderLocalConfigExport(localConfigExport)}
+    ${renderLiveSyncReadiness(liveSyncReadiness)}
+  `;
+}
+
+function renderReportSchedulePreview(payload) {
+  if (!payload.report_schedule) {
+    return "";
+  }
+  const schedule = payload.report_schedule;
+  const delivery = reportScheduleLabel(schedule);
+  return `
+    <article class="report-preview-card">
+      <div>
+        <strong>AI report schedule</strong>
+        <span>${escapeHtml(delivery)} · ${escapeHtml(schedule.timezone || "Asia/Taipei")}</span>
+      </div>
+      <small>${escapeHtml(schedule.depth || "standard")} depth</small>
+    </article>
+  `;
+}
+
+function renderLocalConfigExport(localConfigExport) {
+  if (!localConfigExport) {
+    return "";
+  }
+  const accountCount = Number(localConfigExport.account_count || 0);
+  const exported = localConfigExport.status === "exported";
+  const failed = localConfigExport.status === "failed";
+  const status = exported ? "Ready" : failed ? "Needs attention" : "Unavailable";
+  const path = localConfigExport.output_path
+    ? `<code>${escapeHtml(localConfigExport.output_path)}</code>`
+    : "Local sync file";
+  const verb = exported ? "was generated" : "is not ready";
+  return `
+    <article class="handoff-destination local-sync-card ${exported ? "ready" : "pending"}">
+      <strong>Local sync file</strong>
+      <span>${status}</span>
+      <p>${path} ${verb} for ${formatCount(accountCount)} selected account${accountCount === 1 ? "" : "s"}.</p>
+    </article>
+  `;
+}
+
+function renderLiveSyncReadiness(readiness) {
+  if (!readiness) {
+    return "";
+  }
+  const failedChecks = (readiness.checks || []).filter((check) => !check.ok);
+  const summary = readiness.summary || {};
+  const accountCount = Number(summary.enabled_meta_account_count || summary.enabled_google_account_count || 0);
+  const platformLabel = readiness.platform === "google_ads" ? "Google Ads" : "Meta";
+  const details = readiness.ready
+    ? `${formatCount(accountCount)} selected ${platformLabel} account${accountCount === 1 ? "" : "s"} ready for the guarded live sync path.`
+    : failedChecks.slice(0, 3).map((check) => escapeHtml(readinessCheckLabel(check.id))).join(", ") || "Readiness has not passed yet.";
+  return `
+    <article class="handoff-destination local-sync-card ${readiness.ready ? "ready" : "pending"}">
+      <strong>Live sync readiness</strong>
+      <span>${readiness.ready ? "Passed" : "Needs attention"}</span>
+      <p>${details}</p>
+      ${readiness.writes_bigquery ? "<small>Next live sync writes to BigQuery.</small>" : ""}
+    </article>
   `;
 }
 
@@ -766,6 +940,9 @@ function userSyncStatus(status) {
   if (status === "running") {
     return "Syncing data";
   }
+  if (status === "ready_for_sync") {
+    return "Setup ready";
+  }
   if (status === "completed") {
     return "Sync completed";
   }
@@ -775,12 +952,34 @@ function userSyncStatus(status) {
   return status || "Ready";
 }
 
+function userSetupStatus(status) {
+  if (status === "failed") {
+    return "Needs attention";
+  }
+  if (status === "running") {
+    return "Importing";
+  }
+  return "Ready";
+}
+
+function buildDisplayDestinationHandoff(destinationIds) {
+  return {
+    destinations: Object.fromEntries(
+      (destinationIds || []).map((destinationId) => [
+        destinationId,
+        { status: destinationId === "looker_studio" ? "handoff_required" : "available" },
+      ])
+    ),
+  };
+}
+
 function syncStepLabel(status) {
   return {
     completed: "Done",
     failed: "Failed",
     running: "Running",
     queued: "Waiting",
+    ready_for_sync: "Ready",
   }[status] || status;
 }
 
@@ -788,10 +987,12 @@ async function pollSyncJob(syncJobId) {
   try {
     const response = await api.getSyncJob(syncJobId);
     updateSyncJob(response.sync_job);
-    if (!["completed", "failed"].includes(response.sync_job.status)) {
+    if (!["completed", "failed", "ready_for_sync"].includes(response.sync_job.status)) {
       state.syncPollTimer = window.setTimeout(() => pollSyncJob(syncJobId), 1100);
     } else if (response.sync_job.status === "completed") {
       showToast("First sync completed.");
+    } else if (response.sync_job.status === "ready_for_sync") {
+      showToast("Setup ready for live sync.");
     } else {
       showToast("First sync failed.");
     }
@@ -808,9 +1009,9 @@ function updateSyncJob(syncJob) {
   const stepList = document.querySelector("#syncStepList");
   const summary = document.querySelector("#firstSyncSummary");
   if (summary) {
-    summary.textContent = userSyncStatus(syncJob.status);
+    summary.textContent = userSetupStatus(syncJob.status);
   }
-  els.connectionStatus.textContent = userSyncStatus(syncJob.status);
+  els.connectionStatus.textContent = userSetupStatus(syncJob.status);
   if (title) {
     title.textContent = userSyncStatus(syncJob.status);
   }
@@ -838,6 +1039,21 @@ function updateSyncJob(syncJob) {
   const backendDataCheck = document.querySelector("#backendDataCheck");
   if (backendDataCheck) {
     backendDataCheck.innerHTML = renderBackendDataCheck(syncJob.backend_data_check);
+  }
+  if (els.nextActions) {
+    const selectedAccounts = selectedSourceAccounts().filter((account) => state.selectedAccounts.has(account.id));
+    const destinationIds = syncJob.summary?.destinations || [];
+    const destinationNames = destinations
+      .filter((destination) => destinationIds.includes(destination.id))
+      .map((destination) => destination.name);
+    const payload = buildConnectionPayload() || { destinations: destinationIds };
+    els.nextActions.innerHTML = renderUserSetupPreview(
+      buildDisplayDestinationHandoff(destinationIds),
+      payload,
+      selectedAccounts,
+      destinationNames,
+      syncJob
+    );
   }
   const syncExecutionStatus = document.querySelector("#syncExecutionStatus");
   if (syncExecutionStatus) {
@@ -932,6 +1148,16 @@ function backendSyncPeriod(latest) {
   return `${latest.sync_start_date} to ${latest.sync_end_date}`;
 }
 
+function reportScheduleLabel(schedule) {
+  if (!schedule) {
+    return "Not scheduled";
+  }
+  if (schedule.report_type === "weekly") {
+    return `Every ${schedule.delivery_day}`;
+  }
+  return `Monthly on day ${schedule.delivery_day}`;
+}
+
 function formatCount(value) {
   if (value === undefined || value === null || Number.isNaN(Number(value))) {
     return "0";
@@ -939,16 +1165,47 @@ function formatCount(value) {
   return Number(value).toLocaleString("en-US");
 }
 
-function userDestinationCopy(destinationId, handoff, payload) {
+function readinessCheckLabel(checkId) {
+  return {
+    local_sync_explicitly_enabled: "Local sync mode",
+    local_config_export_path_configured: "Local sync file path",
+    local_config_artifact_exists: "Local sync file",
+    local_config_artifact_valid: "Local sync file validation",
+    enabled_meta_accounts_present: "Selected Meta accounts",
+    enabled_google_accounts_present: "Selected Google Ads accounts",
+    meta_access_token_configured: "Meta access token",
+    google_ads_developer_token_configured: "Google Ads developer token",
+    google_ads_client_id_configured: "Google Ads client ID",
+    google_ads_client_secret_configured: "Google Ads client secret",
+    google_ads_refresh_token_configured: "Google Ads refresh token",
+    bigquery_project_configured: "BigQuery project",
+    bigquery_dataset_configured: "BigQuery dataset",
+    sync_platform_filter_allows_meta: "Meta sync filter",
+    sync_platform_filter_allows_google_ads: "Google Ads sync filter",
+  }[checkId] || checkId || "Readiness check";
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function userDestinationCopy(destinationId, handoff, payload, destinationNames = []) {
   if (destinationId === "looker_studio") {
-    return "Your dashboard can be opened after the first data sync finishes.";
+    return "Dashboard data will refresh after the first import finishes.";
   }
   if (destinationId === "ai_report_email") {
     const schedule = payload.report_schedule || handoff;
-    return `AI reports are set to ${schedule.report_type || "monthly"} delivery in ${schedule.timezone || "Asia/Taipei"}.`;
+    return `AI reports are set to ${reportScheduleLabel(schedule).toLowerCase()} in ${schedule.timezone || "Asia/Taipei"}.`;
   }
   if (destinationId === "bigquery") {
-    return "Selected ad account data will sync into the reporting warehouse.";
+    return destinationNames.includes("Looker Studio")
+      ? "This powers the selected dashboard and AI report data."
+      : "Selected account data will be available for reporting.";
   }
   if (destinationId === "google_sheets") {
     return "Google Sheets export is not enabled in this MVP yet.";

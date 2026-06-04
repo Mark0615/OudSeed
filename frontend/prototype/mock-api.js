@@ -8,7 +8,7 @@
       color: "blue",
       status: "available",
       connected: false,
-      note: "Current MVP connector",
+      note: "Live sync ready",
     },
     {
       id: "google_ads",
@@ -16,9 +16,9 @@
       label: "Google Ads",
       logo: "G",
       color: "google",
-      status: "coming_soon",
+      status: "available",
       connected: false,
-      note: "Next connector",
+      note: "Ready for gated sync",
     },
     {
       id: "ga4",
@@ -59,6 +59,10 @@
       { id: "act_demo_1003", name: "Pet Brand Sample", currency: "TWD", timezone: "Asia/Taipei", status: "Ready" },
       { id: "act_demo_1004", name: "Lifestyle Sample EU", currency: "EUR", timezone: "Europe/Berlin", status: "Ready" },
       { id: "act_demo_1005", name: "Agency Sandbox", currency: "TWD", timezone: "Asia/Taipei", status: "Ready" },
+    ],
+    google_ads: [
+      { id: "1234567890", name: "Demo Search Account", currency: "TWD", timezone: "Asia/Taipei", status: "Preview" },
+      { id: "2345678901", name: "Demo Shopping Account", currency: "TWD", timezone: "Asia/Taipei", status: "Preview" },
     ],
   };
 
@@ -262,6 +266,34 @@
       });
     },
 
+    liveSyncReadiness() {
+      return apiRequest("/api/onboarding/live-sync-readiness", undefined, () => {
+        return delay({
+          ok: true,
+          live_sync_readiness: {
+            ready: false,
+            writes_bigquery: true,
+            config_path: null,
+            checks: [
+              {
+                id: "local_config_artifact_exists",
+                ok: false,
+                message: "Local API is required to create a local sync artifact.",
+              },
+            ],
+            summary: {
+              platform: "meta_ads",
+              client_count: 0,
+              enabled_meta_account_count: 0,
+              destination_count: 0,
+              report_schedule_count: 0,
+            },
+            warnings: ["static_mock_no_local_artifact"],
+          },
+        });
+      });
+    },
+
     getSyncJob(syncJobId) {
       return apiRequest(`/api/sync-jobs/${syncJobId}`, undefined, () => {
         const job = syncJobs[syncJobId];
@@ -419,6 +451,8 @@
 
   function buildApplyPlan(payload, draftId) {
     const selectedDestinations = payload.destinations || [];
+    const platform = payload.connector_id === "google_ads" ? "google_ads" : "meta_ads";
+    const platformLabel = platform === "google_ads" ? "Google Ads" : "Meta";
     const steps = [
       {
         id: "review_config_preview",
@@ -431,9 +465,9 @@
         label: "Promote selected accounts into managed config after review.",
       },
       {
-        id: "run_meta_sync_preflight",
+        id: `run_${platform}_sync_preflight`,
         status: "ready_after_config",
-        label: "Run Meta sync readiness against the selected account group.",
+        label: `Run ${platformLabel} sync readiness against the selected account group.`,
       },
     ];
     if (selectedDestinations.includes("looker_studio")) {
@@ -478,6 +512,7 @@
       checks: 0,
       account_count: payload.accounts.length,
       destinations: payload.destinations || [],
+      platform: payload.connector_id === "google_ads" ? "google_ads" : "meta_ads",
       message: "First sync is queued.",
       email_delivery: null,
     };
@@ -514,12 +549,14 @@
       steps: syncJobSteps(job.status, job.destinations),
     };
     if (job.status === "completed") {
+      const platformLabel = job.platform === "google_ads" ? "Google Ads" : "Meta";
       syncJob.backend_data_check = {
         status: "healthy",
         source: "prototype",
         checked_at: new Date().toISOString(),
-        message: "Latest Meta sync data is visible in BigQuery and dashboard views.",
+        message: `Latest ${platformLabel} sync data is visible in BigQuery and dashboard views.`,
         scope: {
+          platform: job.platform,
           selected_account_count: job.account_count,
           selected_accounts_scoped: true,
         },
@@ -574,20 +611,40 @@
       `  client_name: ${clientName}`,
       "  enabled: true",
       "  platforms:",
-      "    meta_ads:",
-      "      enabled: true",
-      "      accounts:",
     ];
-    payload.accounts.forEach((account, index) => {
+    if (payload.connector_id === "google_ads") {
       lines.push(
-        `      - ad_account_id: act_preview_${String(index + 1).padStart(4, "0")}`,
-        `        account_name: ${account.account_name}`,
-        "        report_level: ad",
-        "        attribution_setting: platform_default",
-        "        timezone_setting: platform_account_default",
-        "        conversion_action_type: purchase",
+        "    google_ads:",
+        "      enabled: true",
+        "      accounts:",
       );
-    });
+      payload.accounts.forEach((account, index) => {
+        lines.push(
+          `      - customer_id: 000000${String(index + 1).padStart(4, "0")}`,
+          `        account_name: ${account.account_name}`,
+          "        login_customer_id: null",
+          "        report_level: ad",
+          "        attribution_setting: platform_default",
+          "        timezone_setting: platform_account_default",
+        );
+      });
+    } else {
+      lines.push(
+        "    meta_ads:",
+        "      enabled: true",
+        "      accounts:",
+      );
+      payload.accounts.forEach((account, index) => {
+        lines.push(
+          `      - ad_account_id: act_preview_${String(index + 1).padStart(4, "0")}`,
+          `        account_name: ${account.account_name}`,
+          "        report_level: ad",
+          "        attribution_setting: platform_default",
+          "        timezone_setting: platform_account_default",
+          "        conversion_action_type: purchase",
+        );
+      });
+    }
     lines.push(
       "  destinations:",
       "    bigquery:",

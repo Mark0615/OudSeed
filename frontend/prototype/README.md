@@ -23,6 +23,18 @@ This reads `META_ACCESS_TOKEN` locally and calls Meta's `/me/adaccounts` endpoin
 after the prototype authorization step. It does not store tokens, print tokens,
 or write `config/clients.yaml`.
 
+To test real Google Ads customer discovery with local Google Ads credentials:
+
+```bash
+make onboarding-prototype-real-google
+```
+
+This reads local Google Ads environment credentials, lists accessible customers
+after the prototype authorization step, and returns only local account aliases
+to the browser. Finishing setup can export the selected real customer IDs to
+the ignored `.local/clients.generated.yaml` artifact, but this target keeps live
+sync execution disabled.
+
 To keep local connection drafts and first-sync state after restarting the
 prototype server, run:
 
@@ -36,6 +48,17 @@ ignored by git because they may contain real ad account selections. It still
 does not store platform tokens or write `config/clients.yaml`.
 When the export path is configured, finishing setup auto-exports the local
 artifact for the selected accounts.
+
+For the same persistent prototype flow focused on Google Ads readiness, run:
+
+```bash
+make onboarding-prototype-google-persistent
+```
+
+This sets the Google Ads readiness platform and keeps live sync execution
+disabled. Finishing setup can generate `.local/clients.generated.yaml` for the
+selected Google Ads accounts, then `make onboarding-google-live-sync-ready` can
+verify the safe gate before any write path is confirmed.
 
 After the local artifact exists, this command runs a Meta sync from it:
 
@@ -56,6 +79,24 @@ This verifies the local config artifact and required environment settings
 without calling Meta, querying BigQuery, writing BigQuery, printing tokens, or
 showing real ad account IDs.
 
+For Google Ads preview selections, use the Google-specific safe gate:
+
+```bash
+make onboarding-google-live-sync-ready
+```
+
+This validates local Google Ads customer config and required credentials without
+calling Google Ads or writing BigQuery.
+
+After Google readiness passes and the write path is confirmed, run:
+
+```bash
+make onboarding-google-sync-local-config
+```
+
+This calls Google Ads and writes/replaces BigQuery rows for the selected local
+config artifact.
+
 For an end-to-end local run where the prototype first-sync polling flow runs the
 Meta sync automatically, use:
 
@@ -68,6 +109,16 @@ browser receives only safe execution metadata, not sync logs or account IDs.
 The runner enforces the same readiness gate as `make onboarding-live-sync-ready`
 before it starts the subprocess.
 
+For the same prototype polling flow with Google Ads selected, use:
+
+```bash
+make onboarding-prototype-google-live-sync
+```
+
+This sets `ONBOARDING_LIVE_SYNC_PLATFORM=google_ads` so the first-sync runner
+exports the selected Google Ads customers, enforces the Google readiness gate,
+then runs the Google Ads sync subprocess only after readiness passes.
+
 Current prototype scope:
 
 - Select an ad/data platform.
@@ -75,7 +126,9 @@ Current prototype scope:
 - Select accessible ad accounts after authorization.
 - Choose destinations such as Looker Studio, BigQuery, and AI Report Email.
 - Configure weekly or monthly cadence when AI Report Email is selected.
-- Keep Google Ads, Google Analytics 4, LINE Ads, Google Sheets, and other future destinations visible as disabled product roadmap items.
+- Keep Google Ads available as the next preview onboarding path while Google
+  Analytics 4, LINE Ads, Google Sheets, and other future destinations remain
+  visible as disabled product roadmap items.
 - Load connector, account, destination, and connection responses through
   `mock-api.js`, so the UI can later swap to real API calls with minimal
   component changes.
@@ -84,11 +137,13 @@ Current prototype scope:
 - Show a mock `config_preview` response shaped like
   `.venv/bin/python -m src.onboarding.config_bridge ... --json`.
 - Show a user-facing completion state after setup, focused on connected source,
-  selected accounts, destination readiness, and first-sync status.
+  selected accounts, output readiness, report schedule, and whether recent
+  performance data is available.
 - Create and poll a local first-sync job status so the UI shows queued,
   running, and completed states after setup.
-- In real local mode, show a read-only backend data check after completion with
-  aggregate BigQuery and dashboard-view status.
+- In real local mode, use the read-only backend data check to power the
+  user-facing data availability preview. Aggregate BigQuery and dashboard-view
+  status stays in collapsed developer details.
 - After first sync completes, show `Send report email` for AI Report Email
   connections. In real local mode this calls the existing AI report + SMTP HTML
   email pipeline and returns only safe delivery metadata.
@@ -103,10 +158,14 @@ Current prototype scope:
   `ONBOARDING_STATE_STORE_PATH=.local/onboarding_state.json`.
 - Optionally export selected account drafts to a local clients.yaml-compatible
   artifact with `ONBOARDING_LOCAL_CONFIG_EXPORT_PATH=.local/clients.generated.yaml`.
+- Optionally run Google Ads persistent readiness mode with
+  `make onboarding-prototype-google-persistent`.
 - Optionally run selected-account Meta sync from that artifact with
   `make onboarding-sync-local-config`.
 - Optionally enable live first-sync execution in the prototype with
   `make onboarding-prototype-live-sync`.
+- Optionally enable Google Ads live first-sync execution in the prototype with
+  `make onboarding-prototype-google-live-sync`.
 
 This prototype intentionally does not implement real OAuth, token storage, user login, or SaaS account management.
 

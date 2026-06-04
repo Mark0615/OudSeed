@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 from unittest.mock import Mock
 
+from src.onboarding import api_server
 from src.onboarding.api_server import (
     OnboardingPrototypeState,
+    _build_bigquery_status_reader,
     _first_sync_runner_from_env,
     _local_config_exporter_from_env,
     _state_store_from_env,
@@ -37,6 +39,23 @@ def sample_connection_payload() -> dict:
     }
 
 
+def sample_google_connection_payload() -> dict:
+    """Return a fake Google Ads connection payload."""
+    return {
+        "workspace_id": "workspace_demo",
+        "connector_id": "google_ads",
+        "authorization_id": "auth_google_ads_demo",
+        "client_name": "Demo Google Ads",
+        "accounts": [
+            {
+                "external_account_id": "1234567890",
+                "account_name": "Demo Google Ads",
+            }
+        ],
+        "destinations": ["bigquery", "looker_studio"],
+    }
+
+
 def test_onboarding_state_lists_connectors_and_destinations() -> None:
     state = OnboardingPrototypeState()
 
@@ -45,6 +64,7 @@ def test_onboarding_state_lists_connectors_and_destinations() -> None:
 
     assert connectors[0]["id"] == "meta_ads"
     assert connectors[0]["status"] == "available"
+    assert next(connector for connector in connectors if connector["id"] == "google_ads")["status"] == "available"
     assert any(destination["id"] == "ai_report_email" for destination in destinations)
 
 
@@ -58,6 +78,18 @@ def test_onboarding_state_oauth_flow_exposes_accounts() -> None:
     assert before == {"accounts": []}
     assert oauth["status"] == "connected"
     assert after["accounts"][0]["id"] == "act_demo_1001"
+
+
+def test_onboarding_state_google_oauth_flow_exposes_preview_accounts() -> None:
+    state = OnboardingPrototypeState()
+
+    before = state.list_accounts("google_ads", authorization_id="auth_google_ads_demo")
+    oauth = state.complete_oauth("google_ads")
+    after = state.list_accounts("google_ads", authorization_id="auth_google_ads_demo")
+
+    assert before == {"accounts": []}
+    assert oauth["status"] == "connected"
+    assert after["accounts"][0]["name"] == "Demo Search Account"
 
 
 def test_onboarding_state_connection_returns_sanitized_config_preview() -> None:
@@ -79,6 +111,19 @@ def test_onboarding_state_connection_returns_sanitized_config_preview() -> None:
     assert "act_demo_1001" not in response["config_preview"]["yaml_text"]
     assert "recipient@example.com" in response["config_preview"]["yaml_text"]
     assert "act_demo_1001" not in output
+
+
+def test_onboarding_state_google_connection_returns_sanitized_config_preview() -> None:
+    state = OnboardingPrototypeState()
+
+    response = state.create_connection(sample_google_connection_payload())
+    output = json.dumps(response)
+
+    assert response["ok"] is True
+    assert response["config_preview"]["summary"]["account_count"] == 1
+    assert "google_ads:" in response["config_preview"]["yaml_text"]
+    assert "0000000001" in response["config_preview"]["yaml_text"]
+    assert "1234567890" not in output
 
 
 def test_onboarding_state_auto_exports_local_config_when_enabled() -> None:
@@ -182,23 +227,24 @@ def test_onboarding_state_first_sync_job_advances_without_sensitive_ids() -> Non
     created = state.create_connection(sample_connection_payload())
     sync_job_id = created["first_sync_job"]["sync_job_id"]
     running = state.get_sync_job(sync_job_id)
-    completed = state.get_sync_job(sync_job_id)
-    output = json.dumps(completed)
+    ready = state.get_sync_job(sync_job_id)
+    output = json.dumps(ready)
 
     assert running["sync_job"]["status"] == "running"
-    assert completed["sync_job"]["status"] == "completed"
-    assert completed["sync_job"]["progress_percent"] == 100
-    assert completed["sync_job"]["summary"]["account_count"] == 1
-    assert [step["id"] for step in completed["sync_job"]["steps"]] == [
+    assert ready["sync_job"]["status"] == "ready_for_sync"
+    assert ready["sync_job"]["progress_percent"] == 100
+    assert ready["sync_job"]["summary"]["account_count"] == 1
+    assert [step["id"] for step in ready["sync_job"]["steps"]] == [
         "source_connected",
         "warehouse_sync",
         "dashboard_refresh",
         "report_schedule",
     ]
+    assert ready["sync_job"]["steps"][1]["status"] == "queued"
     assert "act_demo_1001" not in output
 
 
-def test_onboarding_state_attaches_backend_data_check_after_sync_completion() -> None:
+def test_onboarding_state_attaches_backend_data_check_when_ready_for_sync() -> None:
     state = OnboardingPrototypeState(
         backend_status_reader=lambda sync_job: {
             "status": "healthy",
@@ -227,13 +273,96 @@ def test_onboarding_state_attaches_backend_data_check_after_sync_completion() ->
     created = state.create_connection(sample_connection_payload())
     sync_job_id = created["first_sync_job"]["sync_job_id"]
     state.get_sync_job(sync_job_id)
-    completed = state.get_sync_job(sync_job_id)
-    output = json.dumps(completed)
+    ready = state.get_sync_job(sync_job_id)
+    output = json.dumps(ready)
 
-    assert completed["sync_job"]["backend_data_check"]["status"] == "healthy"
-    assert completed["sync_job"]["backend_data_check"]["latest_sync"]["rows_inserted"] == 3
-    assert completed["sync_job"]["backend_data_check"]["scope"]["selected_account_count"] == 1
+    assert ready["sync_job"]["status"] == "ready_for_sync"
+    assert ready["sync_job"]["backend_data_check"]["status"] == "healthy"
+    assert ready["sync_job"]["backend_data_check"]["latest_sync"]["rows_inserted"] == 3
+    assert ready["sync_job"]["backend_data_check"]["scope"]["selected_account_count"] == 1
     assert "act_demo_1001" not in output
+
+
+def test_bigquery_status_reader_uses_google_platform_without_exposing_ids(monkeypatch) -> None:
+    class FakeDestination:
+        instances: list["FakeDestination"] = []
+
+        def __init__(self, project_id: str, dataset_id: str) -> None:
+            self.project_id = project_id
+            self.dataset_id = dataset_id
+            self.queries: list[str] = []
+            FakeDestination.instances.append(self)
+
+        def _table_id(self, table_name: str) -> str:
+            return f"{self.project_id}.{self.dataset_id}.{table_name}"
+
+        def query_rows(self, sql: str, query_parameters=None):  # noqa: ANN001 - mirrors BigQueryDestination.
+            self.queries.append(sql)
+            if "sync_logs" in sql:
+                return [
+                    {
+                        "status": "success",
+                        "rows_fetched": 5,
+                        "rows_inserted": 5,
+                        "sync_start_date": "2026-05-30",
+                        "sync_end_date": "2026-05-30",
+                    }
+                ]
+            return [{"row_count": 5}]
+
+    monkeypatch.setattr(api_server, "BigQueryDestination", FakeDestination)
+    reader = _build_bigquery_status_reader(project_id="oudseed", dataset_id="ads_pipeline")
+
+    status = reader({"platform": "google_ads", "selected_account_ids": ["1234567890"]})
+    output = json.dumps(status)
+    queries = "\n".join(FakeDestination.instances[0].queries)
+
+    assert status["status"] == "healthy"
+    assert status["message"] == "Latest Google Ads sync data is visible in BigQuery and Looker-facing views."
+    assert status["scope"]["platform"] == "google_ads"
+    assert "raw_google_ads_daily" in queries
+    assert "WHERE platform = @platform" in queries
+    assert "1234567890" not in output
+
+
+def test_onboarding_state_refreshes_backend_data_check_when_ready_for_sync() -> None:
+    calls = 0
+
+    def backend_status_reader(sync_job: dict) -> dict:
+        nonlocal calls
+        calls += 1
+        return {
+            "status": "healthy",
+            "source": "bigquery",
+            "checked_at": f"2026-05-31T00:00:0{calls}+00:00",
+            "message": "Latest Meta sync data is visible.",
+            "latest_sync": {
+                "status": "success",
+                "rows_fetched": calls,
+                "rows_inserted": calls,
+                "sync_start_date": "2026-05-30",
+                "sync_end_date": "2026-05-30",
+            },
+            "destinations": {
+                "bigquery": {"status": "verified", "raw_rows": calls, "unified_rows": calls},
+            },
+            "scope": {
+                "selected_account_count": len(sync_job["selected_account_ids"]),
+                "selected_accounts_scoped": True,
+            },
+            "warnings": [],
+        }
+
+    state = OnboardingPrototypeState(backend_status_reader=backend_status_reader)
+
+    created = state.create_connection(sample_connection_payload())
+    sync_job_id = created["first_sync_job"]["sync_job_id"]
+    state.get_sync_job(sync_job_id)
+    first_ready = state.get_sync_job(sync_job_id)
+    second_ready = state.get_sync_job(sync_job_id)
+
+    assert first_ready["sync_job"]["backend_data_check"]["latest_sync"]["rows_inserted"] == 1
+    assert second_ready["sync_job"]["backend_data_check"]["latest_sync"]["rows_inserted"] == 2
 
 
 def test_onboarding_state_runs_injected_first_sync_runner_without_sensitive_response() -> None:
@@ -289,11 +418,11 @@ def test_onboarding_state_backend_data_check_failures_do_not_break_sync_status()
     created = state.create_connection(sample_connection_payload())
     sync_job_id = created["first_sync_job"]["sync_job_id"]
     state.get_sync_job(sync_job_id)
-    completed = state.get_sync_job(sync_job_id)
+    ready = state.get_sync_job(sync_job_id)
 
-    assert completed["sync_job"]["status"] == "completed"
-    assert completed["sync_job"]["backend_data_check"]["status"] == "unavailable"
-    assert completed["sync_job"]["backend_data_check"]["warnings"] == ["backend_status_check_failed"]
+    assert ready["sync_job"]["status"] == "ready_for_sync"
+    assert ready["sync_job"]["backend_data_check"]["status"] == "unavailable"
+    assert ready["sync_job"]["backend_data_check"]["warnings"] == ["backend_status_check_failed"]
 
 
 def test_onboarding_state_sends_report_email_for_completed_sync_job() -> None:
@@ -310,7 +439,10 @@ def test_onboarding_state_sends_report_email_for_completed_sync_job() -> None:
             "recipient_configured": True,
         }
 
-    state = OnboardingPrototypeState(email_report_sender=fake_email_sender)
+    state = OnboardingPrototypeState(
+        email_report_sender=fake_email_sender,
+        first_sync_runner=lambda sync_job, selection: {"runner": "fake_runner", "status": "success"},
+    )
 
     created = state.create_connection(sample_connection_payload())
     sync_job_id = created["first_sync_job"]["sync_job_id"]
@@ -343,7 +475,10 @@ def test_onboarding_state_blocks_duplicate_report_email_while_sending() -> None:
             "recipient_configured": True,
         }
 
-    state = OnboardingPrototypeState(email_report_sender=fake_email_sender)
+    state = OnboardingPrototypeState(
+        email_report_sender=fake_email_sender,
+        first_sync_runner=lambda sync_job, selection: {"runner": "fake_runner", "status": "success"},
+    )
 
     created = state.create_connection(sample_connection_payload())
     sync_job_id = created["first_sync_job"]["sync_job_id"]
@@ -371,7 +506,9 @@ def test_onboarding_state_requires_completed_sync_before_report_email() -> None:
 
 
 def test_onboarding_state_persists_unavailable_report_email_status() -> None:
-    state = OnboardingPrototypeState()
+    state = OnboardingPrototypeState(
+        first_sync_runner=lambda sync_job, selection: {"runner": "fake_runner", "status": "success"},
+    )
 
     created = state.create_connection(sample_connection_payload())
     sync_job_id = created["first_sync_job"]["sync_job_id"]
@@ -466,6 +603,15 @@ def test_first_sync_runner_from_env_requires_explicit_enable(monkeypatch) -> Non
     assert _first_sync_runner_from_env() is None
 
 
+def test_first_sync_runner_from_env_ignores_readiness_only_enable(monkeypatch, tmp_path) -> None:
+    output_path = tmp_path / "clients.generated.yaml"
+    monkeypatch.delenv("ONBOARDING_ENABLE_LOCAL_SYNC_RUN", raising=False)
+    monkeypatch.setenv("ONBOARDING_ENABLE_LOCAL_SYNC_READINESS", "true")
+    monkeypatch.setenv("ONBOARDING_LOCAL_CONFIG_EXPORT_PATH", str(output_path))
+
+    assert _first_sync_runner_from_env() is None
+
+
 def test_first_sync_runner_from_env_uses_local_runner(monkeypatch, tmp_path) -> None:
     output_path = tmp_path / "clients.generated.yaml"
     monkeypatch.setenv("ONBOARDING_ENABLE_LOCAL_SYNC_RUN", "true")
@@ -476,7 +622,21 @@ def test_first_sync_runner_from_env_uses_local_runner(monkeypatch, tmp_path) -> 
 
     assert runner is not None
     assert runner.config_path == output_path
+    assert runner.platform == "meta_ads"
     assert runner.timeout_seconds == 321
+
+
+def test_first_sync_runner_from_env_uses_google_platform(monkeypatch, tmp_path) -> None:
+    output_path = tmp_path / "clients.generated.yaml"
+    monkeypatch.setenv("ONBOARDING_ENABLE_LOCAL_SYNC_RUN", "true")
+    monkeypatch.setenv("ONBOARDING_LOCAL_CONFIG_EXPORT_PATH", str(output_path))
+    monkeypatch.setenv("ONBOARDING_LIVE_SYNC_PLATFORM", "google_ads")
+
+    runner = _first_sync_runner_from_env()
+
+    assert runner is not None
+    assert runner.config_path == output_path
+    assert runner.platform == "google_ads"
 
 
 def test_first_sync_runner_from_env_requires_local_config_export_path(monkeypatch) -> None:
@@ -530,8 +690,146 @@ def test_onboarding_state_can_use_real_meta_connector_for_accounts() -> None:
 
     assert oauth["status"] == "connected"
     assert accounts["accounts"][0]["name"] == "Real Meta Sample"
+    assert accounts["accounts"][0]["id"] == "meta_account_0001"
+    assert "act_000000000000001" not in json.dumps(accounts)
     assert connectors[0]["data_mode"] == "real_meta_api"
     connector.fetch_ad_accounts.assert_called_once_with()
+
+
+def test_onboarding_state_maps_real_meta_alias_back_for_local_export() -> None:
+    connector = Mock()
+    connector.fetch_ad_accounts.return_value = [
+        {
+            "id": "act_000000000000001",
+            "name": "Real Meta Sample",
+            "currency": "TWD",
+            "timezone": "Asia/Taipei",
+            "status": "Active",
+        }
+    ]
+    exported_selections = []
+
+    def exporter(selection: dict) -> dict:
+        exported_selections.append(selection)
+        return {
+            "output_path": ".local/clients.generated.yaml",
+            "account_count": 1,
+            "destination_count": 1,
+            "destinations": ["bigquery"],
+            "report_schedule_count": 0,
+            "writes_config": False,
+            "writes_secrets": False,
+            "local_artifact_only": True,
+        }
+
+    state = OnboardingPrototypeState(
+        meta_connector=connector,
+        use_real_meta=True,
+        local_config_exporter=exporter,
+    )
+
+    state.complete_oauth("meta_ads")
+    created = state.create_connection(
+        {
+            "workspace_id": "workspace_demo",
+            "connector_id": "meta_ads",
+            "authorization_id": "auth_meta_ads_demo",
+            "client_name": "Real Meta Sample",
+            "accounts": [
+                {
+                    "external_account_id": "meta_account_0001",
+                    "account_name": "Real Meta Sample",
+                }
+            ],
+            "destinations": ["bigquery"],
+        }
+    )
+    output = json.dumps(created)
+
+    assert exported_selections[0]["accounts"][0]["external_account_id"] == "act_000000000000001"
+    assert created["local_config_export"]["account_count"] == 1
+    assert "act_000000000000001" not in output
+
+
+def test_onboarding_state_can_use_real_google_connector_for_accounts() -> None:
+    connector = Mock()
+    connector.fetch_customer_accounts.return_value = [
+        {
+            "id": "1234567890",
+            "name": "Real Google Ads Sample",
+            "currency": "TWD",
+            "timezone": "Asia/Taipei",
+            "status": "Ready",
+        }
+    ]
+    state = OnboardingPrototypeState(google_connector=connector, use_real_google_ads=True)
+
+    oauth = state.complete_oauth("google_ads")
+    accounts = state.list_accounts("google_ads", authorization_id="auth_google_ads_demo")
+    connectors = state.list_connectors()["connectors"]
+    google_connector = next(connector for connector in connectors if connector["id"] == "google_ads")
+
+    assert oauth["status"] == "connected"
+    assert accounts["accounts"][0]["name"] == "Real Google Ads Sample"
+    assert accounts["accounts"][0]["id"] == "google_account_0001"
+    assert "1234567890" not in json.dumps(accounts)
+    assert google_connector["data_mode"] == "real_google_ads_api"
+    connector.fetch_customer_accounts.assert_called_once_with()
+
+
+def test_onboarding_state_maps_real_google_alias_back_for_local_export() -> None:
+    connector = Mock()
+    connector.fetch_customer_accounts.return_value = [
+        {
+            "id": "1234567890",
+            "name": "Real Google Ads Sample",
+            "currency": "TWD",
+            "timezone": "Asia/Taipei",
+            "status": "Ready",
+        }
+    ]
+    exported_selections = []
+
+    def exporter(selection: dict) -> dict:
+        exported_selections.append(selection)
+        return {
+            "output_path": ".local/clients.generated.yaml",
+            "account_count": 1,
+            "destination_count": 1,
+            "destinations": ["bigquery"],
+            "report_schedule_count": 0,
+            "writes_config": False,
+            "writes_secrets": False,
+            "local_artifact_only": True,
+        }
+
+    state = OnboardingPrototypeState(
+        google_connector=connector,
+        use_real_google_ads=True,
+        local_config_exporter=exporter,
+    )
+
+    state.complete_oauth("google_ads")
+    created = state.create_connection(
+        {
+            "workspace_id": "workspace_demo",
+            "connector_id": "google_ads",
+            "authorization_id": "auth_google_ads_demo",
+            "client_name": "Real Google Ads Sample",
+            "accounts": [
+                {
+                    "external_account_id": "google_account_0001",
+                    "account_name": "Real Google Ads Sample",
+                }
+            ],
+            "destinations": ["bigquery"],
+        }
+    )
+    output = json.dumps(created)
+
+    assert exported_selections[0]["accounts"][0]["external_account_id"] == "1234567890"
+    assert created["local_config_export"]["account_count"] == 1
+    assert "1234567890" not in output
 
 
 def test_onboarding_state_reset_clears_real_meta_cache_and_local_drafts() -> None:

@@ -34,8 +34,8 @@ Recommended bridge:
 - For the current internal MVP, convert approved account selections into
   managed client/account config entries.
 - Keep real secrets in Secret Manager or local `.env`, never in frontend state.
-- Keep Google Ads, LINE Ads, and Google Sheets visible but disabled until their
-  backend paths are implemented.
+- Keep Google Ads visible as the next preview onboarding path while LINE Ads and
+  Google Sheets stay disabled until their backend paths are implemented.
 
 ## API Contract
 
@@ -286,11 +286,33 @@ sync using `CLIENTS_CONFIG_PATH=.local/clients.generated.yaml` and
 `SYNC_ENABLED_PLATFORMS=meta_ads`. This is kept as an explicit local operations
 command because it calls Meta and writes/replaces BigQuery rows.
 
+For Google Ads readiness without starting the write path,
+`make onboarding-prototype-google-persistent` starts the persistent prototype
+with `ONBOARDING_LIVE_SYNC_PLATFORM=google_ads` and
+`ONBOARDING_ENABLE_LOCAL_SYNC_READINESS=true`. It can export the selected Google
+Ads accounts into `.local/clients.generated.yaml`, but it does not create a
+first-sync runner. Use `make onboarding-google-live-sync-ready` after the
+artifact is generated.
+
+For real Google Ads customer discovery, `make onboarding-prototype-real-google`
+also sets `ONBOARDING_USE_REAL_GOOGLE_ADS=true`. It uses local Google Ads
+credentials to list accessible customers after the prototype authorization step,
+returns local aliases to the browser, and maps those aliases back to real
+customer IDs only inside the ignored local config artifact and sync state.
+
 For end-to-end local product testing, `make onboarding-prototype-live-sync`
 starts the prototype with `ONBOARDING_ENABLE_LOCAL_SYNC_RUN=true`. In that mode,
 the second first-sync poll exports the selected draft into the local config
 artifact, runs the Meta sync entrypoint, and returns only safe execution
 metadata to the browser. This mode calls Meta and writes/replaces BigQuery rows,
+so it remains opt-in.
+
+For Google Ads product testing, `make onboarding-prototype-google-live-sync`
+starts the same prototype polling flow with
+`ONBOARDING_LIVE_SYNC_PLATFORM=google_ads`. The runner exports the selected
+Google Ads customers into the ignored local artifact, enforces the Google live
+sync readiness gate, and only then runs the Google Ads sync entrypoint. This
+mode calls Google Ads and writes/replaces BigQuery rows after readiness passes,
 so it remains opt-in.
 
 ### Inspect First Sync Status
@@ -506,5 +528,9 @@ API-shaped JSON command:
   mapping.
 - No real OAuth, tokens, account IDs, recipients, `.env`, or `clients.yaml` are
   committed.
-- Google Ads, LINE Ads, and Google Sheets remain visibly future-facing unless
-  explicitly implemented.
+- Google Ads may be previewed through the local onboarding bridge; LINE Ads and
+  Google Sheets remain visibly future-facing unless explicitly implemented.
+- Google Ads local live-sync readiness is available as a safe gate; the actual
+  Google Ads write path still requires explicit credential/customer validation
+  and user confirmation through `make onboarding-google-sync-local-config` or
+  `make onboarding-prototype-google-live-sync`.

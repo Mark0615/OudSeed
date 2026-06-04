@@ -18,6 +18,7 @@ from urllib.parse import unquote, urlparse
 from dotenv import load_dotenv
 from google.cloud import bigquery
 
+from src.connectors.google_ads import GoogleAdsConnector
 from src.connectors.meta_ads import MetaAdsConnector
 from src.destinations.bigquery import BigQueryDestination
 from src.onboarding.config_bridge import (
@@ -31,7 +32,7 @@ from src.onboarding.state_store import (
     JsonFileOnboardingStateStore,
     OnboardingStateStore,
 )
-from src.onboarding.sync_runner import LocalMetaSyncRunner, OnboardingFirstSyncRunner
+from src.onboarding.sync_runner import LocalPlatformSyncRunner, OnboardingFirstSyncRunner
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -46,7 +47,9 @@ class OnboardingPrototypeState:
     def __init__(
         self,
         *,
+        google_connector: GoogleAdsConnector | None = None,
         meta_connector: MetaAdsConnector | None = None,
+        use_real_google_ads: bool = False,
         use_real_meta: bool = False,
         backend_status_reader: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         email_report_sender: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
@@ -57,18 +60,24 @@ class OnboardingPrototypeState:
         self._connectors = _default_connectors()
         self._accounts_by_connector = _default_accounts_by_connector()
         self._destinations = _default_destinations()
+        self._google_connector = google_connector
         self._meta_connector = meta_connector
+        self._use_real_google_ads = use_real_google_ads
         self._use_real_meta = use_real_meta
         self._backend_status_reader = backend_status_reader
         self._email_report_sender = email_report_sender
         self._local_config_exporter = local_config_exporter
         self._first_sync_runner = first_sync_runner
         self._state_store = state_store or InMemoryOnboardingStateStore()
+        self._account_id_aliases_by_connector: dict[str, dict[str, str]] = {}
         self._real_meta_loaded = False
+        self._real_google_ads_loaded = False
         self._email_delivery_lock = threading.Lock()
         self._first_sync_lock = threading.Lock()
         if use_real_meta:
             self._mark_real_meta_mode()
+        if use_real_google_ads:
+            self._mark_real_google_ads_mode()
 
     def reset(self) -> dict[str, Any]:
         """Reset prototype authorization state."""
@@ -76,7 +85,12 @@ class OnboardingPrototypeState:
             connector["connected"] = False
         if self._use_real_meta:
             self._accounts_by_connector["meta_ads"] = []
+            self._account_id_aliases_by_connector["meta_ads"] = {}
             self._real_meta_loaded = False
+        if self._use_real_google_ads:
+            self._accounts_by_connector["google_ads"] = []
+            self._account_id_aliases_by_connector["google_ads"] = {}
+            self._real_google_ads_loaded = False
         self._state_store.reset()
         return {"ok": True}
 
@@ -114,6 +128,8 @@ class OnboardingPrototypeState:
         connector["connected"] = True
         if connector_id == "meta_ads" and self._use_real_meta:
             self._load_real_meta_accounts()
+        if connector_id == "google_ads" and self._use_real_google_ads:
+            self._load_real_google_ads_accounts()
         return {
             "authorization_id": f"auth_{connector_id}_demo",
             "connector_id": connector_id,
@@ -129,11 +145,14 @@ class OnboardingPrototypeState:
             raise ValueError("Unknown authorization_id.")
         if connector_id == "meta_ads" and self._use_real_meta:
             self._load_real_meta_accounts()
+        if connector_id == "google_ads" and self._use_real_google_ads:
+            self._load_real_google_ads_accounts()
         return {"accounts": self._accounts_by_connector.get(connector_id, [])}
 
     def create_connection(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Validate a selection payload and return a local draft handoff."""
-        response = build_config_preview_response(payload)
+        resolved_payload = self._resolve_selection_account_ids(payload)
+        response = build_config_preview_response(resolved_payload)
         account_count = response["config_preview"]["summary"]["account_count"]
         draft_id = self._state_store.next_draft_id()
         draft = {
@@ -145,18 +164,18 @@ class OnboardingPrototypeState:
             "writes_secrets": False,
             "connection_ids": [f"conn_demo_{index + 1}" for index in range(account_count)],
             "config_preview": response["config_preview"],
-            "destination_handoff": _build_destination_handoff(payload),
-            "apply_plan": _build_apply_plan(payload, draft_id),
+            "destination_handoff": _build_destination_handoff(resolved_payload),
+            "apply_plan": _build_apply_plan(resolved_payload, draft_id),
         }
-        sync_job = self._create_first_sync_job(draft_id, payload, account_count)
+        sync_job = self._create_first_sync_job(draft_id, resolved_payload, account_count)
         draft["first_sync_job_id"] = sync_job["sync_job_id"]
-        local_config_export = self._export_local_config_from_selection(payload)
+        local_config_export = self._export_local_config_from_selection(resolved_payload)
         if local_config_export:
             draft["local_config_export"] = local_config_export
         self._state_store.save_connection_draft(
             draft_id,
             {
-                "raw_selection": payload,
+                "raw_selection": resolved_payload,
                 "safe_detail": draft,
             },
         )
@@ -330,13 +349,53 @@ class OnboardingPrototypeState:
             connector["note"] = "Real Meta API via local token"
             connector["data_mode"] = "real_meta_api"
 
+    def _mark_real_google_ads_mode(self) -> None:
+        connector = self._find_connector("google_ads")
+        if connector:
+            connector["note"] = "Real Google Ads API via local credentials"
+            connector["data_mode"] = "real_google_ads_api"
+
     def _load_real_meta_accounts(self) -> None:
         if self._real_meta_loaded:
             return
         if not self._meta_connector:
             raise ValueError("Real Meta API mode requires META_ACCESS_TOKEN.")
-        self._accounts_by_connector["meta_ads"] = self._meta_connector.fetch_ad_accounts()
+        raw_accounts = self._meta_connector.fetch_ad_accounts()
+        public_accounts, aliases = _public_accounts_with_aliases(raw_accounts, prefix="meta_account")
+        self._accounts_by_connector["meta_ads"] = public_accounts
+        self._account_id_aliases_by_connector["meta_ads"] = aliases
         self._real_meta_loaded = True
+
+    def _load_real_google_ads_accounts(self) -> None:
+        if self._real_google_ads_loaded:
+            return
+        if not self._google_connector:
+            raise ValueError("Real Google Ads API mode requires Google Ads credentials.")
+        raw_accounts = self._google_connector.fetch_customer_accounts()
+        public_accounts, aliases = _public_accounts_with_aliases(raw_accounts, prefix="google_account")
+        self._accounts_by_connector["google_ads"] = public_accounts
+        self._account_id_aliases_by_connector["google_ads"] = aliases
+        self._real_google_ads_loaded = True
+
+    def _resolve_selection_account_ids(self, selection: dict[str, Any]) -> dict[str, Any]:
+        connector_id = _selection_platform(selection)
+        aliases = self._account_id_aliases_by_connector.get(connector_id, {})
+        if not aliases:
+            return selection
+        accounts = selection.get("accounts")
+        if not isinstance(accounts, list):
+            return selection
+        resolved_accounts: list[Any] = []
+        for account in accounts:
+            if not isinstance(account, dict):
+                resolved_accounts.append(account)
+                continue
+            public_id = account.get("external_account_id") or account.get("id")
+            if isinstance(public_id, str) and public_id in aliases:
+                resolved_accounts.append({**account, "external_account_id": aliases[public_id]})
+            else:
+                resolved_accounts.append(account)
+        return {**selection, "accounts": resolved_accounts}
 
     def _create_first_sync_job(self, draft_id: str, payload: dict[str, Any], account_count: int) -> dict[str, Any]:
         sync_job_id = self._state_store.next_sync_job_id()
@@ -347,6 +406,7 @@ class OnboardingPrototypeState:
             "progress_percent": 10,
             "checks": 0,
             "account_count": account_count,
+            "platform": _selection_platform(payload),
             "destinations": _selection_destinations(payload),
             "message": "First sync is queued.",
             "selected_account_ids": _selection_account_ids(payload),
@@ -363,13 +423,20 @@ class OnboardingPrototypeState:
             job["progress_percent"] = 55
             job["message"] = "Syncing selected ad account data."
         elif job["checks"] >= 2:
+            if not self._first_sync_runner:
+                job["status"] = "ready_for_sync"
+                job["progress_percent"] = 100
+                job["message"] = "Setup is ready. Run live sync readiness before writing BigQuery."
+                if self._backend_status_reader:
+                    job["backend_data_check"] = self._read_backend_status(job)
+                return
             if not self._maybe_run_first_sync(job):
                 return
             if job.get("status") != "failed":
                 job["status"] = "completed"
                 job["progress_percent"] = 100
                 job["message"] = "First sync completed. Destinations are ready."
-                if self._backend_status_reader and "backend_data_check" not in job:
+                if self._backend_status_reader:
                     job["backend_data_check"] = self._read_backend_status(job)
 
     def _maybe_run_first_sync(self, job: dict[str, Any]) -> bool:
@@ -652,6 +719,8 @@ def _build_destination_handoff(selection: dict[str, Any]) -> dict[str, Any]:
 
 def _build_apply_plan(selection: dict[str, Any], draft_id: str) -> dict[str, Any]:
     destinations = _selection_destinations(selection)
+    platform = _selection_platform(selection)
+    platform_label = _platform_label(platform)
     steps = [
         {
             "id": "review_config_preview",
@@ -664,9 +733,9 @@ def _build_apply_plan(selection: dict[str, Any], draft_id: str) -> dict[str, Any
             "label": "Promote selected accounts into managed config after review.",
         },
         {
-            "id": "run_meta_sync_preflight",
+            "id": f"run_{platform}_sync_preflight",
             "status": "ready_after_config",
-            "label": "Run Meta sync readiness against the selected account group.",
+            "label": f"Run {platform_label} sync readiness against the selected account group.",
         },
     ]
     if "looker_studio" in destinations:
@@ -785,6 +854,11 @@ def _build_bigquery_status_reader(project_id: str, dataset_id: str) -> Callable[
     destination = BigQueryDestination(project_id=project_id, dataset_id=dataset_id)
 
     def read_status(sync_job: dict[str, Any]) -> dict[str, Any]:
+        platform = str(sync_job.get("platform") or "meta_ads")
+        if platform not in {"meta_ads", "google_ads"}:
+            platform = "meta_ads"
+        platform_label = _platform_label(platform)
+        raw_table = "raw_google_ads_daily" if platform == "google_ads" else "raw_meta_ads_daily"
         selected_account_ids = [
             str(account_id)
             for account_id in sync_job.get("selected_account_ids", [])
@@ -792,11 +866,13 @@ def _build_bigquery_status_reader(project_id: str, dataset_id: str) -> Callable[
         ]
         sync_account_clause = ""
         row_count_account_clause = ""
-        account_parameters: list[bigquery.ScalarQueryParameter | bigquery.ArrayQueryParameter] = []
+        base_parameters: list[bigquery.ScalarQueryParameter | bigquery.ArrayQueryParameter] = [
+            bigquery.ScalarQueryParameter("platform", "STRING", platform),
+        ]
         if selected_account_ids:
             sync_account_clause = "AND account_id IN UNNEST(@account_ids)"
             row_count_account_clause = "AND account_id IN UNNEST(@account_ids)"
-            account_parameters.append(bigquery.ArrayQueryParameter("account_ids", "STRING", selected_account_ids))
+            base_parameters.append(bigquery.ArrayQueryParameter("account_ids", "STRING", selected_account_ids))
 
         latest_sync_rows = destination.query_rows(
             f"""
@@ -807,38 +883,38 @@ def _build_bigquery_status_reader(project_id: str, dataset_id: str) -> Callable[
               CAST(sync_start_date AS STRING) AS sync_start_date,
               CAST(sync_end_date AS STRING) AS sync_end_date
             FROM `{destination._table_id("sync_logs")}`
-            WHERE platform = 'meta_ads'
+            WHERE platform = @platform
               {sync_account_clause}
             ORDER BY finished_at DESC
             LIMIT 1
             """,
-            query_parameters=account_parameters,
+            query_parameters=base_parameters,
         )
         if not latest_sync_rows:
             return {
                 "status": "no_data",
                 "source": "bigquery",
                 "checked_at": _utc_now(),
-                "message": "No Meta sync logs found yet for the selected accounts.",
+                "message": f"No {platform_label} sync logs found yet for the selected accounts.",
                 "latest_sync": None,
                 "destinations": {},
-                "warnings": ["no_selected_account_meta_sync_logs"],
+                "warnings": [f"no_selected_account_{platform}_sync_logs"],
             }
 
         latest_sync = latest_sync_rows[0]
         start_date = str(latest_sync["sync_start_date"])
         end_date = str(latest_sync["sync_end_date"])
         parameters: list[bigquery.ScalarQueryParameter | bigquery.ArrayQueryParameter] = [
+            *base_parameters,
             bigquery.ScalarQueryParameter("start_date", "DATE", start_date),
             bigquery.ScalarQueryParameter("end_date", "DATE", end_date),
-            *account_parameters,
         ]
         raw_count = _single_count(
             destination,
             f"""
             SELECT COUNT(*) AS row_count
-            FROM `{destination._table_id("raw_meta_ads_daily")}`
-            WHERE platform = 'meta_ads'
+            FROM `{destination._table_id(raw_table)}`
+            WHERE platform = @platform
               AND date BETWEEN @start_date AND @end_date
               {row_count_account_clause}
             """,
@@ -849,7 +925,7 @@ def _build_bigquery_status_reader(project_id: str, dataset_id: str) -> Callable[
             f"""
             SELECT COUNT(*) AS row_count
             FROM `{destination._table_id("unified_ads_daily")}`
-            WHERE platform = 'meta_ads'
+            WHERE platform = @platform
               AND date BETWEEN @start_date AND @end_date
               {row_count_account_clause}
             """,
@@ -860,7 +936,7 @@ def _build_bigquery_status_reader(project_id: str, dataset_id: str) -> Callable[
             f"""
             SELECT COUNT(*) AS row_count
             FROM `{destination._table_id("vw_looker_ads_ad_daily")}`
-            WHERE platform = 'meta_ads'
+            WHERE platform = @platform
               AND date BETWEEN @start_date AND @end_date
               {row_count_account_clause}
             """,
@@ -871,7 +947,7 @@ def _build_bigquery_status_reader(project_id: str, dataset_id: str) -> Callable[
             f"""
             SELECT COUNT(*) AS row_count
             FROM `{destination._table_id("vw_looker_ads_campaign_daily")}`
-            WHERE platform = 'meta_ads'
+            WHERE platform = @platform
               AND date BETWEEN @start_date AND @end_date
               {row_count_account_clause}
             """,
@@ -889,8 +965,9 @@ def _build_bigquery_status_reader(project_id: str, dataset_id: str) -> Callable[
             "status": "healthy" if healthy else "needs_attention",
             "source": "bigquery",
             "checked_at": _utc_now(),
-            "message": "Latest Meta sync data is visible in BigQuery and Looker-facing views.",
+            "message": f"Latest {platform_label} sync data is visible in BigQuery and Looker-facing views.",
             "scope": {
+                "platform": platform,
                 "selected_account_count": len(selected_account_ids),
                 "selected_accounts_scoped": bool(selected_account_ids),
             },
@@ -913,7 +990,7 @@ def _build_bigquery_status_reader(project_id: str, dataset_id: str) -> Callable[
                     "campaign_daily_rows": campaign_daily_count,
                 },
             },
-            "warnings": [] if healthy else ["latest_meta_sync_not_healthy"],
+            "warnings": [] if healthy else [f"latest_{platform}_sync_not_healthy"],
         }
 
     return read_status
@@ -933,6 +1010,9 @@ def _single_count(
 def _sync_job_steps(status: str, destinations: list[str]) -> list[dict[str, str]]:
     if status == "failed":
         warehouse_status = "failed"
+        output_status = "queued"
+    elif status == "ready_for_sync":
+        warehouse_status = "queued"
         output_status = "queued"
     else:
         warehouse_status = "completed" if status == "completed" else "running" if status == "running" else "queued"
@@ -975,18 +1055,51 @@ def _selection_destinations(selection: dict[str, Any]) -> list[str]:
     return [destination for destination in destinations if isinstance(destination, str)]
 
 
+def _selection_platform(selection: dict[str, Any]) -> str:
+    connector_id = selection.get("connector_id")
+    if connector_id in {"meta_ads", "google_ads"}:
+        return str(connector_id)
+    return "meta_ads"
+
+
 def _selection_account_ids(selection: dict[str, Any]) -> list[str]:
     accounts = selection.get("accounts")
     if not isinstance(accounts, list):
         return []
+    platform = _selection_platform(selection)
     account_ids: list[str] = []
     for account in accounts:
         if not isinstance(account, dict):
             continue
         account_id = account.get("external_account_id") or account.get("id")
         if isinstance(account_id, str) and account_id.strip():
-            account_ids.append(account_id.strip())
+            value = account_id.strip()
+            if platform == "google_ads":
+                value = value.replace("-", "")
+            account_ids.append(value)
     return account_ids
+
+
+def _public_accounts_with_aliases(
+    accounts: list[dict[str, Any]],
+    *,
+    prefix: str,
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    public_accounts: list[dict[str, Any]] = []
+    aliases: dict[str, str] = {}
+    for index, account in enumerate(accounts, start=1):
+        if not isinstance(account, dict):
+            continue
+        raw_id = account.get("id")
+        public_id = f"{prefix}_{index:04d}"
+        public_accounts.append({**account, "id": public_id})
+        if isinstance(raw_id, str) and raw_id.strip():
+            aliases[public_id] = raw_id.strip()
+    return public_accounts, aliases
+
+
+def _platform_label(platform: str) -> str:
+    return {"meta_ads": "Meta", "google_ads": "Google Ads"}.get(platform, platform)
 
 
 def _default_connectors() -> list[dict[str, Any]]:
@@ -999,7 +1112,7 @@ def _default_connectors() -> list[dict[str, Any]]:
             "color": "blue",
             "status": "available",
             "connected": False,
-            "note": "Current MVP connector",
+            "note": "Live sync ready",
         },
         {
             "id": "google_ads",
@@ -1007,9 +1120,9 @@ def _default_connectors() -> list[dict[str, Any]]:
             "label": "Google Ads",
             "logo": "G",
             "color": "google",
-            "status": "coming_soon",
+            "status": "available",
             "connected": False,
-            "note": "Next connector",
+            "note": "Ready for gated sync",
         },
         {
             "id": "ga4",
@@ -1082,7 +1195,23 @@ def _default_accounts_by_connector() -> dict[str, list[dict[str, Any]]]:
                 "timezone": "Asia/Taipei",
                 "status": "Ready",
             },
-        ]
+        ],
+        "google_ads": [
+            {
+                "id": "1234567890",
+                "name": "Demo Search Account",
+                "currency": "TWD",
+                "timezone": "Asia/Taipei",
+                "status": "Preview",
+            },
+            {
+                "id": "2345678901",
+                "name": "Demo Shopping Account",
+                "currency": "TWD",
+                "timezone": "Asia/Taipei",
+                "status": "Preview",
+            },
+        ],
     }
 
 
@@ -1149,13 +1278,17 @@ def _parse_args() -> argparse.Namespace:
 
 def _state_from_env() -> OnboardingPrototypeState:
     use_real_meta = _truthy(os.getenv("ONBOARDING_USE_REAL_META"))
+    use_real_google_ads = _truthy(os.getenv("ONBOARDING_USE_REAL_GOOGLE_ADS"))
     backend_status_reader = _backend_status_reader_from_env()
     email_report_sender = _email_report_sender_from_env()
     local_config_exporter = _local_config_exporter_from_env()
     first_sync_runner = _first_sync_runner_from_env()
     state_store = _state_store_from_env()
+    google_connector = _google_connector_from_env() if use_real_google_ads else None
     if not use_real_meta:
         return OnboardingPrototypeState(
+            google_connector=google_connector,
+            use_real_google_ads=use_real_google_ads,
             backend_status_reader=backend_status_reader,
             email_report_sender=email_report_sender,
             local_config_exporter=local_config_exporter,
@@ -1174,13 +1307,41 @@ def _state_from_env() -> OnboardingPrototypeState:
         timeout_seconds=timeout_seconds,
     )
     return OnboardingPrototypeState(
+        google_connector=google_connector,
         meta_connector=connector,
+        use_real_google_ads=use_real_google_ads,
         use_real_meta=True,
         backend_status_reader=backend_status_reader,
         email_report_sender=email_report_sender,
         local_config_exporter=local_config_exporter,
         first_sync_runner=first_sync_runner,
         state_store=state_store,
+    )
+
+
+def _google_connector_from_env() -> GoogleAdsConnector:
+    developer_token = os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN", "").strip()
+    client_id = os.getenv("GOOGLE_ADS_CLIENT_ID", "").strip()
+    client_secret = os.getenv("GOOGLE_ADS_CLIENT_SECRET", "").strip()
+    refresh_token = os.getenv("GOOGLE_ADS_REFRESH_TOKEN", "").strip()
+    missing = [
+        name
+        for name, value in [
+            ("GOOGLE_ADS_DEVELOPER_TOKEN", developer_token),
+            ("GOOGLE_ADS_CLIENT_ID", client_id),
+            ("GOOGLE_ADS_CLIENT_SECRET", client_secret),
+            ("GOOGLE_ADS_REFRESH_TOKEN", refresh_token),
+        ]
+        if not value
+    ]
+    if missing:
+        raise ValueError(f"ONBOARDING_USE_REAL_GOOGLE_ADS=true requires {', '.join(missing)}.")
+    return GoogleAdsConnector(
+        developer_token=developer_token,
+        client_id=client_id,
+        client_secret=client_secret,
+        refresh_token=refresh_token,
+        login_customer_id=os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID", "").strip() or None,
     )
 
 
@@ -1208,7 +1369,9 @@ def _first_sync_runner_from_env() -> OnboardingFirstSyncRunner | None:
     config_path = os.getenv("ONBOARDING_LOCAL_CONFIG_EXPORT_PATH", "").strip()
     if not config_path:
         raise ValueError("ONBOARDING_ENABLE_LOCAL_SYNC_RUN=true requires ONBOARDING_LOCAL_CONFIG_EXPORT_PATH.")
-    return LocalMetaSyncRunner(
+    platform = os.getenv("ONBOARDING_LIVE_SYNC_PLATFORM", "").strip() or "meta_ads"
+    return LocalPlatformSyncRunner(
+        platform=platform,
         config_path=Path(config_path),
         repo_root=REPO_ROOT,
         python_bin=os.getenv("ONBOARDING_LOCAL_SYNC_PYTHON", sys.executable),

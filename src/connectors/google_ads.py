@@ -97,6 +97,16 @@ WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
   AND metrics.impressions > 0
 """
 
+CUSTOMER_ACCOUNT_QUERY = """
+SELECT
+  customer.id,
+  customer.descriptive_name,
+  customer.currency_code,
+  customer.time_zone
+FROM customer
+LIMIT 1
+"""
+
 
 class GoogleAdsConnector(BaseAdsConnector):
     """Fetch daily Google Ads performance rows."""
@@ -134,6 +144,48 @@ class GoogleAdsConnector(BaseAdsConnector):
 
         self.client = GoogleAdsClient.load_from_dict(credentials)
         self.google_ads_service = self.client.get_service("GoogleAdsService")
+        self.customer_service = self.client.get_service("CustomerService")
+
+    def fetch_customer_accounts(self, *, include_metadata: bool = False) -> list[dict[str, Any]]:
+        """Fetch Google Ads customers accessible by the configured credentials."""
+        response = self.customer_service.list_accessible_customers()
+        resource_names = getattr(response, "resource_names", [])
+        accounts: list[dict[str, Any]] = []
+        for index, resource_name in enumerate(resource_names, start=1):
+            customer_id = _customer_id_from_resource_name(str(resource_name))
+            if not customer_id:
+                continue
+            if include_metadata:
+                accounts.append(self._fetch_customer_account(customer_id))
+            else:
+                accounts.append(
+                    {
+                        "id": customer_id,
+                        "name": f"Google Ads Customer {index}",
+                        "currency": None,
+                        "timezone": None,
+                        "status": "Ready",
+                    }
+                )
+        return accounts
+
+    def _fetch_customer_account(self, customer_id: str) -> dict[str, Any]:
+        """Fetch display metadata for one Google Ads customer."""
+        customer_id = customer_id.replace("-", "")
+        stream = self.google_ads_service.search_stream(
+            customer_id=customer_id,
+            query=CUSTOMER_ACCOUNT_QUERY,
+        )
+        for batch in stream:
+            for row in batch.results:
+                return _flatten_google_customer_account(row, fallback_customer_id=customer_id)
+        return {
+            "id": customer_id,
+            "name": f"Google Ads Customer {customer_id}",
+            "currency": None,
+            "timezone": None,
+            "status": "Ready",
+        }
 
     def fetch_daily_report(
         self,
@@ -231,6 +283,26 @@ def _flatten_google_ads_row(row: Any, report_level: str) -> dict[str, Any]:
         flattened["search_term"] = row.search_term_view.search_term
 
     return flattened
+
+
+def _flatten_google_customer_account(row: Any, *, fallback_customer_id: str) -> dict[str, Any]:
+    """Flatten one Google Ads customer row for onboarding account selection."""
+    customer = row.customer
+    customer_id = str(getattr(customer, "id", "") or fallback_customer_id).replace("-", "")
+    return {
+        "id": customer_id,
+        "name": str(getattr(customer, "descriptive_name", "") or f"Google Ads Customer {customer_id}"),
+        "currency": getattr(customer, "currency_code", None),
+        "timezone": getattr(customer, "time_zone", None),
+        "status": "Ready",
+    }
+
+
+def _customer_id_from_resource_name(resource_name: str) -> str:
+    """Return normalized customer id from a Google Ads resource name."""
+    if not resource_name:
+        return ""
+    return resource_name.rsplit("/", 1)[-1].replace("-", "")
 
 
 def _micros_to_units(value: int | float | None) -> float:

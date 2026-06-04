@@ -74,7 +74,7 @@
             <div class="hero-logo" id="heroLogo">OS</div>
             <div>
               <h3 id="heroTitle">Start with a data source</h3>
-              <p id="heroText">Meta Ads is the current MVP path. Google Ads and LINE Ads are shown here so the user flow already matches the future product.</p>
+              <p id="heroText">Connect Meta Ads or Google Ads, choose the accounts, then send performance data to dashboards and AI reports.</p>
             </div>
             <button class="primary-button" type="button" id="connectButton" disabled>Connect</button>
           </div>
@@ -96,7 +96,7 @@
                       <input id="accountMasterCheckbox" type="checkbox" aria-label="Select all visible accounts" disabled />
                     </th>
                     <th>Account name</th>
-                    <th>Account ID</th>
+                    <th>Details</th>
                     <th>Status</th>
                   </tr>
                 </thead>
@@ -183,20 +183,24 @@
             <div class="section-heading">
               <div>
                 <p class="eyebrow">Setup complete</p>
-                <h3>Connection is ready</h3>
+                <h3>Accounts are ready</h3>
               </div>
-              <span id="connectionStatus">Not queued</span>
+              <span id="connectionStatus">Ready</span>
             </div>
             <div class="handoff-grid">
               <div class="handoff-summary" id="handoffSummary"></div>
               <div class="preview-stack">
                 <div>
-                  <h4>Destination status</h4>
+                  <h4>Data preview</h4>
                   <div class="next-actions" id="nextActions"></div>
                 </div>
                 <details class="developer-details">
                   <summary>Developer details</summary>
                   <div class="developer-preview-grid">
+                    <div>
+                      <h4>Local execution status</h4>
+                      <div id="developerStatus"></div>
+                    </div>
                     <div>
                       <h4>Selection payload (safe display)</h4>
                       <pre id="payloadPreview"></pre>

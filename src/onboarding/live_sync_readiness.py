@@ -45,11 +45,20 @@ def build_live_sync_readiness_from_env(env: Mapping[str, str] | None = None) -> 
     config_path = _optional_str(environment.get("ONBOARDING_LOCAL_CONFIG_EXPORT_PATH"))
     if not config_path:
         config_path = _optional_str(environment.get("CLIENTS_CONFIG_PATH"))
+    platform = _optional_str(environment.get("ONBOARDING_LIVE_SYNC_PLATFORM")) or "meta_ads"
 
     return inspect_live_sync_readiness(
+        platform=platform,
         config_path=Path(config_path) if config_path else None,
-        local_sync_enabled=_truthy(environment.get("ONBOARDING_ENABLE_LOCAL_SYNC_RUN")),
+        local_sync_enabled=(
+            _truthy(environment.get("ONBOARDING_ENABLE_LOCAL_SYNC_RUN"))
+            or _truthy(environment.get("ONBOARDING_ENABLE_LOCAL_SYNC_READINESS"))
+        ),
         meta_access_token_configured=bool(_optional_str(environment.get("META_ACCESS_TOKEN"))),
+        google_ads_developer_token_configured=bool(_optional_str(environment.get("GOOGLE_ADS_DEVELOPER_TOKEN"))),
+        google_ads_client_id_configured=bool(_optional_str(environment.get("GOOGLE_ADS_CLIENT_ID"))),
+        google_ads_client_secret_configured=bool(_optional_str(environment.get("GOOGLE_ADS_CLIENT_SECRET"))),
+        google_ads_refresh_token_configured=bool(_optional_str(environment.get("GOOGLE_ADS_REFRESH_TOKEN"))),
         gcp_project_id=_optional_str(environment.get("GCP_PROJECT_ID")),
         bigquery_dataset=_optional_str(environment.get("BIGQUERY_DATASET")),
         sync_enabled_platforms=_optional_str(environment.get("SYNC_ENABLED_PLATFORMS")),
@@ -59,21 +68,29 @@ def build_live_sync_readiness_from_env(env: Mapping[str, str] | None = None) -> 
 
 def inspect_live_sync_readiness(
     *,
+    platform: str = "meta_ads",
     config_path: Path | None,
     local_sync_enabled: bool,
     meta_access_token_configured: bool,
+    google_ads_developer_token_configured: bool = False,
+    google_ads_client_id_configured: bool = False,
+    google_ads_client_secret_configured: bool = False,
+    google_ads_refresh_token_configured: bool = False,
     gcp_project_id: str | None,
     bigquery_dataset: str | None,
     sync_enabled_platforms: str | None,
     refresh_reporting_marts: str | None,
 ) -> LiveSyncReadiness:
-    """Inspect local live sync prerequisites without calling Meta or BigQuery."""
+    """Inspect local live sync prerequisites without calling ad APIs or BigQuery."""
+    if platform not in {"meta_ads", "google_ads"}:
+        raise ValueError("platform must be 'meta_ads' or 'google_ads'.")
     checks: list[dict[str, Any]] = []
     warnings: list[str] = []
     summary: dict[str, Any] = {
-        "platform": "meta_ads",
+        "platform": platform,
         "client_count": 0,
         "enabled_meta_account_count": 0,
+        "enabled_google_account_count": 0,
         "destination_count": 0,
         "report_schedule_count": 0,
         "gcp_project_configured": False,
@@ -148,8 +165,10 @@ def inspect_live_sync_readiness(
     if config is not None:
         config_summary = _summarize_config(config)
         summary.update(config_summary)
-        if not summary["enabled_meta_account_count"]:
+        if platform == "meta_ads" and not summary["enabled_meta_account_count"]:
             warnings.append("no_enabled_meta_accounts")
+        if platform == "google_ads" and not summary["enabled_google_account_count"]:
+            warnings.append("no_enabled_google_accounts")
         bigquery_config = config.get("bigquery", {}) if isinstance(config.get("bigquery"), dict) else {}
         summary["gcp_project_configured"] = bool(gcp_project_id or _optional_str(bigquery_config.get("project_id")))
         summary["bigquery_dataset_configured"] = bool(bigquery_dataset or _optional_str(bigquery_config.get("dataset")))
@@ -157,30 +176,63 @@ def inspect_live_sync_readiness(
         summary["gcp_project_configured"] = bool(gcp_project_id)
         summary["bigquery_dataset_configured"] = bool(bigquery_dataset)
 
-    _add_check(
-        checks,
-        check_id="enabled_meta_accounts_present",
-        ok=summary["enabled_meta_account_count"] > 0,
-        message=(
-            f"{summary['enabled_meta_account_count']} enabled Meta account(s) are configured."
-            if summary["enabled_meta_account_count"]
-            else "No enabled Meta ad accounts found in the local config artifact."
-        ),
-        warnings=warnings,
-        warning_id="no_enabled_meta_accounts",
-    )
-    _add_check(
-        checks,
-        check_id="meta_access_token_configured",
-        ok=meta_access_token_configured,
-        message=(
-            "META_ACCESS_TOKEN is configured."
-            if meta_access_token_configured
-            else "META_ACCESS_TOKEN is required for live Meta sync."
-        ),
-        warnings=warnings,
-        warning_id="meta_access_token_missing",
-    )
+    if platform == "meta_ads":
+        _add_check(
+            checks,
+            check_id="enabled_meta_accounts_present",
+            ok=summary["enabled_meta_account_count"] > 0,
+            message=(
+                f"{summary['enabled_meta_account_count']} enabled Meta account(s) are configured."
+                if summary["enabled_meta_account_count"]
+                else "No enabled Meta ad accounts found in the local config artifact."
+            ),
+            warnings=warnings,
+            warning_id="no_enabled_meta_accounts",
+        )
+        _add_check(
+            checks,
+            check_id="meta_access_token_configured",
+            ok=meta_access_token_configured,
+            message=(
+                "META_ACCESS_TOKEN is configured."
+                if meta_access_token_configured
+                else "META_ACCESS_TOKEN is required for live Meta sync."
+            ),
+            warnings=warnings,
+            warning_id="meta_access_token_missing",
+        )
+    else:
+        _add_check(
+            checks,
+            check_id="enabled_google_accounts_present",
+            ok=summary["enabled_google_account_count"] > 0,
+            message=(
+                f"{summary['enabled_google_account_count']} enabled Google Ads account(s) are configured."
+                if summary["enabled_google_account_count"]
+                else "No enabled Google Ads customers found in the local config artifact."
+            ),
+            warnings=warnings,
+            warning_id="no_enabled_google_accounts",
+        )
+        google_checks = [
+            ("google_ads_developer_token_configured", google_ads_developer_token_configured, "GOOGLE_ADS_DEVELOPER_TOKEN"),
+            ("google_ads_client_id_configured", google_ads_client_id_configured, "GOOGLE_ADS_CLIENT_ID"),
+            ("google_ads_client_secret_configured", google_ads_client_secret_configured, "GOOGLE_ADS_CLIENT_SECRET"),
+            ("google_ads_refresh_token_configured", google_ads_refresh_token_configured, "GOOGLE_ADS_REFRESH_TOKEN"),
+        ]
+        for check_id, ok, env_name in google_checks:
+            _add_check(
+                checks,
+                check_id=check_id,
+                ok=ok,
+                message=(
+                    f"{env_name} is configured."
+                    if ok
+                    else f"{env_name} is required for live Google Ads sync."
+                ),
+                warnings=warnings,
+                warning_id=f"{check_id.removesuffix('_configured')}_missing",
+            )
     _add_check(
         checks,
         check_id="bigquery_project_configured",
@@ -206,20 +258,20 @@ def inspect_live_sync_readiness(
         warning_id="bigquery_dataset_missing",
     )
 
-    sync_platform_ok = not sync_enabled_platforms or "meta_ads" in {
+    sync_platform_ok = not sync_enabled_platforms or platform in {
         platform.strip() for platform in sync_enabled_platforms.split(",") if platform.strip()
     }
     _add_check(
         checks,
-        check_id="sync_platform_filter_allows_meta",
+        check_id=f"sync_platform_filter_allows_{platform}",
         ok=sync_platform_ok,
         message=(
-            "SYNC_ENABLED_PLATFORMS allows Meta sync."
+            f"SYNC_ENABLED_PLATFORMS allows {platform} sync."
             if sync_platform_ok
-            else "SYNC_ENABLED_PLATFORMS must include meta_ads for this live sync."
+            else f"SYNC_ENABLED_PLATFORMS must include {platform} for this live sync."
         ),
         warnings=warnings,
-        warning_id="sync_platform_filter_excludes_meta",
+        warning_id=f"sync_platform_filter_excludes_{platform}",
     )
 
     if summary["refresh_reporting_marts"]:
@@ -231,12 +283,22 @@ def inspect_live_sync_readiness(
         "local_config_export_path_configured",
         "local_config_artifact_exists",
         "local_config_artifact_valid",
-        "enabled_meta_accounts_present",
-        "meta_access_token_configured",
         "bigquery_project_configured",
         "bigquery_dataset_configured",
-        "sync_platform_filter_allows_meta",
+        f"sync_platform_filter_allows_{platform}",
     }
+    if platform == "meta_ads":
+        blocking_checks.update({"enabled_meta_accounts_present", "meta_access_token_configured"})
+    else:
+        blocking_checks.update(
+            {
+                "enabled_google_accounts_present",
+                "google_ads_developer_token_configured",
+                "google_ads_client_id_configured",
+                "google_ads_client_secret_configured",
+                "google_ads_refresh_token_configured",
+            }
+        )
     ready = all(check["ok"] for check in checks if check["id"] in blocking_checks)
     return LiveSyncReadiness(
         ready=ready,
@@ -280,6 +342,7 @@ def _summarize_config(config: dict[str, Any]) -> dict[str, Any]:
     enabled_clients = [client for client in clients if isinstance(client, dict) and client.get("enabled", True)]
     destination_ids: set[str] = set()
     enabled_meta_account_count = 0
+    enabled_google_account_count = 0
     report_schedule_count = 0
     for client in enabled_clients:
         destinations = client.get("destinations") if isinstance(client.get("destinations"), dict) else {}
@@ -292,16 +355,22 @@ def _summarize_config(config: dict[str, Any]) -> dict[str, Any]:
         report_schedule_count += len(schedules)
         platforms = client.get("platforms") if isinstance(client.get("platforms"), dict) else {}
         meta_config = platforms.get("meta_ads") if isinstance(platforms.get("meta_ads"), dict) else {}
-        if not meta_config.get("enabled", False):
-            continue
-        accounts = meta_config.get("accounts") if isinstance(meta_config.get("accounts"), list) else []
-        enabled_meta_account_count += sum(
-            1 for account in accounts if isinstance(account, dict) and account.get("enabled", True) is not False
-        )
+        if meta_config.get("enabled", False):
+            accounts = meta_config.get("accounts") if isinstance(meta_config.get("accounts"), list) else []
+            enabled_meta_account_count += sum(
+                1 for account in accounts if isinstance(account, dict) and account.get("enabled", True) is not False
+            )
+        google_config = platforms.get("google_ads") if isinstance(platforms.get("google_ads"), dict) else {}
+        if google_config.get("enabled", False):
+            accounts = google_config.get("accounts") if isinstance(google_config.get("accounts"), list) else []
+            enabled_google_account_count += sum(
+                1 for account in accounts if isinstance(account, dict) and account.get("enabled", True) is not False
+            )
 
     return {
         "client_count": len(enabled_clients),
         "enabled_meta_account_count": enabled_meta_account_count,
+        "enabled_google_account_count": enabled_google_account_count,
         "destination_count": len(destination_ids),
         "report_schedule_count": report_schedule_count,
     }
