@@ -8,7 +8,7 @@
       color: "blue",
       status: "available",
       connected: false,
-      note: "Current MVP connector",
+      note: "Live sync ready",
     },
     {
       id: "google_ads",
@@ -18,7 +18,7 @@
       color: "google",
       status: "available",
       connected: false,
-      note: "Preview connector",
+      note: "Ready for gated sync",
     },
     {
       id: "ga4",

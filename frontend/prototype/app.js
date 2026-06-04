@@ -153,7 +153,7 @@ function renderSourceHero() {
     els.heroLogo.textContent = "OS";
     els.heroTitle.textContent = "Start with a data source";
     els.heroText.textContent =
-      "Meta Ads supports live sync today. Google Ads is available as the next onboarding preview path.";
+      "Connect Meta Ads or Google Ads, choose the accounts, then send performance data to dashboards and AI reports.";
     els.connectButton.textContent = "Connect";
     return;
   }
@@ -175,7 +175,7 @@ function renderSourceHero() {
   els.heroText.textContent = source.connected
     ? "Choose which ad accounts should be synced into the selected destinations."
     : isAvailable(source)
-      ? "Authorize read access first. The real product will open the platform OAuth flow here."
+      ? "Authorize read access first, then choose the ad accounts for reporting."
       : "This connector is visible in the prototype but not part of the current MVP backend.";
   els.connectButton.textContent = source.connected ? "Reconnect" : "Connect";
 }
@@ -214,11 +214,12 @@ function renderAccounts() {
   els.accountRows.innerHTML = accounts
     .map((account) => {
       const checked = state.selectedAccounts.has(account.id) ? "checked" : "";
+      const details = [account.currency, account.timezone].filter(Boolean).join(" · ") || "Ready for reporting";
       return `
         <tr>
           <td><input class="account-checkbox" type="checkbox" data-account-id="${account.id}" ${checked} /></td>
           <td>${account.name}</td>
-          <td><code>${account.id}</code></td>
+          <td>${escapeHtml(details)}</td>
           <td><span class="account-status">${account.status}</span></td>
         </tr>
       `;

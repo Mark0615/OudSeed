@@ -64,6 +64,7 @@ class OnboardingPrototypeState:
         self._local_config_exporter = local_config_exporter
         self._first_sync_runner = first_sync_runner
         self._state_store = state_store or InMemoryOnboardingStateStore()
+        self._account_id_aliases_by_connector: dict[str, dict[str, str]] = {}
         self._real_meta_loaded = False
         self._email_delivery_lock = threading.Lock()
         self._first_sync_lock = threading.Lock()
@@ -76,6 +77,7 @@ class OnboardingPrototypeState:
             connector["connected"] = False
         if self._use_real_meta:
             self._accounts_by_connector["meta_ads"] = []
+            self._account_id_aliases_by_connector["meta_ads"] = {}
             self._real_meta_loaded = False
         self._state_store.reset()
         return {"ok": True}
@@ -133,7 +135,8 @@ class OnboardingPrototypeState:
 
     def create_connection(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Validate a selection payload and return a local draft handoff."""
-        response = build_config_preview_response(payload)
+        resolved_payload = self._resolve_selection_account_ids(payload)
+        response = build_config_preview_response(resolved_payload)
         account_count = response["config_preview"]["summary"]["account_count"]
         draft_id = self._state_store.next_draft_id()
         draft = {
@@ -145,18 +148,18 @@ class OnboardingPrototypeState:
             "writes_secrets": False,
             "connection_ids": [f"conn_demo_{index + 1}" for index in range(account_count)],
             "config_preview": response["config_preview"],
-            "destination_handoff": _build_destination_handoff(payload),
-            "apply_plan": _build_apply_plan(payload, draft_id),
+            "destination_handoff": _build_destination_handoff(resolved_payload),
+            "apply_plan": _build_apply_plan(resolved_payload, draft_id),
         }
-        sync_job = self._create_first_sync_job(draft_id, payload, account_count)
+        sync_job = self._create_first_sync_job(draft_id, resolved_payload, account_count)
         draft["first_sync_job_id"] = sync_job["sync_job_id"]
-        local_config_export = self._export_local_config_from_selection(payload)
+        local_config_export = self._export_local_config_from_selection(resolved_payload)
         if local_config_export:
             draft["local_config_export"] = local_config_export
         self._state_store.save_connection_draft(
             draft_id,
             {
-                "raw_selection": payload,
+                "raw_selection": resolved_payload,
                 "safe_detail": draft,
             },
         )
@@ -335,8 +338,31 @@ class OnboardingPrototypeState:
             return
         if not self._meta_connector:
             raise ValueError("Real Meta API mode requires META_ACCESS_TOKEN.")
-        self._accounts_by_connector["meta_ads"] = self._meta_connector.fetch_ad_accounts()
+        raw_accounts = self._meta_connector.fetch_ad_accounts()
+        public_accounts, aliases = _public_accounts_with_aliases(raw_accounts, prefix="meta_account")
+        self._accounts_by_connector["meta_ads"] = public_accounts
+        self._account_id_aliases_by_connector["meta_ads"] = aliases
         self._real_meta_loaded = True
+
+    def _resolve_selection_account_ids(self, selection: dict[str, Any]) -> dict[str, Any]:
+        connector_id = _selection_platform(selection)
+        aliases = self._account_id_aliases_by_connector.get(connector_id, {})
+        if not aliases:
+            return selection
+        accounts = selection.get("accounts")
+        if not isinstance(accounts, list):
+            return selection
+        resolved_accounts: list[Any] = []
+        for account in accounts:
+            if not isinstance(account, dict):
+                resolved_accounts.append(account)
+                continue
+            public_id = account.get("external_account_id") or account.get("id")
+            if isinstance(public_id, str) and public_id in aliases:
+                resolved_accounts.append({**account, "external_account_id": aliases[public_id]})
+            else:
+                resolved_accounts.append(account)
+        return {**selection, "accounts": resolved_accounts}
 
     def _create_first_sync_job(self, draft_id: str, payload: dict[str, Any], account_count: int) -> dict[str, Any]:
         sync_job_id = self._state_store.next_sync_job_id()
@@ -1021,6 +1047,24 @@ def _selection_account_ids(selection: dict[str, Any]) -> list[str]:
     return account_ids
 
 
+def _public_accounts_with_aliases(
+    accounts: list[dict[str, Any]],
+    *,
+    prefix: str,
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    public_accounts: list[dict[str, Any]] = []
+    aliases: dict[str, str] = {}
+    for index, account in enumerate(accounts, start=1):
+        if not isinstance(account, dict):
+            continue
+        raw_id = account.get("id")
+        public_id = f"{prefix}_{index:04d}"
+        public_accounts.append({**account, "id": public_id})
+        if isinstance(raw_id, str) and raw_id.strip():
+            aliases[public_id] = raw_id.strip()
+    return public_accounts, aliases
+
+
 def _platform_label(platform: str) -> str:
     return {"meta_ads": "Meta", "google_ads": "Google Ads"}.get(platform, platform)
 
@@ -1035,7 +1079,7 @@ def _default_connectors() -> list[dict[str, Any]]:
             "color": "blue",
             "status": "available",
             "connected": False,
-            "note": "Current MVP connector",
+            "note": "Live sync ready",
         },
         {
             "id": "google_ads",
@@ -1045,7 +1089,7 @@ def _default_connectors() -> list[dict[str, Any]]:
             "color": "google",
             "status": "available",
             "connected": False,
-            "note": "Preview connector",
+            "note": "Ready for gated sync",
         },
         {
             "id": "ga4",

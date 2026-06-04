@@ -681,8 +681,65 @@ def test_onboarding_state_can_use_real_meta_connector_for_accounts() -> None:
 
     assert oauth["status"] == "connected"
     assert accounts["accounts"][0]["name"] == "Real Meta Sample"
+    assert accounts["accounts"][0]["id"] == "meta_account_0001"
+    assert "act_000000000000001" not in json.dumps(accounts)
     assert connectors[0]["data_mode"] == "real_meta_api"
     connector.fetch_ad_accounts.assert_called_once_with()
+
+
+def test_onboarding_state_maps_real_meta_alias_back_for_local_export() -> None:
+    connector = Mock()
+    connector.fetch_ad_accounts.return_value = [
+        {
+            "id": "act_000000000000001",
+            "name": "Real Meta Sample",
+            "currency": "TWD",
+            "timezone": "Asia/Taipei",
+            "status": "Active",
+        }
+    ]
+    exported_selections = []
+
+    def exporter(selection: dict) -> dict:
+        exported_selections.append(selection)
+        return {
+            "output_path": ".local/clients.generated.yaml",
+            "account_count": 1,
+            "destination_count": 1,
+            "destinations": ["bigquery"],
+            "report_schedule_count": 0,
+            "writes_config": False,
+            "writes_secrets": False,
+            "local_artifact_only": True,
+        }
+
+    state = OnboardingPrototypeState(
+        meta_connector=connector,
+        use_real_meta=True,
+        local_config_exporter=exporter,
+    )
+
+    state.complete_oauth("meta_ads")
+    created = state.create_connection(
+        {
+            "workspace_id": "workspace_demo",
+            "connector_id": "meta_ads",
+            "authorization_id": "auth_meta_ads_demo",
+            "client_name": "Real Meta Sample",
+            "accounts": [
+                {
+                    "external_account_id": "meta_account_0001",
+                    "account_name": "Real Meta Sample",
+                }
+            ],
+            "destinations": ["bigquery"],
+        }
+    )
+    output = json.dumps(created)
+
+    assert exported_selections[0]["accounts"][0]["external_account_id"] == "act_000000000000001"
+    assert created["local_config_export"]["account_count"] == 1
+    assert "act_000000000000001" not in output
 
 
 def test_onboarding_state_reset_clears_real_meta_cache_and_local_drafts() -> None:
