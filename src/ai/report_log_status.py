@@ -10,11 +10,14 @@ from typing import Any
 from dotenv import load_dotenv
 from google.cloud import bigquery
 
-from src.ai.generate_report import _first_enabled_client_id, _load_runtime_config, _report_type
+from src.ai.generate_report import (
+    _first_enabled_client_id,
+    _load_runtime_config,
+    _report_type,
+)
 from src.ai.send_account_reports import discover_account_report_groups
 from src.destinations.bigquery import BigQueryDestination
 from src.utils.date_utils import get_default_report_period_start
-
 
 EMAIL_PATTERN = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
 

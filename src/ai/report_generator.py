@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from src.ai.openai_client import OpenAITextClient
 from src.ai.report_context import ReportType
 from src.ai.weekly_report import build_report_prompt
 from src.destinations.bigquery import BigQueryDestination
-
 
 AI_REPORT_LOGS_TABLE = "ai_report_logs"
 
@@ -149,5 +148,5 @@ def _build_report_log(
         "model_name": model_name,
         "status": status,
         "error_message": error_message,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }

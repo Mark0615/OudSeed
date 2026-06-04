@@ -10,18 +10,28 @@ from typing import Any
 from dotenv import load_dotenv
 from google.cloud import bigquery
 
-from src.ai.generate_report import _first_enabled_client_id, _load_runtime_config, _report_type
+from src.ai.generate_report import (
+    _first_enabled_client_id,
+    _load_runtime_config,
+    _report_type,
+)
 from src.ai.openai_client import OpenAITextClient
+from src.ai.report_generator import generate_and_log_report, log_report_delivery_failure
 from src.ai.report_schedules import (
     ReportSchedule,
     find_report_schedule,
     format_report_schedule_lines,
     list_report_schedules,
 )
-from src.ai.report_generator import generate_and_log_report, log_report_delivery_failure
 from src.destinations.bigquery import BigQueryDestination
-from src.notifications.email_delivery import SMTPEmailSender, load_smtp_email_config_from_env
-from src.utils.date_utils import get_default_report_period_start, get_scheduled_report_period_start
+from src.notifications.email_delivery import (
+    SMTPEmailSender,
+    load_smtp_email_config_from_env,
+)
+from src.utils.date_utils import (
+    get_default_report_period_start,
+    get_scheduled_report_period_start,
+)
 
 
 def main() -> None:

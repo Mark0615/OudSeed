@@ -42,6 +42,29 @@ This line describes the original v0.1 target. The repository has since advanced
 past that baseline; use `AGENTS.md` and `docs/productization_status.md` for the
 current productization state.
 
+### 0.1 Productization decision (2026-06-05)
+
+The product goal is now concrete: replace a paid Windsor.ai-style subscription
+and let a few friendly users self-onboard. The data pipeline (Goal 1: Meta/Google
+→ BigQuery → Looker Studio) is largely built and the AI email report (Goal 2)
+exists, so the active main line is **real self-serve onboarding**.
+
+This promotes items that earlier sections of this spec list as future/forbidden
+scope. The current source of truth for scope is `AGENTS.md` ("Product direction").
+Summary of decisions:
+
+- Platform login: Google sign-in. Ad-account auth: dev-mode self-serve OAuth
+  (Meta + Google in development/test mode; early users added as testers, no App
+  Review yet).
+- Hosting/storage: GCP — Cloud Run web app + Cloud SQL (Postgres) or Firestore +
+  Secret Manager for encrypted tokens. Multi-tenancy via existing
+  `workspace_id`/`client_id` columns.
+- AI model stays OpenAI `gpt-5.2`. Report format acceptable; polish only.
+- Still deferred: LINE Ads, LINE delivery, payment/billing, Google Sheets export.
+
+Where older sections below say "do not implement OAuth / SaaS login / production
+frontend", treat that as historical sequencing, superseded by this note.
+
 ---
 
 ## 1. 專案資訊

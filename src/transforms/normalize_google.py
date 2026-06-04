@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -12,7 +12,7 @@ def normalize_google_ads_rows(raw_rows: list[dict], context: dict) -> list[dict]
     client_id = _required_context(context, "client_id")
     account_id = _required_context(context, "account_id")
     account_name = context.get("account_name")
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     normalized_rows: list[dict] = []
 
     for raw_row in raw_rows:

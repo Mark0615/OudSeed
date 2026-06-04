@@ -13,7 +13,6 @@ from src.destinations.bigquery import BigQueryDestination
 from src.utils.config_loader import load_config, load_config_from_yaml
 from src.utils.date_utils import get_default_report_period_start
 
-
 DEFAULT_CONFIG_PATH = "config/clients.yaml"
 
 

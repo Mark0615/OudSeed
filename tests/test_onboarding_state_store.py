@@ -6,7 +6,10 @@ import json
 
 import pytest
 
-from src.onboarding.state_store import InMemoryOnboardingStateStore, JsonFileOnboardingStateStore
+from src.onboarding.state_store import (
+    InMemoryOnboardingStateStore,
+    JsonFileOnboardingStateStore,
+)
 
 
 def test_in_memory_onboarding_state_store_generates_local_ids() -> None:

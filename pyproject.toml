@@ -1,0 +1,15 @@
+[tool.ruff]
+# Spec floor is Python 3.11+; lint against that baseline.
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Pragmatic gate: real-bug and import-hygiene rules.
+# E501 (line length) is intentionally left out for now to avoid churning
+# ~500 existing long lines; revisit once the team agrees on a wrap width.
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]

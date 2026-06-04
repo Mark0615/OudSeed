@@ -8,9 +8,8 @@ from typing import Any, Literal
 
 from google.cloud import bigquery
 
-from src.destinations.bigquery import BigQueryDestination
 from src.ai.report_diagnostics import build_report_diagnostics
-
+from src.destinations.bigquery import BigQueryDestination
 
 ReportType = Literal["weekly", "monthly"]
 

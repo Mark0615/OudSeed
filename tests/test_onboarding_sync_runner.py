@@ -6,7 +6,11 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from src.onboarding.sync_runner import LocalGoogleAdsSyncRunner, LocalMetaSyncRunner, LocalPlatformSyncRunner
+from src.onboarding.sync_runner import (
+    LocalGoogleAdsSyncRunner,
+    LocalMetaSyncRunner,
+    LocalPlatformSyncRunner,
+)
 
 
 def sample_selection() -> dict[str, Any]:

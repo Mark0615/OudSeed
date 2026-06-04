@@ -6,7 +6,6 @@ from typing import Any
 
 import requests
 
-
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 
 

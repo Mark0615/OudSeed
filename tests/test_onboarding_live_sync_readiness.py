@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 
 from src.onboarding.config_bridge import export_local_clients_config
-from src.onboarding.live_sync_readiness import build_live_sync_readiness_from_env, inspect_live_sync_readiness
+from src.onboarding.live_sync_readiness import (
+    build_live_sync_readiness_from_env,
+    inspect_live_sync_readiness,
+)
 
 
 def sample_selection() -> dict:

@@ -6,7 +6,6 @@ from typing import Any
 
 from google.cloud import bigquery
 
-
 LOGGER = logging.getLogger(__name__)
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -22,7 +21,16 @@ class BigQueryDestination:
     ) -> None:
         self.project_id = project_id
         self.dataset_id = dataset_id
-        self.client = client or bigquery.Client(project=project_id)
+        # Lazily construct the client so building this object does not require
+        # GCP credentials (e.g. in CI). An injected client is used as-is.
+        self._client = client
+
+    @property
+    def client(self) -> bigquery.Client:
+        """Return the BigQuery client, creating one on first use if needed."""
+        if self._client is None:
+            self._client = bigquery.Client(project=self.project_id)
+        return self._client
 
     def insert_rows(self, table_name: str, rows: list[dict]) -> int:
         """Insert JSON rows into a BigQuery table and return inserted count."""

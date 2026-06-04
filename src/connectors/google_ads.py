@@ -6,7 +6,6 @@ from typing import Any
 
 from src.connectors.base import BaseAdsConnector
 
-
 AD_LEVEL_QUERY = """
 SELECT
   segments.date,
