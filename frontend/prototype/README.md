@@ -23,6 +23,18 @@ This reads `META_ACCESS_TOKEN` locally and calls Meta's `/me/adaccounts` endpoin
 after the prototype authorization step. It does not store tokens, print tokens,
 or write `config/clients.yaml`.
 
+To test real Google Ads customer discovery with local Google Ads credentials:
+
+```bash
+make onboarding-prototype-real-google
+```
+
+This reads local Google Ads environment credentials, lists accessible customers
+after the prototype authorization step, and returns only local account aliases
+to the browser. Finishing setup can export the selected real customer IDs to
+the ignored `.local/clients.generated.yaml` artifact, but this target keeps live
+sync execution disabled.
+
 To keep local connection drafts and first-sync state after restarting the
 prototype server, run:
 

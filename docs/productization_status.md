@@ -316,3 +316,16 @@ make onboarding-prototype-real-meta
 
 This uses `META_ACCESS_TOKEN` from local `.env` only when explicitly enabled.
 It does not change deployed Cloud Run jobs, Secret Manager, or `config/clients.yaml`.
+
+Real Google Ads customer discovery can be tested locally with:
+
+```bash
+make onboarding-prototype-real-google
+```
+
+This uses local Google Ads environment credentials only when explicitly enabled.
+It lists accessible Google Ads customers through the prototype flow, returns
+only local aliases to the browser, and can export the selected real customer IDs
+to the ignored `.local/clients.generated.yaml` artifact. It keeps live sync
+execution disabled; run `make onboarding-google-live-sync-ready` before any
+confirmed Google Ads write path.

@@ -751,6 +751,87 @@ def test_onboarding_state_maps_real_meta_alias_back_for_local_export() -> None:
     assert "act_000000000000001" not in output
 
 
+def test_onboarding_state_can_use_real_google_connector_for_accounts() -> None:
+    connector = Mock()
+    connector.fetch_customer_accounts.return_value = [
+        {
+            "id": "1234567890",
+            "name": "Real Google Ads Sample",
+            "currency": "TWD",
+            "timezone": "Asia/Taipei",
+            "status": "Ready",
+        }
+    ]
+    state = OnboardingPrototypeState(google_connector=connector, use_real_google_ads=True)
+
+    oauth = state.complete_oauth("google_ads")
+    accounts = state.list_accounts("google_ads", authorization_id="auth_google_ads_demo")
+    connectors = state.list_connectors()["connectors"]
+    google_connector = next(connector for connector in connectors if connector["id"] == "google_ads")
+
+    assert oauth["status"] == "connected"
+    assert accounts["accounts"][0]["name"] == "Real Google Ads Sample"
+    assert accounts["accounts"][0]["id"] == "google_account_0001"
+    assert "1234567890" not in json.dumps(accounts)
+    assert google_connector["data_mode"] == "real_google_ads_api"
+    connector.fetch_customer_accounts.assert_called_once_with()
+
+
+def test_onboarding_state_maps_real_google_alias_back_for_local_export() -> None:
+    connector = Mock()
+    connector.fetch_customer_accounts.return_value = [
+        {
+            "id": "1234567890",
+            "name": "Real Google Ads Sample",
+            "currency": "TWD",
+            "timezone": "Asia/Taipei",
+            "status": "Ready",
+        }
+    ]
+    exported_selections = []
+
+    def exporter(selection: dict) -> dict:
+        exported_selections.append(selection)
+        return {
+            "output_path": ".local/clients.generated.yaml",
+            "account_count": 1,
+            "destination_count": 1,
+            "destinations": ["bigquery"],
+            "report_schedule_count": 0,
+            "writes_config": False,
+            "writes_secrets": False,
+            "local_artifact_only": True,
+        }
+
+    state = OnboardingPrototypeState(
+        google_connector=connector,
+        use_real_google_ads=True,
+        local_config_exporter=exporter,
+    )
+
+    state.complete_oauth("google_ads")
+    created = state.create_connection(
+        {
+            "workspace_id": "workspace_demo",
+            "connector_id": "google_ads",
+            "authorization_id": "auth_google_ads_demo",
+            "client_name": "Real Google Ads Sample",
+            "accounts": [
+                {
+                    "external_account_id": "google_account_0001",
+                    "account_name": "Real Google Ads Sample",
+                }
+            ],
+            "destinations": ["bigquery"],
+        }
+    )
+    output = json.dumps(created)
+
+    assert exported_selections[0]["accounts"][0]["external_account_id"] == "1234567890"
+    assert created["local_config_export"]["account_count"] == 1
+    assert "1234567890" not in output
+
+
 def test_onboarding_state_reset_clears_real_meta_cache_and_local_drafts() -> None:
     connector = Mock()
     connector.fetch_ad_accounts.return_value = [

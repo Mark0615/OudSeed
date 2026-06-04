@@ -294,6 +294,12 @@ Ads accounts into `.local/clients.generated.yaml`, but it does not create a
 first-sync runner. Use `make onboarding-google-live-sync-ready` after the
 artifact is generated.
 
+For real Google Ads customer discovery, `make onboarding-prototype-real-google`
+also sets `ONBOARDING_USE_REAL_GOOGLE_ADS=true`. It uses local Google Ads
+credentials to list accessible customers after the prototype authorization step,
+returns local aliases to the browser, and maps those aliases back to real
+customer IDs only inside the ignored local config artifact and sync state.
+
 For end-to-end local product testing, `make onboarding-prototype-live-sync`
 starts the prototype with `ONBOARDING_ENABLE_LOCAL_SYNC_RUN=true`. In that mode,
 the second first-sync poll exports the selected draft into the local config

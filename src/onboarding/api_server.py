@@ -18,6 +18,7 @@ from urllib.parse import unquote, urlparse
 from dotenv import load_dotenv
 from google.cloud import bigquery
 
+from src.connectors.google_ads import GoogleAdsConnector
 from src.connectors.meta_ads import MetaAdsConnector
 from src.destinations.bigquery import BigQueryDestination
 from src.onboarding.config_bridge import (
@@ -46,7 +47,9 @@ class OnboardingPrototypeState:
     def __init__(
         self,
         *,
+        google_connector: GoogleAdsConnector | None = None,
         meta_connector: MetaAdsConnector | None = None,
+        use_real_google_ads: bool = False,
         use_real_meta: bool = False,
         backend_status_reader: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         email_report_sender: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
@@ -57,7 +60,9 @@ class OnboardingPrototypeState:
         self._connectors = _default_connectors()
         self._accounts_by_connector = _default_accounts_by_connector()
         self._destinations = _default_destinations()
+        self._google_connector = google_connector
         self._meta_connector = meta_connector
+        self._use_real_google_ads = use_real_google_ads
         self._use_real_meta = use_real_meta
         self._backend_status_reader = backend_status_reader
         self._email_report_sender = email_report_sender
@@ -66,10 +71,13 @@ class OnboardingPrototypeState:
         self._state_store = state_store or InMemoryOnboardingStateStore()
         self._account_id_aliases_by_connector: dict[str, dict[str, str]] = {}
         self._real_meta_loaded = False
+        self._real_google_ads_loaded = False
         self._email_delivery_lock = threading.Lock()
         self._first_sync_lock = threading.Lock()
         if use_real_meta:
             self._mark_real_meta_mode()
+        if use_real_google_ads:
+            self._mark_real_google_ads_mode()
 
     def reset(self) -> dict[str, Any]:
         """Reset prototype authorization state."""
@@ -79,6 +87,10 @@ class OnboardingPrototypeState:
             self._accounts_by_connector["meta_ads"] = []
             self._account_id_aliases_by_connector["meta_ads"] = {}
             self._real_meta_loaded = False
+        if self._use_real_google_ads:
+            self._accounts_by_connector["google_ads"] = []
+            self._account_id_aliases_by_connector["google_ads"] = {}
+            self._real_google_ads_loaded = False
         self._state_store.reset()
         return {"ok": True}
 
@@ -116,6 +128,8 @@ class OnboardingPrototypeState:
         connector["connected"] = True
         if connector_id == "meta_ads" and self._use_real_meta:
             self._load_real_meta_accounts()
+        if connector_id == "google_ads" and self._use_real_google_ads:
+            self._load_real_google_ads_accounts()
         return {
             "authorization_id": f"auth_{connector_id}_demo",
             "connector_id": connector_id,
@@ -131,6 +145,8 @@ class OnboardingPrototypeState:
             raise ValueError("Unknown authorization_id.")
         if connector_id == "meta_ads" and self._use_real_meta:
             self._load_real_meta_accounts()
+        if connector_id == "google_ads" and self._use_real_google_ads:
+            self._load_real_google_ads_accounts()
         return {"accounts": self._accounts_by_connector.get(connector_id, [])}
 
     def create_connection(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -333,6 +349,12 @@ class OnboardingPrototypeState:
             connector["note"] = "Real Meta API via local token"
             connector["data_mode"] = "real_meta_api"
 
+    def _mark_real_google_ads_mode(self) -> None:
+        connector = self._find_connector("google_ads")
+        if connector:
+            connector["note"] = "Real Google Ads API via local credentials"
+            connector["data_mode"] = "real_google_ads_api"
+
     def _load_real_meta_accounts(self) -> None:
         if self._real_meta_loaded:
             return
@@ -343,6 +365,17 @@ class OnboardingPrototypeState:
         self._accounts_by_connector["meta_ads"] = public_accounts
         self._account_id_aliases_by_connector["meta_ads"] = aliases
         self._real_meta_loaded = True
+
+    def _load_real_google_ads_accounts(self) -> None:
+        if self._real_google_ads_loaded:
+            return
+        if not self._google_connector:
+            raise ValueError("Real Google Ads API mode requires Google Ads credentials.")
+        raw_accounts = self._google_connector.fetch_customer_accounts()
+        public_accounts, aliases = _public_accounts_with_aliases(raw_accounts, prefix="google_account")
+        self._accounts_by_connector["google_ads"] = public_accounts
+        self._account_id_aliases_by_connector["google_ads"] = aliases
+        self._real_google_ads_loaded = True
 
     def _resolve_selection_account_ids(self, selection: dict[str, Any]) -> dict[str, Any]:
         connector_id = _selection_platform(selection)
@@ -1245,13 +1278,17 @@ def _parse_args() -> argparse.Namespace:
 
 def _state_from_env() -> OnboardingPrototypeState:
     use_real_meta = _truthy(os.getenv("ONBOARDING_USE_REAL_META"))
+    use_real_google_ads = _truthy(os.getenv("ONBOARDING_USE_REAL_GOOGLE_ADS"))
     backend_status_reader = _backend_status_reader_from_env()
     email_report_sender = _email_report_sender_from_env()
     local_config_exporter = _local_config_exporter_from_env()
     first_sync_runner = _first_sync_runner_from_env()
     state_store = _state_store_from_env()
+    google_connector = _google_connector_from_env() if use_real_google_ads else None
     if not use_real_meta:
         return OnboardingPrototypeState(
+            google_connector=google_connector,
+            use_real_google_ads=use_real_google_ads,
             backend_status_reader=backend_status_reader,
             email_report_sender=email_report_sender,
             local_config_exporter=local_config_exporter,
@@ -1270,13 +1307,41 @@ def _state_from_env() -> OnboardingPrototypeState:
         timeout_seconds=timeout_seconds,
     )
     return OnboardingPrototypeState(
+        google_connector=google_connector,
         meta_connector=connector,
+        use_real_google_ads=use_real_google_ads,
         use_real_meta=True,
         backend_status_reader=backend_status_reader,
         email_report_sender=email_report_sender,
         local_config_exporter=local_config_exporter,
         first_sync_runner=first_sync_runner,
         state_store=state_store,
+    )
+
+
+def _google_connector_from_env() -> GoogleAdsConnector:
+    developer_token = os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN", "").strip()
+    client_id = os.getenv("GOOGLE_ADS_CLIENT_ID", "").strip()
+    client_secret = os.getenv("GOOGLE_ADS_CLIENT_SECRET", "").strip()
+    refresh_token = os.getenv("GOOGLE_ADS_REFRESH_TOKEN", "").strip()
+    missing = [
+        name
+        for name, value in [
+            ("GOOGLE_ADS_DEVELOPER_TOKEN", developer_token),
+            ("GOOGLE_ADS_CLIENT_ID", client_id),
+            ("GOOGLE_ADS_CLIENT_SECRET", client_secret),
+            ("GOOGLE_ADS_REFRESH_TOKEN", refresh_token),
+        ]
+        if not value
+    ]
+    if missing:
+        raise ValueError(f"ONBOARDING_USE_REAL_GOOGLE_ADS=true requires {', '.join(missing)}.")
+    return GoogleAdsConnector(
+        developer_token=developer_token,
+        client_id=client_id,
+        client_secret=client_secret,
+        refresh_token=refresh_token,
+        login_customer_id=os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID", "").strip() or None,
     )
 
 
