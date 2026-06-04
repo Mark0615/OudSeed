@@ -341,3 +341,14 @@ only local aliases to the browser, and can export the selected real customer IDs
 to the ignored `.local/clients.generated.yaml` artifact. It keeps live sync
 execution disabled; run `make onboarding-google-live-sync-ready` before any
 confirmed Google Ads write path.
+
+Real Meta and Google Ads account discovery can be tested together with:
+
+```bash
+make onboarding-prototype-real-sources
+```
+
+This enables both read-only account discovery paths, persistent local onboarding
+state, and `.local/clients.generated.yaml` export. It does not enable the live
+sync runner, so selected accounts can be reviewed and readiness-checked before
+any confirmed BigQuery write path.

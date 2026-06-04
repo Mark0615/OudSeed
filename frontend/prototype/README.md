@@ -35,6 +35,17 @@ to the browser. Finishing setup can export the selected real customer IDs to
 the ignored `.local/clients.generated.yaml` artifact, but this target keeps live
 sync execution disabled.
 
+To test real Meta and Google Ads account discovery in one local prototype run:
+
+```bash
+make onboarding-prototype-real-sources
+```
+
+This enables both real source discovery paths, persistent local state, and
+`.local/clients.generated.yaml` export. It does not enable the live sync runner,
+so finishing setup can prepare the ignored local artifact without writing
+BigQuery rows.
+
 To keep local connection drafts and first-sync state after restarting the
 prototype server, run:
 
