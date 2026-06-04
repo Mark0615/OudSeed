@@ -273,27 +273,14 @@
 
     liveSyncReadiness() {
       return apiRequest("/api/onboarding/live-sync-readiness", undefined, () => {
+        const metaReadiness = staticReadiness("meta_ads");
+        const googleReadiness = staticReadiness("google_ads");
         return delay({
           ok: true,
-          live_sync_readiness: {
-            ready: false,
-            writes_bigquery: true,
-            config_path: null,
-            checks: [
-              {
-                id: "local_config_artifact_exists",
-                ok: false,
-                message: "Local API is required to create a local sync artifact.",
-              },
-            ],
-            summary: {
-              platform: "meta_ads",
-              client_count: 0,
-              enabled_meta_account_count: 0,
-              destination_count: 0,
-              report_schedule_count: 0,
-            },
-            warnings: ["static_mock_no_local_artifact"],
+          live_sync_readiness: metaReadiness,
+          platform_readiness: {
+            meta_ads: metaReadiness,
+            google_ads: googleReadiness,
           },
         });
       });
@@ -432,6 +419,30 @@
     if (value && !values.includes(value)) {
       values.push(value);
     }
+  }
+
+  function staticReadiness(platform) {
+    return {
+      ready: false,
+      writes_bigquery: true,
+      config_path: null,
+      checks: [
+        {
+          id: "local_config_artifact_exists",
+          ok: false,
+          message: "Local API is required to create a local sync artifact.",
+        },
+      ],
+      summary: {
+        platform,
+        client_count: 0,
+        enabled_meta_account_count: 0,
+        enabled_google_account_count: 0,
+        destination_count: 0,
+        report_schedule_count: 0,
+      },
+      warnings: ["static_mock_no_local_artifact"],
+    };
   }
 
   function buildConfigPreview(payload) {

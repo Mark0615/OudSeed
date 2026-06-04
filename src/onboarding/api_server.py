@@ -222,7 +222,11 @@ class OnboardingPrototypeState:
 
     def live_sync_readiness(self) -> dict[str, Any]:
         """Return safe local live-sync readiness metadata."""
-        return {"ok": True, "live_sync_readiness": build_live_sync_readiness_from_env()}
+        return {
+            "ok": True,
+            "live_sync_readiness": build_live_sync_readiness_from_env(),
+            "platform_readiness": _build_platform_live_sync_readiness(),
+        }
 
     def get_apply_plan(self, draft_id: str) -> dict[str, Any]:
         """Return the sanitized apply plan for a local draft."""
@@ -1482,6 +1486,15 @@ def _local_config_exporter_from_env() -> Callable[[dict[str, Any]], dict[str, An
         return format_local_export_summary(export_local_clients_config(selection, Path(export_path)))
 
     return export
+
+
+def _build_platform_live_sync_readiness() -> dict[str, Any]:
+    platform_readiness: dict[str, Any] = {}
+    for platform in ("meta_ads", "google_ads"):
+        platform_env = dict(os.environ)
+        platform_env["ONBOARDING_LIVE_SYNC_PLATFORM"] = platform
+        platform_readiness[platform] = build_live_sync_readiness_from_env(platform_env)
+    return platform_readiness
 
 
 def _first_sync_runner_from_env() -> OnboardingFirstSyncRunner | None:

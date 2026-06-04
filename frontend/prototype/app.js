@@ -540,7 +540,7 @@ async function createConnection() {
   stopSyncPolling();
   const result = await api.createConnection(payload);
   const readinessResponse = await api.liveSyncReadiness().catch(() => null);
-  state.liveSyncReadiness = readinessResponse?.live_sync_readiness || null;
+  state.liveSyncReadiness = readinessResponse?.platform_readiness || readinessResponse?.live_sync_readiness || null;
   state.currentSyncJobId = result.first_sync_job?.sync_job_id || null;
   renderConnectionResult(payload, result, state.liveSyncReadiness);
   await refreshConnections();
@@ -893,10 +893,21 @@ function renderLiveSyncReadiness(readiness) {
   if (!readiness) {
     return "";
   }
+  if (readiness.meta_ads || readiness.google_ads) {
+    return ["meta_ads", "google_ads"]
+      .filter((platform) => readiness[platform])
+      .map((platform) => renderSingleLiveSyncReadiness(readiness[platform]))
+      .join("");
+  }
+  return renderSingleLiveSyncReadiness(readiness);
+}
+
+function renderSingleLiveSyncReadiness(readiness) {
   const failedChecks = (readiness.checks || []).filter((check) => !check.ok);
   const summary = readiness.summary || {};
   const accountCount = Number(summary.enabled_meta_account_count || summary.enabled_google_account_count || 0);
-  const platformLabel = readiness.platform === "google_ads" ? "Google Ads" : "Meta";
+  const platform = summary.platform || "meta_ads";
+  const platformLabel = platform === "google_ads" ? "Google Ads" : "Meta";
   const details = readiness.ready
     ? `${formatCount(accountCount)} selected ${platformLabel} account${accountCount === 1 ? "" : "s"} ready for the guarded live sync path.`
     : failedChecks.slice(0, 3).map((check) => escapeHtml(readinessCheckLabel(check.id))).join(", ") || "Readiness has not passed yet.";

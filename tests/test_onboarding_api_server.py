@@ -658,6 +658,10 @@ def test_onboarding_state_live_sync_readiness_is_safe(monkeypatch, tmp_path) -> 
     assert response["live_sync_readiness"]["ready"] is True
     assert response["live_sync_readiness"]["writes_bigquery"] is True
     assert response["live_sync_readiness"]["summary"]["enabled_meta_account_count"] == 1
+    assert response["platform_readiness"]["meta_ads"]["ready"] is True
+    assert response["platform_readiness"]["meta_ads"]["summary"]["platform"] == "meta_ads"
+    assert response["platform_readiness"]["google_ads"]["ready"] is False
+    assert response["platform_readiness"]["google_ads"]["summary"]["platform"] == "google_ads"
     assert "act_demo_1001" not in output
 
 
