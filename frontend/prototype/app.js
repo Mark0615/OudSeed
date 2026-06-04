@@ -1054,10 +1054,16 @@ function readinessCheckLabel(checkId) {
     local_config_artifact_exists: "Local sync file",
     local_config_artifact_valid: "Local sync file validation",
     enabled_meta_accounts_present: "Selected Meta accounts",
+    enabled_google_accounts_present: "Selected Google Ads accounts",
     meta_access_token_configured: "Meta access token",
+    google_ads_developer_token_configured: "Google Ads developer token",
+    google_ads_client_id_configured: "Google Ads client ID",
+    google_ads_client_secret_configured: "Google Ads client secret",
+    google_ads_refresh_token_configured: "Google Ads refresh token",
     bigquery_project_configured: "BigQuery project",
     bigquery_dataset_configured: "BigQuery dataset",
     sync_platform_filter_allows_meta: "Meta sync filter",
+    sync_platform_filter_allows_google_ads: "Google Ads sync filter",
   }[checkId] || checkId || "Readiness check";
 }
 

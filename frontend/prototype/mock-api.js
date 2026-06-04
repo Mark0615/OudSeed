@@ -451,6 +451,8 @@
 
   function buildApplyPlan(payload, draftId) {
     const selectedDestinations = payload.destinations || [];
+    const platform = payload.connector_id === "google_ads" ? "google_ads" : "meta_ads";
+    const platformLabel = platform === "google_ads" ? "Google Ads" : "Meta";
     const steps = [
       {
         id: "review_config_preview",
@@ -463,9 +465,9 @@
         label: "Promote selected accounts into managed config after review.",
       },
       {
-        id: "run_meta_sync_preflight",
+        id: `run_${platform}_sync_preflight`,
         status: "ready_after_config",
-        label: "Run Meta sync readiness against the selected account group.",
+        label: `Run ${platformLabel} sync readiness against the selected account group.`,
       },
     ];
     if (selectedDestinations.includes("looker_studio")) {
@@ -510,6 +512,7 @@
       checks: 0,
       account_count: payload.accounts.length,
       destinations: payload.destinations || [],
+      platform: payload.connector_id === "google_ads" ? "google_ads" : "meta_ads",
       message: "First sync is queued.",
       email_delivery: null,
     };
@@ -546,12 +549,14 @@
       steps: syncJobSteps(job.status, job.destinations),
     };
     if (job.status === "completed") {
+      const platformLabel = job.platform === "google_ads" ? "Google Ads" : "Meta";
       syncJob.backend_data_check = {
         status: "healthy",
         source: "prototype",
         checked_at: new Date().toISOString(),
-        message: "Latest Meta sync data is visible in BigQuery and dashboard views.",
+        message: `Latest ${platformLabel} sync data is visible in BigQuery and dashboard views.`,
         scope: {
+          platform: job.platform,
           selected_account_count: job.account_count,
           selected_accounts_scoped: true,
         },

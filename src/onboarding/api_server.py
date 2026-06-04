@@ -347,6 +347,7 @@ class OnboardingPrototypeState:
             "progress_percent": 10,
             "checks": 0,
             "account_count": account_count,
+            "platform": _selection_platform(payload),
             "destinations": _selection_destinations(payload),
             "message": "First sync is queued.",
             "selected_account_ids": _selection_account_ids(payload),
@@ -659,6 +660,8 @@ def _build_destination_handoff(selection: dict[str, Any]) -> dict[str, Any]:
 
 def _build_apply_plan(selection: dict[str, Any], draft_id: str) -> dict[str, Any]:
     destinations = _selection_destinations(selection)
+    platform = _selection_platform(selection)
+    platform_label = _platform_label(platform)
     steps = [
         {
             "id": "review_config_preview",
@@ -671,9 +674,9 @@ def _build_apply_plan(selection: dict[str, Any], draft_id: str) -> dict[str, Any
             "label": "Promote selected accounts into managed config after review.",
         },
         {
-            "id": "run_meta_sync_preflight",
+            "id": f"run_{platform}_sync_preflight",
             "status": "ready_after_config",
-            "label": "Run Meta sync readiness against the selected account group.",
+            "label": f"Run {platform_label} sync readiness against the selected account group.",
         },
     ]
     if "looker_studio" in destinations:
@@ -792,6 +795,11 @@ def _build_bigquery_status_reader(project_id: str, dataset_id: str) -> Callable[
     destination = BigQueryDestination(project_id=project_id, dataset_id=dataset_id)
 
     def read_status(sync_job: dict[str, Any]) -> dict[str, Any]:
+        platform = str(sync_job.get("platform") or "meta_ads")
+        if platform not in {"meta_ads", "google_ads"}:
+            platform = "meta_ads"
+        platform_label = _platform_label(platform)
+        raw_table = "raw_google_ads_daily" if platform == "google_ads" else "raw_meta_ads_daily"
         selected_account_ids = [
             str(account_id)
             for account_id in sync_job.get("selected_account_ids", [])
@@ -799,11 +807,13 @@ def _build_bigquery_status_reader(project_id: str, dataset_id: str) -> Callable[
         ]
         sync_account_clause = ""
         row_count_account_clause = ""
-        account_parameters: list[bigquery.ScalarQueryParameter | bigquery.ArrayQueryParameter] = []
+        base_parameters: list[bigquery.ScalarQueryParameter | bigquery.ArrayQueryParameter] = [
+            bigquery.ScalarQueryParameter("platform", "STRING", platform),
+        ]
         if selected_account_ids:
             sync_account_clause = "AND account_id IN UNNEST(@account_ids)"
             row_count_account_clause = "AND account_id IN UNNEST(@account_ids)"
-            account_parameters.append(bigquery.ArrayQueryParameter("account_ids", "STRING", selected_account_ids))
+            base_parameters.append(bigquery.ArrayQueryParameter("account_ids", "STRING", selected_account_ids))
 
         latest_sync_rows = destination.query_rows(
             f"""
@@ -814,38 +824,38 @@ def _build_bigquery_status_reader(project_id: str, dataset_id: str) -> Callable[
               CAST(sync_start_date AS STRING) AS sync_start_date,
               CAST(sync_end_date AS STRING) AS sync_end_date
             FROM `{destination._table_id("sync_logs")}`
-            WHERE platform = 'meta_ads'
+            WHERE platform = @platform
               {sync_account_clause}
             ORDER BY finished_at DESC
             LIMIT 1
             """,
-            query_parameters=account_parameters,
+            query_parameters=base_parameters,
         )
         if not latest_sync_rows:
             return {
                 "status": "no_data",
                 "source": "bigquery",
                 "checked_at": _utc_now(),
-                "message": "No Meta sync logs found yet for the selected accounts.",
+                "message": f"No {platform_label} sync logs found yet for the selected accounts.",
                 "latest_sync": None,
                 "destinations": {},
-                "warnings": ["no_selected_account_meta_sync_logs"],
+                "warnings": [f"no_selected_account_{platform}_sync_logs"],
             }
 
         latest_sync = latest_sync_rows[0]
         start_date = str(latest_sync["sync_start_date"])
         end_date = str(latest_sync["sync_end_date"])
         parameters: list[bigquery.ScalarQueryParameter | bigquery.ArrayQueryParameter] = [
+            *base_parameters,
             bigquery.ScalarQueryParameter("start_date", "DATE", start_date),
             bigquery.ScalarQueryParameter("end_date", "DATE", end_date),
-            *account_parameters,
         ]
         raw_count = _single_count(
             destination,
             f"""
             SELECT COUNT(*) AS row_count
-            FROM `{destination._table_id("raw_meta_ads_daily")}`
-            WHERE platform = 'meta_ads'
+            FROM `{destination._table_id(raw_table)}`
+            WHERE platform = @platform
               AND date BETWEEN @start_date AND @end_date
               {row_count_account_clause}
             """,
@@ -856,7 +866,7 @@ def _build_bigquery_status_reader(project_id: str, dataset_id: str) -> Callable[
             f"""
             SELECT COUNT(*) AS row_count
             FROM `{destination._table_id("unified_ads_daily")}`
-            WHERE platform = 'meta_ads'
+            WHERE platform = @platform
               AND date BETWEEN @start_date AND @end_date
               {row_count_account_clause}
             """,
@@ -867,7 +877,7 @@ def _build_bigquery_status_reader(project_id: str, dataset_id: str) -> Callable[
             f"""
             SELECT COUNT(*) AS row_count
             FROM `{destination._table_id("vw_looker_ads_ad_daily")}`
-            WHERE platform = 'meta_ads'
+            WHERE platform = @platform
               AND date BETWEEN @start_date AND @end_date
               {row_count_account_clause}
             """,
@@ -878,7 +888,7 @@ def _build_bigquery_status_reader(project_id: str, dataset_id: str) -> Callable[
             f"""
             SELECT COUNT(*) AS row_count
             FROM `{destination._table_id("vw_looker_ads_campaign_daily")}`
-            WHERE platform = 'meta_ads'
+            WHERE platform = @platform
               AND date BETWEEN @start_date AND @end_date
               {row_count_account_clause}
             """,
@@ -896,8 +906,9 @@ def _build_bigquery_status_reader(project_id: str, dataset_id: str) -> Callable[
             "status": "healthy" if healthy else "needs_attention",
             "source": "bigquery",
             "checked_at": _utc_now(),
-            "message": "Latest Meta sync data is visible in BigQuery and Looker-facing views.",
+            "message": f"Latest {platform_label} sync data is visible in BigQuery and Looker-facing views.",
             "scope": {
+                "platform": platform,
                 "selected_account_count": len(selected_account_ids),
                 "selected_accounts_scoped": bool(selected_account_ids),
             },
@@ -920,7 +931,7 @@ def _build_bigquery_status_reader(project_id: str, dataset_id: str) -> Callable[
                     "campaign_daily_rows": campaign_daily_count,
                 },
             },
-            "warnings": [] if healthy else ["latest_meta_sync_not_healthy"],
+            "warnings": [] if healthy else [f"latest_{platform}_sync_not_healthy"],
         }
 
     return read_status
@@ -985,18 +996,33 @@ def _selection_destinations(selection: dict[str, Any]) -> list[str]:
     return [destination for destination in destinations if isinstance(destination, str)]
 
 
+def _selection_platform(selection: dict[str, Any]) -> str:
+    connector_id = selection.get("connector_id")
+    if connector_id in {"meta_ads", "google_ads"}:
+        return str(connector_id)
+    return "meta_ads"
+
+
 def _selection_account_ids(selection: dict[str, Any]) -> list[str]:
     accounts = selection.get("accounts")
     if not isinstance(accounts, list):
         return []
+    platform = _selection_platform(selection)
     account_ids: list[str] = []
     for account in accounts:
         if not isinstance(account, dict):
             continue
         account_id = account.get("external_account_id") or account.get("id")
         if isinstance(account_id, str) and account_id.strip():
-            account_ids.append(account_id.strip())
+            value = account_id.strip()
+            if platform == "google_ads":
+                value = value.replace("-", "")
+            account_ids.append(value)
     return account_ids
+
+
+def _platform_label(platform: str) -> str:
+    return {"meta_ads": "Meta", "google_ads": "Google Ads"}.get(platform, platform)
 
 
 def _default_connectors() -> list[dict[str, Any]]:

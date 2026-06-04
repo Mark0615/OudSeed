@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 from unittest.mock import Mock
 
+from src.onboarding import api_server
 from src.onboarding.api_server import (
     OnboardingPrototypeState,
+    _build_bigquery_status_reader,
     _first_sync_runner_from_env,
     _local_config_exporter_from_env,
     _state_store_from_env,
@@ -279,6 +281,48 @@ def test_onboarding_state_attaches_backend_data_check_when_ready_for_sync() -> N
     assert ready["sync_job"]["backend_data_check"]["latest_sync"]["rows_inserted"] == 3
     assert ready["sync_job"]["backend_data_check"]["scope"]["selected_account_count"] == 1
     assert "act_demo_1001" not in output
+
+
+def test_bigquery_status_reader_uses_google_platform_without_exposing_ids(monkeypatch) -> None:
+    class FakeDestination:
+        instances: list["FakeDestination"] = []
+
+        def __init__(self, project_id: str, dataset_id: str) -> None:
+            self.project_id = project_id
+            self.dataset_id = dataset_id
+            self.queries: list[str] = []
+            FakeDestination.instances.append(self)
+
+        def _table_id(self, table_name: str) -> str:
+            return f"{self.project_id}.{self.dataset_id}.{table_name}"
+
+        def query_rows(self, sql: str, query_parameters=None):  # noqa: ANN001 - mirrors BigQueryDestination.
+            self.queries.append(sql)
+            if "sync_logs" in sql:
+                return [
+                    {
+                        "status": "success",
+                        "rows_fetched": 5,
+                        "rows_inserted": 5,
+                        "sync_start_date": "2026-05-30",
+                        "sync_end_date": "2026-05-30",
+                    }
+                ]
+            return [{"row_count": 5}]
+
+    monkeypatch.setattr(api_server, "BigQueryDestination", FakeDestination)
+    reader = _build_bigquery_status_reader(project_id="oudseed", dataset_id="ads_pipeline")
+
+    status = reader({"platform": "google_ads", "selected_account_ids": ["1234567890"]})
+    output = json.dumps(status)
+    queries = "\n".join(FakeDestination.instances[0].queries)
+
+    assert status["status"] == "healthy"
+    assert status["message"] == "Latest Google Ads sync data is visible in BigQuery and Looker-facing views."
+    assert status["scope"]["platform"] == "google_ads"
+    assert "raw_google_ads_daily" in queries
+    assert "WHERE platform = @platform" in queries
+    assert "1234567890" not in output
 
 
 def test_onboarding_state_refreshes_backend_data_check_when_ready_for_sync() -> None:
