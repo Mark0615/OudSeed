@@ -161,6 +161,7 @@ class OnboardingPrototypeState:
             "status": "draft",
             "created_at": _utc_now(),
             "account_group_name": str(resolved_payload.get("client_name") or "Selected account"),
+            "connector_id": _selection_platform(resolved_payload),
             "initial_sync": _selection_initial_sync(resolved_payload),
             "local_draft_only": True,
             "writes_config": False,
@@ -208,13 +209,15 @@ class OnboardingPrototypeState:
 
     def list_account_connections(self) -> dict[str, Any]:
         """Return safe summaries for locally created account connections."""
+        connections = [
+            _public_connection_summary(draft["safe_detail"])
+            for draft in self._state_store.list_connection_drafts()
+            if isinstance(draft.get("safe_detail"), dict)
+        ]
         return {
             "ok": True,
-            "connections": [
-                _public_connection_summary(draft["safe_detail"])
-                for draft in self._state_store.list_connection_drafts()
-                if isinstance(draft.get("safe_detail"), dict)
-            ],
+            "connections": connections,
+            "connection_groups": _public_connection_group_summaries(connections),
         }
 
     def live_sync_readiness(self) -> dict[str, Any]:
@@ -852,6 +855,7 @@ def _public_connection_summary(draft: dict[str, Any]) -> dict[str, Any]:
         "status": draft.get("status", "draft"),
         "created_at": draft.get("created_at"),
         "first_sync_job_id": draft.get("first_sync_job_id"),
+        "connector_id": str(draft.get("connector_id") or "unknown"),
         "account_group_name": str(draft.get("account_group_name") or "Selected account"),
         "initial_sync": draft.get("initial_sync") if isinstance(draft.get("initial_sync"), dict) else {"sync_days_back": 7},
         "connection_count": len(draft.get("connection_ids", [])),
@@ -864,6 +868,74 @@ def _public_connection_summary(draft: dict[str, Any]) -> dict[str, Any]:
         "writes_secrets": bool(draft.get("writes_secrets", False)),
         **({"local_config_export": draft["local_config_export"]} if "local_config_export" in draft else {}),
     }
+
+
+def _public_connection_group_summaries(connections: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    for connection in connections:
+        group_name = str(connection.get("account_group_name") or "Selected account")
+        group = groups.setdefault(
+            group_name,
+            {
+                "account_group_name": group_name,
+                "connection_count": 0,
+                "account_count": 0,
+                "platforms": [],
+                "destinations": [],
+                "first_sync_job_ids": [],
+                "initial_sync": {"sync_days_back": 7},
+                "destination_statuses": {},
+                "report_schedule": None,
+                "local_draft_only": True,
+                "writes_config": False,
+                "writes_secrets": False,
+            },
+        )
+        group["connection_count"] += int(connection.get("connection_count") or 0)
+        group["account_count"] += int(connection.get("account_count") or 0)
+        _append_unique(group["platforms"], str(connection.get("connector_id") or "unknown"))
+        for destination in connection.get("destinations", []) or []:
+            if isinstance(destination, str):
+                _append_unique(group["destinations"], destination)
+        sync_days_back = _safe_int(
+            connection.get("initial_sync", {}).get("sync_days_back")
+            if isinstance(connection.get("initial_sync"), dict)
+            else None,
+            default=7,
+        )
+        group["initial_sync"]["sync_days_back"] = max(group["initial_sync"]["sync_days_back"], sync_days_back)
+        first_sync_job_id = connection.get("first_sync_job_id")
+        if isinstance(first_sync_job_id, str) and first_sync_job_id:
+            group["first_sync_job_ids"].append(first_sync_job_id)
+        if connection.get("report_schedule") and not group.get("report_schedule"):
+            group["report_schedule"] = connection["report_schedule"]
+        group["local_draft_only"] = group["local_draft_only"] and bool(connection.get("local_draft_only", True))
+        group["writes_config"] = group["writes_config"] or bool(connection.get("writes_config", False))
+        group["writes_secrets"] = group["writes_secrets"] or bool(connection.get("writes_secrets", False))
+        _merge_destination_statuses(group["destination_statuses"], connection.get("destination_statuses", {}))
+        if connection.get("local_config_export"):
+            group["local_config_export"] = connection["local_config_export"]
+    return list(groups.values())
+
+
+def _append_unique(values: list[str], value: str) -> None:
+    if value and value not in values:
+        values.append(value)
+
+
+def _merge_destination_statuses(target: dict[str, str], source: Any) -> None:
+    if not isinstance(source, dict):
+        return
+    for destination_id, status in source.items():
+        if isinstance(destination_id, str) and isinstance(status, str):
+            target[destination_id] = status
+
+
+def _safe_int(value: Any, *, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _backend_status_disabled() -> dict[str, Any]:

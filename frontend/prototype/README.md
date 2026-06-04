@@ -61,7 +61,8 @@ When the export path is configured, finishing setup auto-exports the local
 artifact for the selected accounts. The artifact is rebuilt from all local
 connection drafts, so you can finish a Meta setup and then a Google Ads setup;
 when both use the same report/client name, they are merged into one client in
-`.local/clients.generated.yaml`.
+`.local/clients.generated.yaml`. The Connected setups list uses the same grouped
+client view and shows the selected source platforms together.
 
 For the same persistent prototype flow focused on Google Ads readiness, run:
 

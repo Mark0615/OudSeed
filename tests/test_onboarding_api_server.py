@@ -254,6 +254,7 @@ def test_onboarding_state_lists_created_account_connections_without_sensitive_id
     connection = response["connections"][0]
     assert connection["draft_id"] == "draft_demo_0001"
     assert connection["first_sync_job_id"] == "sync_demo_0001"
+    assert connection["connector_id"] == "meta_ads"
     assert connection["account_group_name"] == "Demo Shop Taiwan"
     assert connection["initial_sync"]["sync_days_back"] == 30
     assert connection["account_count"] == 1
@@ -264,7 +265,36 @@ def test_onboarding_state_lists_created_account_connections_without_sensitive_id
     assert connection["local_draft_only"] is True
     assert connection["writes_config"] is False
     assert connection["writes_secrets"] is False
+    assert response["connection_groups"][0]["account_group_name"] == "Demo Shop Taiwan"
+    assert response["connection_groups"][0]["platforms"] == ["meta_ads"]
     assert "act_demo_1001" not in output
+
+
+def test_onboarding_state_groups_connections_by_account_group_name() -> None:
+    state = OnboardingPrototypeState()
+    google_payload = sample_google_connection_payload()
+    google_payload["client_name"] = "Demo Shop Taiwan"
+    google_payload["accounts"][0]["account_name"] = "Demo Shop Taiwan"
+    google_payload["destinations"] = ["bigquery", "looker_studio", "ai_report_email"]
+
+    state.create_connection(sample_connection_payload())
+    state.create_connection(google_payload)
+    response = state.list_account_connections()
+    output = json.dumps(response)
+
+    assert len(response["connections"]) == 2
+    assert len(response["connection_groups"]) == 1
+    group = response["connection_groups"][0]
+    assert group["account_group_name"] == "Demo Shop Taiwan"
+    assert group["platforms"] == ["meta_ads", "google_ads"]
+    assert group["account_count"] == 2
+    assert group["connection_count"] == 2
+    assert group["destinations"] == ["looker_studio", "ai_report_email", "bigquery"]
+    assert group["initial_sync"]["sync_days_back"] == 30
+    assert group["report_schedule"]["report_type"] == "weekly"
+    assert group["first_sync_job_ids"] == ["sync_demo_0001", "sync_demo_0002"]
+    assert "act_demo_1001" not in output
+    assert "1234567890" not in output
 
 
 def test_onboarding_state_first_sync_job_advances_without_sensitive_ids() -> None:

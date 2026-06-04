@@ -1272,6 +1272,44 @@ code {
   min-width: 0;
 }
 
+.connection-main {
+  align-content: center;
+}
+
+.platform-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.platform-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 8px;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  border-radius: 999px;
+  background: #f8fafc;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.platform-chip.blue {
+  border-color: rgba(37, 99, 235, 0.18);
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.platform-chip.google {
+  border-color: rgba(22, 163, 74, 0.18);
+  background: #f0fdf4;
+  color: #15803d;
+}
+
 .connection-card strong,
 .connection-card span {
   overflow-wrap: anywhere;
@@ -1286,6 +1324,20 @@ code {
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
+}
+
+.connection-card .platform-chip {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.connection-card .platform-chip.blue {
+  color: #1d4ed8;
+}
+
+.connection-card .platform-chip.google {
+  color: #15803d;
 }
 
 .developer-details {

@@ -175,6 +175,10 @@ for created connections. It returns safe account group names, account counts,
 enabled destinations, destination statuses, report schedule metadata, initial
 import range metadata, and first-sync job ids, but not external ad account ids,
 recipients, tokens, or raw selections.
+The response also includes grouped client summaries. The frontend uses those
+groups for the Connected setups list, so Meta and Google Ads drafts with the
+same safe client/report name appear as one client with multiple source
+platforms.
 
 For longer local product tests, the prototype can persist draft/sync-job state
 with:

@@ -236,6 +236,7 @@
           status: "draft",
           created_at: new Date().toISOString(),
           account_group_name: payload.client_name || "Selected account",
+          connector_id: payload.connector_id,
           initial_sync: normalizeInitialSync(payload),
           local_draft_only: true,
           writes_config: false,
@@ -261,9 +262,11 @@
 
     listAccountConnections() {
       return apiRequest("/api/account-connections", undefined, () => {
+        const connections = Object.values(connectionDrafts).map(publicConnectionSummary);
         return delay({
           ok: true,
-          connections: Object.values(connectionDrafts).map(publicConnectionSummary),
+          connections,
+          connection_groups: publicConnectionGroups(connections),
         });
       });
     },
@@ -353,6 +356,7 @@
       status: draft.status,
       created_at: draft.created_at,
       first_sync_job_id: draft.first_sync_job_id,
+      connector_id: draft.connector_id || "unknown",
       account_group_name: draft.account_group_name || "Selected account",
       initial_sync: draft.initial_sync || { sync_days_back: 7 },
       connection_count: draft.connection_ids.length,
@@ -376,6 +380,58 @@
       writes_config: false,
       writes_secrets: false,
     };
+  }
+
+  function publicConnectionGroups(connections) {
+    const groups = {};
+    connections.forEach((connection) => {
+      const groupName = connection.account_group_name || "Selected account";
+      if (!groups[groupName]) {
+        groups[groupName] = {
+          account_group_name: groupName,
+          connection_count: 0,
+          account_count: 0,
+          platforms: [],
+          destinations: [],
+          first_sync_job_ids: [],
+          initial_sync: { sync_days_back: 7 },
+          destination_statuses: {},
+          report_schedule: null,
+          local_draft_only: true,
+          writes_config: false,
+          writes_secrets: false,
+        };
+      }
+      const group = groups[groupName];
+      group.connection_count += Number(connection.connection_count || 0);
+      group.account_count += Number(connection.account_count || 0);
+      appendUnique(group.platforms, connection.connector_id || "unknown");
+      (connection.destinations || []).forEach((destinationId) => appendUnique(group.destinations, destinationId));
+      group.initial_sync.sync_days_back = Math.max(
+        group.initial_sync.sync_days_back,
+        Number(connection.initial_sync?.sync_days_back || 7)
+      );
+      if (connection.first_sync_job_id) {
+        group.first_sync_job_ids.push(connection.first_sync_job_id);
+      }
+      if (connection.report_schedule && !group.report_schedule) {
+        group.report_schedule = connection.report_schedule;
+      }
+      group.local_draft_only = group.local_draft_only && Boolean(connection.local_draft_only);
+      group.writes_config = group.writes_config || Boolean(connection.writes_config);
+      group.writes_secrets = group.writes_secrets || Boolean(connection.writes_secrets);
+      Object.assign(group.destination_statuses, connection.destination_statuses || {});
+      if (connection.local_config_export) {
+        group.local_config_export = connection.local_config_export;
+      }
+    });
+    return Object.values(groups);
+  }
+
+  function appendUnique(values, value) {
+    if (value && !values.includes(value)) {
+      values.push(value);
+    }
   }
 
   function buildConfigPreview(payload) {
