@@ -259,6 +259,18 @@ runner now enforces the same safe readiness checks used by
 `make onboarding-live-sync-ready`; if required local config, Meta token, or
 BigQuery settings are missing, it stops before calling Meta or writing BigQuery.
 
+Google Ads can use the same local prototype first-sync polling flow with:
+
+```bash
+make onboarding-prototype-google-live-sync
+```
+
+This sets `ONBOARDING_LIVE_SYNC_PLATFORM=google_ads`, exports the selected
+Google Ads customers to the ignored local artifact, enforces the Google-specific
+readiness gate, and only then runs the Google Ads sync subprocess. It calls
+Google Ads and writes/replaces BigQuery rows after readiness passes, so it
+remains an opt-in write path.
+
 The prototype also creates a local first-sync job status and polls it from the
 frontend. This models the product experience of queued, running, and completed
 sync states without automatically executing Cloud Run or writing BigQuery from

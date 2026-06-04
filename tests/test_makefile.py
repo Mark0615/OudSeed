@@ -19,6 +19,7 @@ def test_makefile_includes_account_report_ops_targets() -> None:
     assert "ai-report-verify:" in makefile
     assert "onboarding-prototype-persistent:" in makefile
     assert "onboarding-prototype-live-sync:" in makefile
+    assert "onboarding-prototype-google-live-sync:" in makefile
     assert "onboarding-live-sync-ready:" in makefile
     assert "onboarding-google-live-sync-ready:" in makefile
     assert "onboarding-sync-local-config:" in makefile

@@ -293,6 +293,14 @@ artifact, runs the Meta sync entrypoint, and returns only safe execution
 metadata to the browser. This mode calls Meta and writes/replaces BigQuery rows,
 so it remains opt-in.
 
+For Google Ads product testing, `make onboarding-prototype-google-live-sync`
+starts the same prototype polling flow with
+`ONBOARDING_LIVE_SYNC_PLATFORM=google_ads`. The runner exports the selected
+Google Ads customers into the ignored local artifact, enforces the Google live
+sync readiness gate, and only then runs the Google Ads sync entrypoint. This
+mode calls Google Ads and writes/replaces BigQuery rows after readiness passes,
+so it remains opt-in.
+
 ### Inspect First Sync Status
 
 ```http
@@ -510,4 +518,5 @@ API-shaped JSON command:
   Google Sheets remain visibly future-facing unless explicitly implemented.
 - Google Ads local live-sync readiness is available as a safe gate; the actual
   Google Ads write path still requires explicit credential/customer validation
-  and user confirmation through `make onboarding-google-sync-local-config`.
+  and user confirmation through `make onboarding-google-sync-local-config` or
+  `make onboarding-prototype-google-live-sync`.

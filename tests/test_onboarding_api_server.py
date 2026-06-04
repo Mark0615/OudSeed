@@ -569,7 +569,21 @@ def test_first_sync_runner_from_env_uses_local_runner(monkeypatch, tmp_path) -> 
 
     assert runner is not None
     assert runner.config_path == output_path
+    assert runner.platform == "meta_ads"
     assert runner.timeout_seconds == 321
+
+
+def test_first_sync_runner_from_env_uses_google_platform(monkeypatch, tmp_path) -> None:
+    output_path = tmp_path / "clients.generated.yaml"
+    monkeypatch.setenv("ONBOARDING_ENABLE_LOCAL_SYNC_RUN", "true")
+    monkeypatch.setenv("ONBOARDING_LOCAL_CONFIG_EXPORT_PATH", str(output_path))
+    monkeypatch.setenv("ONBOARDING_LIVE_SYNC_PLATFORM", "google_ads")
+
+    runner = _first_sync_runner_from_env()
+
+    assert runner is not None
+    assert runner.config_path == output_path
+    assert runner.platform == "google_ads"
 
 
 def test_first_sync_runner_from_env_requires_local_config_export_path(monkeypatch) -> None:

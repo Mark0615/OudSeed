@@ -31,7 +31,7 @@ from src.onboarding.state_store import (
     JsonFileOnboardingStateStore,
     OnboardingStateStore,
 )
-from src.onboarding.sync_runner import LocalMetaSyncRunner, OnboardingFirstSyncRunner
+from src.onboarding.sync_runner import LocalPlatformSyncRunner, OnboardingFirstSyncRunner
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -1234,7 +1234,9 @@ def _first_sync_runner_from_env() -> OnboardingFirstSyncRunner | None:
     config_path = os.getenv("ONBOARDING_LOCAL_CONFIG_EXPORT_PATH", "").strip()
     if not config_path:
         raise ValueError("ONBOARDING_ENABLE_LOCAL_SYNC_RUN=true requires ONBOARDING_LOCAL_CONFIG_EXPORT_PATH.")
-    return LocalMetaSyncRunner(
+    platform = os.getenv("ONBOARDING_LIVE_SYNC_PLATFORM", "").strip() or "meta_ads"
+    return LocalPlatformSyncRunner(
+        platform=platform,
         config_path=Path(config_path),
         repo_root=REPO_ROOT,
         python_bin=os.getenv("ONBOARDING_LOCAL_SYNC_PYTHON", sys.executable),

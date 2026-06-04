@@ -86,6 +86,16 @@ browser receives only safe execution metadata, not sync logs or account IDs.
 The runner enforces the same readiness gate as `make onboarding-live-sync-ready`
 before it starts the subprocess.
 
+For the same prototype polling flow with Google Ads selected, use:
+
+```bash
+make onboarding-prototype-google-live-sync
+```
+
+This sets `ONBOARDING_LIVE_SYNC_PLATFORM=google_ads` so the first-sync runner
+exports the selected Google Ads customers, enforces the Google readiness gate,
+then runs the Google Ads sync subprocess only after readiness passes.
+
 Current prototype scope:
 
 - Select an ad/data platform.
@@ -127,6 +137,8 @@ Current prototype scope:
   `make onboarding-sync-local-config`.
 - Optionally enable live first-sync execution in the prototype with
   `make onboarding-prototype-live-sync`.
+- Optionally enable Google Ads live first-sync execution in the prototype with
+  `make onboarding-prototype-google-live-sync`.
 
 This prototype intentionally does not implement real OAuth, token storage, user login, or SaaS account management.
 
