@@ -236,6 +236,7 @@
           status: "draft",
           created_at: new Date().toISOString(),
           account_group_name: payload.client_name || "Selected account",
+          initial_sync: normalizeInitialSync(payload),
           local_draft_only: true,
           writes_config: false,
           writes_secrets: false,
@@ -353,6 +354,7 @@
       created_at: draft.created_at,
       first_sync_job_id: draft.first_sync_job_id,
       account_group_name: draft.account_group_name || "Selected account",
+      initial_sync: draft.initial_sync || { sync_days_back: 7 },
       connection_count: draft.connection_ids.length,
       account_count: summary.account_count || 0,
       destinations: summary.destinations || [],
@@ -389,6 +391,7 @@
       account_count: payload.accounts.length,
       destinations: payload.destinations,
       report_schedule_count: payload.report_schedule ? 1 : 0,
+      sync_days_back: normalizeInitialSync(payload).sync_days_back,
     };
     return {
       summary,
@@ -398,6 +401,7 @@
         `account_count=${payload.accounts.length}`,
         `destinations=${payload.destinations.join(",")}`,
         `report_schedule_count=${payload.report_schedule ? 1 : 0}`,
+        `sync_days_back=${normalizeInitialSync(payload).sync_days_back}`,
         ...warnings.map((warning) => `warning=${warning}`),
       ],
       warnings,
@@ -514,6 +518,7 @@
       checks: 0,
       account_count: payload.accounts.length,
       destinations: payload.destinations || [],
+      initial_sync: normalizeInitialSync(payload),
       platform: payload.connector_id === "google_ads" ? "google_ads" : "meta_ads",
       message: "First sync is queued.",
       email_delivery: null,
@@ -545,6 +550,7 @@
       summary: {
         account_count: job.account_count,
         destinations: job.destinations,
+        sync_days_back: job.initial_sync?.sync_days_back || 7,
         writes_config: false,
         local_prototype: true,
       },
@@ -597,11 +603,12 @@
 
   function buildPreviewYaml(payload) {
     const clientName = payload.client_name || payload.accounts[0]?.account_name || "Onboarding Preview Client";
+    const syncDaysBack = normalizeInitialSync(payload).sync_days_back;
     const lines = [
       "workspace_id: workspace_demo",
       "defaults:",
       "  timezone: Asia/Taipei",
-      "  sync_days_back: 7",
+      `  sync_days_back: ${syncDaysBack}`,
       "  attribution_setting: platform_default",
       "  timezone_setting: platform_account_default",
       "  conversion_action_type: purchase",
@@ -682,5 +689,14 @@
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "_")
       .replace(/^_+|_+$/g, "") || "onboarding_preview";
+  }
+
+  function normalizeInitialSync(payload) {
+    const rawValue = payload.initial_sync?.sync_days_back ?? payload.sync_days_back ?? 7;
+    const numericValue = Number.parseInt(rawValue, 10);
+    const syncDaysBack = Number.isFinite(numericValue)
+      ? Math.min(Math.max(numericValue, 0), 365)
+      : 7;
+    return { sync_days_back: syncDaysBack };
   }
 })();

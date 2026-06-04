@@ -698,10 +698,18 @@ code {
   padding: 16px;
 }
 
+.import-settings {
+  background: #fbfcff;
+}
+
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
+}
+
+.settings-grid.compact {
+  grid-template-columns: minmax(180px, 260px);
 }
 
 .summary-bar {

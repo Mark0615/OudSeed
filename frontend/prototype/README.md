@@ -141,6 +141,9 @@ Current prototype scope:
   while platform account IDs remain hidden.
 - Show connected setups by the safe account group name plus account count and
   outputs, not by platform account identifiers.
+- Let users choose the initial import range, currently 7, 14, 30, or 90 days.
+  The selected range feeds `initial_sync.sync_days_back` and the generated local
+  clients config default.
 - Show a user-facing completion state after setup, focused on connected source,
   selected accounts, output readiness, report schedule, and whether recent
   performance data is available.

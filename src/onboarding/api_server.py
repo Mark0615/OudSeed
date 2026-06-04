@@ -160,6 +160,7 @@ class OnboardingPrototypeState:
             "status": "draft",
             "created_at": _utc_now(),
             "account_group_name": str(resolved_payload.get("client_name") or "Selected account"),
+            "initial_sync": _selection_initial_sync(resolved_payload),
             "local_draft_only": True,
             "writes_config": False,
             "writes_secrets": False,
@@ -412,6 +413,7 @@ class OnboardingPrototypeState:
             "message": "First sync is queued.",
             "selected_account_ids": _selection_account_ids(payload),
             "account_group_name": str(payload.get("client_name") or "Selected account"),
+            "initial_sync": _selection_initial_sync(payload),
             "report_schedule": payload.get("report_schedule") if isinstance(payload.get("report_schedule"), dict) else {},
         }
         self._state_store.save_sync_job(sync_job_id, job)
@@ -782,6 +784,7 @@ def _public_sync_job(job: dict[str, Any]) -> dict[str, Any]:
         "summary": {
             "account_count": job["account_count"],
             "destinations": destinations,
+            "sync_days_back": job.get("initial_sync", {}).get("sync_days_back", 7),
             "writes_config": False,
             "local_prototype": True,
         },
@@ -828,6 +831,7 @@ def _public_connection_summary(draft: dict[str, Any]) -> dict[str, Any]:
         "created_at": draft.get("created_at"),
         "first_sync_job_id": draft.get("first_sync_job_id"),
         "account_group_name": str(draft.get("account_group_name") or "Selected account"),
+        "initial_sync": draft.get("initial_sync") if isinstance(draft.get("initial_sync"), dict) else {"sync_days_back": 7},
         "connection_count": len(draft.get("connection_ids", [])),
         "account_count": config_summary.get("account_count", 0),
         "destinations": destinations if isinstance(destinations, list) else [],
@@ -1080,6 +1084,21 @@ def _selection_account_ids(selection: dict[str, Any]) -> list[str]:
                 value = value.replace("-", "")
             account_ids.append(value)
     return account_ids
+
+
+def _selection_initial_sync(selection: dict[str, Any]) -> dict[str, int]:
+    initial_sync = selection.get("initial_sync")
+    raw_value: Any = None
+    if isinstance(initial_sync, dict):
+        raw_value = initial_sync.get("sync_days_back")
+    if raw_value is None:
+        raw_value = selection.get("sync_days_back")
+    try:
+        days_back = int(raw_value) if raw_value is not None else 7
+    except (TypeError, ValueError):
+        days_back = 7
+    days_back = min(max(days_back, 0), 365)
+    return {"sync_days_back": days_back}
 
 
 def _public_accounts_with_aliases(

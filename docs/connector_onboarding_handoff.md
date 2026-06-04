@@ -188,6 +188,9 @@ Request:
       "account_name": "Demo Shop Taiwan"
     }
   ],
+  "initial_sync": {
+    "sync_days_back": 30
+  },
   "destinations": ["looker_studio", "ai_report_email", "bigquery"]
 }
 ```
@@ -210,7 +213,8 @@ Response:
       "client_count": 1,
       "account_count": 1,
       "destinations": ["looker_studio", "ai_report_email"],
-      "report_schedule_count": 1
+      "report_schedule_count": 1,
+      "sync_days_back": 30
     },
     "warnings": [],
     "yaml_text": "sanitized clients.yaml preview"

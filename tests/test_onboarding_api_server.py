@@ -29,6 +29,7 @@ def sample_connection_payload() -> dict:
                 "account_name": "Demo Shop Taiwan",
             }
         ],
+        "initial_sync": {"sync_days_back": 30},
         "destinations": ["looker_studio", "ai_report_email", "bigquery"],
         "report_schedule": {
             "report_type": "weekly",
@@ -211,6 +212,7 @@ def test_onboarding_state_lists_created_account_connections_without_sensitive_id
     assert connection["draft_id"] == "draft_demo_0001"
     assert connection["first_sync_job_id"] == "sync_demo_0001"
     assert connection["account_group_name"] == "Demo Shop Taiwan"
+    assert connection["initial_sync"]["sync_days_back"] == 30
     assert connection["account_count"] == 1
     assert connection["connection_count"] == 1
     assert connection["destinations"] == ["looker_studio", "ai_report_email", "bigquery"]
@@ -235,6 +237,7 @@ def test_onboarding_state_first_sync_job_advances_without_sensitive_ids() -> Non
     assert ready["sync_job"]["status"] == "ready_for_sync"
     assert ready["sync_job"]["progress_percent"] == 100
     assert ready["sync_job"]["summary"]["account_count"] == 1
+    assert ready["sync_job"]["summary"]["sync_days_back"] == 30
     assert [step["id"] for step in ready["sync_job"]["steps"]] == [
         "source_connected",
         "warehouse_sync",
