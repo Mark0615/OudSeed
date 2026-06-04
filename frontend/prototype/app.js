@@ -112,8 +112,13 @@ function renderSources() {
 
   els.sourceCount.textContent = `${filtered.length} shown`;
   const realMetaEnabled = sources.some((source) => source.id === "meta_ads" && source.data_mode === "real_meta_api");
-  if (realMetaEnabled) {
+  const realGoogleEnabled = sources.some((source) => source.id === "google_ads" && source.data_mode === "real_google_ads_api");
+  if (realMetaEnabled && realGoogleEnabled) {
+    els.runtimePill.textContent = "Local API + Real Sources";
+  } else if (realMetaEnabled) {
     els.runtimePill.textContent = "Local API + Real Meta";
+  } else if (realGoogleEnabled) {
+    els.runtimePill.textContent = "Local API + Real Google";
   }
   els.platformList.innerHTML =
     filtered
@@ -516,14 +521,15 @@ function renderConnectionResult(payload, result, liveSyncReadiness) {
     .filter((destination) => summary.destinations.includes(destination.id))
     .map((destination) => destination.name);
   els.connectionResult.hidden = false;
-  els.connectionStatus.textContent = userSyncStatus(result.first_sync_job?.status || result.next_sync_status);
+  els.connectionStatus.textContent = userSetupStatus(result.first_sync_job?.status || result.next_sync_status);
   els.handoffSummary.innerHTML = renderSelectedAccountPreview(source, selectedAccounts, summary);
   els.payloadPreview.textContent = JSON.stringify(sanitizePayloadForDisplay(payload), null, 2);
   els.nextActions.innerHTML = renderUserSetupPreview(
     result.destination_handoff,
     payload,
     selectedAccounts,
-    destinationNames
+    destinationNames,
+    result.first_sync_job
   );
   els.developerStatus.innerHTML = renderDeveloperStatus(
     result.first_sync_job,
@@ -547,7 +553,7 @@ function renderConnections() {
     .map((connection) => {
       const destinationNames = (connection.destinations || []).map(destinationLabel).join(", ");
       const reportSchedule = connection.report_schedule
-        ? `${connection.report_schedule.report_type} · ${connection.report_schedule.timezone}`
+        ? reportScheduleLabel(connection.report_schedule)
         : "Not scheduled";
       return `
         <article class="connection-card">
@@ -560,8 +566,8 @@ function renderConnections() {
             <strong>${reportSchedule}</strong>
           </div>
           <div>
-            <span>Status</span>
-            <strong>${connection.first_sync_job_id ? "Ready" : "Draft"}</strong>
+            <span>Next</span>
+            <strong>${connection.first_sync_job_id ? "First sync" : "Review"}</strong>
           </div>
         </article>
       `;
@@ -574,7 +580,7 @@ function clearConnectionResult() {
   state.currentSyncJobId = null;
   state.liveSyncReadiness = null;
   els.connectionResult.hidden = true;
-  els.connectionStatus.textContent = "Not queued";
+  els.connectionStatus.textContent = "Ready";
   els.handoffSummary.innerHTML = "";
   els.payloadPreview.textContent = "";
   els.nextActions.innerHTML = "";
@@ -616,33 +622,99 @@ function renderSelectedAccountPreview(source, selectedAccounts, summary) {
   `;
 }
 
-function renderUserSetupPreview(destinationHandoff, payload, selectedAccounts, destinationNames) {
+function renderUserSetupPreview(destinationHandoff, payload, selectedAccounts, destinationNames, syncJob) {
   if (!destinationHandoff) {
     return `<p class="muted-copy">Finish setup to prepare your selected destinations.</p>`;
   }
-  const destinationsMarkup = Object.entries(destinationHandoff.destinations || {})
-    .map(([destinationId, handoff]) => {
-      return `
-        <article class="handoff-destination">
-          <strong>${destinationLabel(destinationId)}</strong>
-          <span>${userDestinationStatus(destinationId, handoff)}</span>
-          <p>${userDestinationCopy(destinationId, handoff, payload)}</p>
-        </article>
-      `;
-    })
-    .join("");
+  const destinationsMarkup = renderDestinationOutputPreview(destinationHandoff, payload, destinationNames);
   const accountNames = selectedAccounts.map((account) => account.name);
   const accountSummary = accountNames.length > 0
     ? accountNames.slice(0, 3).map(escapeHtml).join(", ") + (accountNames.length > 3 ? ` and ${accountNames.length - 3} more` : "")
     : "Selected ad accounts";
   return `
-    <div class="handoff-destinations">${destinationsMarkup}</div>
+    ${renderCustomerDataPreview(syncJob, selectedAccounts)}
+    <div class="handoff-destinations output-preview-grid">${destinationsMarkup}</div>
     ${renderReportSchedulePreview(payload)}
     <div class="setup-next-step">
-      <strong>What happens next</strong>
+      <strong>Next visible result</strong>
       <p>${accountSummary} is ready to import into ${escapeHtml(destinationNames.join(", ") || "the selected destinations")}. After the first data sync, dashboard and report outputs become available.</p>
     </div>
   `;
+}
+
+function renderCustomerDataPreview(syncJob, selectedAccounts) {
+  const dataCheck = syncJob?.backend_data_check;
+  const syncExecution = syncJob?.sync_execution;
+  const latest = dataCheck?.latest_sync || {};
+  const rowsInserted = Number(latest.rows_inserted || 0);
+  const rowsFetched = Number(latest.rows_fetched || 0);
+  const accountCount = selectedAccounts.length || Number(syncJob?.summary?.account_count || 0);
+  const completed = syncJob?.status === "completed";
+  const readyForSync = syncJob?.status === "ready_for_sync";
+  let title = "Waiting for first data import";
+  let description = `${formatCount(accountCount)} selected account${accountCount === 1 ? "" : "s"} will be checked during the first sync.`;
+  let meta = "No performance data preview yet";
+  let variant = "pending";
+
+  if (completed && dataCheck?.status === "healthy" && rowsInserted > 0) {
+    title = "Recent performance data found";
+    description = `${formatCount(rowsInserted)} daily performance record${rowsInserted === 1 ? "" : "s"} are available for the selected accounts.`;
+    meta = backendSyncPeriod(latest);
+    variant = "ready";
+  } else if (completed && (dataCheck?.status === "no_data" || rowsInserted === 0)) {
+    title = "No recent performance data found";
+    description = `${formatCount(accountCount)} account${accountCount === 1 ? "" : "s"} connected, but no rows were returned for the latest sync window.`;
+    meta = latest.sync_start_date ? backendSyncPeriod(latest) : `${formatCount(rowsFetched)} records returned`;
+    variant = "empty";
+  } else if (readyForSync) {
+    title = "Ready for first data import";
+    description = "Account selection is saved. The first sync can run after the live-write gate is approved.";
+    meta = "Dashboard and report previews appear after sync";
+  } else if (syncJob?.status === "running") {
+    title = "Importing performance data";
+    description = "OudSeed is fetching the selected account data now.";
+    meta = `${formatCount(syncJob.progress_percent)}% complete`;
+  } else if (syncExecution?.status === "failed" || syncJob?.status === "failed") {
+    title = "Data import needs attention";
+    description = syncExecution?.message || "The selected accounts are saved, but the first sync did not complete.";
+    meta = "Try again after fixing the connection";
+    variant = "attention";
+  }
+
+  return `
+    <article class="data-preview-card ${variant}">
+      <div>
+        <span>Selected data</span>
+        <strong>${escapeHtml(title)}</strong>
+        <p>${escapeHtml(description)}</p>
+      </div>
+      <small>${escapeHtml(meta)}</small>
+    </article>
+  `;
+}
+
+function renderDestinationOutputPreview(destinationHandoff, payload, destinationNames) {
+  const selectedDestinations = Object.entries(destinationHandoff.destinations || {});
+  if (selectedDestinations.length === 0) {
+    return `
+      <article class="handoff-destination">
+        <strong>No outputs selected</strong>
+        <span>Choose a destination</span>
+        <p>Select a dashboard, warehouse, or AI report output.</p>
+      </article>
+    `;
+  }
+  return selectedDestinations
+    .map(([destinationId, handoff]) => {
+      return `
+        <article class="handoff-destination">
+          <strong>${destinationLabel(destinationId)}</strong>
+          <span>${userDestinationStatus(destinationId, handoff)}</span>
+          <p>${userDestinationCopy(destinationId, handoff, payload, destinationNames)}</p>
+        </article>
+      `;
+    })
+    .join("");
 }
 
 function renderDeveloperStatus(syncJob, localConfigExport, liveSyncReadiness) {
@@ -658,9 +730,7 @@ function renderReportSchedulePreview(payload) {
     return "";
   }
   const schedule = payload.report_schedule;
-  const delivery = schedule.report_type === "weekly"
-    ? `Every ${schedule.delivery_day}`
-    : `Monthly on day ${schedule.delivery_day}`;
+  const delivery = reportScheduleLabel(schedule);
   return `
     <article class="report-preview-card">
       <div>
@@ -699,9 +769,10 @@ function renderLiveSyncReadiness(readiness) {
   }
   const failedChecks = (readiness.checks || []).filter((check) => !check.ok);
   const summary = readiness.summary || {};
-  const accountCount = Number(summary.enabled_meta_account_count || 0);
+  const accountCount = Number(summary.enabled_meta_account_count || summary.enabled_google_account_count || 0);
+  const platformLabel = readiness.platform === "google_ads" ? "Google Ads" : "Meta";
   const details = readiness.ready
-    ? `${formatCount(accountCount)} selected Meta account${accountCount === 1 ? "" : "s"} ready for the guarded live sync path.`
+    ? `${formatCount(accountCount)} selected ${platformLabel} account${accountCount === 1 ? "" : "s"} ready for the guarded live sync path.`
     : failedChecks.slice(0, 3).map((check) => escapeHtml(readinessCheckLabel(check.id))).join(", ") || "Readiness has not passed yet.";
   return `
     <article class="handoff-destination local-sync-card ${readiness.ready ? "ready" : "pending"}">
@@ -881,6 +952,27 @@ function userSyncStatus(status) {
   return status || "Ready";
 }
 
+function userSetupStatus(status) {
+  if (status === "failed") {
+    return "Needs attention";
+  }
+  if (status === "running") {
+    return "Importing";
+  }
+  return "Ready";
+}
+
+function buildDisplayDestinationHandoff(destinationIds) {
+  return {
+    destinations: Object.fromEntries(
+      (destinationIds || []).map((destinationId) => [
+        destinationId,
+        { status: destinationId === "looker_studio" ? "handoff_required" : "available" },
+      ])
+    ),
+  };
+}
+
 function syncStepLabel(status) {
   return {
     completed: "Done",
@@ -917,9 +1009,9 @@ function updateSyncJob(syncJob) {
   const stepList = document.querySelector("#syncStepList");
   const summary = document.querySelector("#firstSyncSummary");
   if (summary) {
-    summary.textContent = userSyncStatus(syncJob.status);
+    summary.textContent = userSetupStatus(syncJob.status);
   }
-  els.connectionStatus.textContent = userSyncStatus(syncJob.status);
+  els.connectionStatus.textContent = userSetupStatus(syncJob.status);
   if (title) {
     title.textContent = userSyncStatus(syncJob.status);
   }
@@ -947,6 +1039,21 @@ function updateSyncJob(syncJob) {
   const backendDataCheck = document.querySelector("#backendDataCheck");
   if (backendDataCheck) {
     backendDataCheck.innerHTML = renderBackendDataCheck(syncJob.backend_data_check);
+  }
+  if (els.nextActions) {
+    const selectedAccounts = selectedSourceAccounts().filter((account) => state.selectedAccounts.has(account.id));
+    const destinationIds = syncJob.summary?.destinations || [];
+    const destinationNames = destinations
+      .filter((destination) => destinationIds.includes(destination.id))
+      .map((destination) => destination.name);
+    const payload = buildConnectionPayload() || { destinations: destinationIds };
+    els.nextActions.innerHTML = renderUserSetupPreview(
+      buildDisplayDestinationHandoff(destinationIds),
+      payload,
+      selectedAccounts,
+      destinationNames,
+      syncJob
+    );
   }
   const syncExecutionStatus = document.querySelector("#syncExecutionStatus");
   if (syncExecutionStatus) {
@@ -1041,6 +1148,16 @@ function backendSyncPeriod(latest) {
   return `${latest.sync_start_date} to ${latest.sync_end_date}`;
 }
 
+function reportScheduleLabel(schedule) {
+  if (!schedule) {
+    return "Not scheduled";
+  }
+  if (schedule.report_type === "weekly") {
+    return `Every ${schedule.delivery_day}`;
+  }
+  return `Monthly on day ${schedule.delivery_day}`;
+}
+
 function formatCount(value) {
   if (value === undefined || value === null || Number.isNaN(Number(value))) {
     return "0";
@@ -1077,16 +1194,18 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function userDestinationCopy(destinationId, handoff, payload) {
+function userDestinationCopy(destinationId, handoff, payload, destinationNames = []) {
   if (destinationId === "looker_studio") {
-    return "Your dashboard can be opened after the first data sync finishes.";
+    return "Dashboard data will refresh after the first import finishes.";
   }
   if (destinationId === "ai_report_email") {
     const schedule = payload.report_schedule || handoff;
-    return `AI reports are set to ${schedule.report_type || "monthly"} delivery in ${schedule.timezone || "Asia/Taipei"}.`;
+    return `AI reports are set to ${reportScheduleLabel(schedule).toLowerCase()} in ${schedule.timezone || "Asia/Taipei"}.`;
   }
   if (destinationId === "bigquery") {
-    return "Selected ad account data will sync into the reporting warehouse.";
+    return destinationNames.includes("Looker Studio")
+      ? "This powers the selected dashboard and AI report data."
+      : "Selected account data will be available for reporting.";
   }
   if (destinationId === "google_sheets") {
     return "Google Sheets export is not enabled in this MVP yet.";

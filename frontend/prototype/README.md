@@ -137,11 +137,13 @@ Current prototype scope:
 - Show a mock `config_preview` response shaped like
   `.venv/bin/python -m src.onboarding.config_bridge ... --json`.
 - Show a user-facing completion state after setup, focused on connected source,
-  selected accounts, destination readiness, and first-sync status.
+  selected accounts, output readiness, report schedule, and whether recent
+  performance data is available.
 - Create and poll a local first-sync job status so the UI shows queued,
   running, and completed states after setup.
-- In real local mode, show a read-only backend data check after completion with
-  aggregate BigQuery and dashboard-view status.
+- In real local mode, use the read-only backend data check to power the
+  user-facing data availability preview. Aggregate BigQuery and dashboard-view
+  status stays in collapsed developer details.
 - After first sync completes, show `Send report email` for AI Report Email
   connections. In real local mode this calls the existing AI report + SMTP HTML
   email pipeline and returns only safe delivery metadata.

@@ -1005,10 +1005,80 @@ code {
   color: #92400e;
 }
 
+.data-preview-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 8px;
+  background: #f8fbff;
+  padding: 14px;
+}
+
+.data-preview-card.ready {
+  border-color: rgba(21, 128, 61, 0.22);
+  background: #f0fdf4;
+}
+
+.data-preview-card.empty,
+.data-preview-card.attention {
+  border-color: rgba(217, 119, 6, 0.24);
+  background: #fffbeb;
+}
+
+.data-preview-card span,
+.data-preview-card strong,
+.data-preview-card small {
+  display: block;
+}
+
+.data-preview-card span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.data-preview-card strong {
+  margin-top: 4px;
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.data-preview-card p {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.data-preview-card small {
+  flex: 0 0 auto;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.data-preview-card.ready small {
+  color: #166534;
+}
+
+.data-preview-card.empty small,
+.data-preview-card.attention small {
+  color: #92400e;
+}
+
 .handoff-destinations {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.output-preview-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .handoff-destination {
@@ -1308,10 +1378,15 @@ pre {
   }
 
   .app-header,
+  .data-preview-card,
   .source-hero,
   .summary-bar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .data-preview-card small {
+    white-space: normal;
   }
 
   h1 {
