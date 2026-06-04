@@ -39,6 +39,26 @@ def make_connector(
 def test_fetch_customer_accounts_lists_accessible_google_customers() -> None:
     connector = make_connector(
         resource_names=["customers/123-456-7890"],
+        rows_by_customer={},
+    )
+
+    accounts = connector.fetch_customer_accounts()
+
+    assert accounts == [
+        {
+            "id": "1234567890",
+            "name": "Google Ads Customer 1",
+            "currency": None,
+            "timezone": None,
+            "status": "Ready",
+        }
+    ]
+    assert connector.google_ads_service.calls == []
+
+
+def test_fetch_customer_accounts_can_include_metadata_when_requested() -> None:
+    connector = make_connector(
+        resource_names=["customers/123-456-7890"],
         rows_by_customer={
             "1234567890": [
                 SimpleNamespace(
@@ -53,7 +73,7 @@ def test_fetch_customer_accounts_lists_accessible_google_customers() -> None:
         },
     )
 
-    accounts = connector.fetch_customer_accounts()
+    accounts = connector.fetch_customer_accounts(include_metadata=True)
 
     assert accounts == [
         {
@@ -79,7 +99,7 @@ def test_fetch_customer_accounts_uses_safe_fallback_when_metadata_is_unavailable
     assert accounts == [
         {
             "id": "2345678901",
-            "name": "Google Ads Customer 2345678901",
+            "name": "Google Ads Customer 1",
             "currency": None,
             "timezone": None,
             "status": "Ready",

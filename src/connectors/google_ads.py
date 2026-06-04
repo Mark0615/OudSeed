@@ -146,16 +146,27 @@ class GoogleAdsConnector(BaseAdsConnector):
         self.google_ads_service = self.client.get_service("GoogleAdsService")
         self.customer_service = self.client.get_service("CustomerService")
 
-    def fetch_customer_accounts(self) -> list[dict[str, Any]]:
+    def fetch_customer_accounts(self, *, include_metadata: bool = False) -> list[dict[str, Any]]:
         """Fetch Google Ads customers accessible by the configured credentials."""
         response = self.customer_service.list_accessible_customers()
         resource_names = getattr(response, "resource_names", [])
         accounts: list[dict[str, Any]] = []
-        for resource_name in resource_names:
+        for index, resource_name in enumerate(resource_names, start=1):
             customer_id = _customer_id_from_resource_name(str(resource_name))
             if not customer_id:
                 continue
-            accounts.append(self._fetch_customer_account(customer_id))
+            if include_metadata:
+                accounts.append(self._fetch_customer_account(customer_id))
+            else:
+                accounts.append(
+                    {
+                        "id": customer_id,
+                        "name": f"Google Ads Customer {index}",
+                        "currency": None,
+                        "timezone": None,
+                        "status": "Ready",
+                    }
+                )
         return accounts
 
     def _fetch_customer_account(self, customer_id: str) -> dict[str, Any]:
