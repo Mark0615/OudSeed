@@ -20,13 +20,36 @@ Current MVP priority:
 Meta Ads → BigQuery → Looker Studio → AI report logs → account-grouped HTML email reports
 ```
 
-Future expansion order:
+Productization direction (decided 2026-06-05):
 
 ```text
-Google Ads product hardening → LINE Ads → Google Sheets export → LINE delivery → SaaS features
+self-serve onboarding (Google sign-in + dev-mode OAuth) → multi-tenant durable storage
+→ Meta+Google connect → per-customer report scheduling → first friendly users
 ```
 
 Read this file and `docs/ads_ai_pipeline_codex_development_spec.md` before making changes.
+
+## Product direction (current main line)
+
+The goal is to replace a paid Windsor.ai-style subscription and let a few
+friendly users self-onboard. The data pipeline (Goal 1: Meta/Google → BigQuery →
+Looker Studio) is largely built; the AI email report (Goal 2) exists. The active
+work is turning the local onboarding prototype into a real, multi-tenant
+self-serve product.
+
+Decisions (do not re-litigate without the user):
+
+- **Platform login** (the door into the web app): Google sign-in.
+- **Ad-account authorization**: self-serve OAuth with the Meta app and Google
+  Ads OAuth client kept in development/test mode. Add early users as testers so
+  no Meta App Review / Google verification is needed yet.
+- **Hosting/storage**: stay in GCP — Cloud Run web app + Cloud SQL (Postgres) or
+  Firestore for users/connections, Secret Manager for encrypted platform tokens.
+- **Multi-tenancy**: reuse the existing `workspace_id` / `client_id` columns; one
+  shared dataset, not per-customer datasets.
+- **AI model**: keep OpenAI (`gpt-5.2`). Report format is acceptable as-is; only
+  minor polish expected.
+- **Billing/payment**: explicitly deferred, not in scope yet.
 
 ---
 
@@ -52,23 +75,31 @@ Current implemented foundation:
 
 Current product focus:
 
-- Improve Meta field coverage for reporting and AI analysis
-- Make Looker Studio expose both performance data and generated AI reports
-- Improve AI report structure so it matches media buyer workflows
-- Keep platform-specific raw/wide fields available without bloating the unified table
-- Productize the Meta onboarding bridge without introducing SaaS auth or payment yet
+- Build the self-serve onboarding product: Google sign-in, dev-mode Meta/Google
+  OAuth connect, account selection, destination confirmation, done.
+- Replace the in-memory onboarding prototype state with durable multi-tenant
+  storage (users, workspaces, connections, encrypted tokens).
+- Wire per-customer weekly/monthly report scheduling (cadence + delivery day).
+- Improve Meta field coverage for reporting and AI analysis.
+- Make Looker Studio expose both performance data and generated AI reports.
+- Keep platform-specific raw/wide fields available without bloating the unified table.
 
-Do not implement or expand these unless explicitly requested:
+Now in scope (previously deferred — promoted on 2026-06-05):
 
-- Google Ads product hardening beyond the existing connector/sync/report-context foundation
-- LINE Ads connector
-- OAuth login
-- SaaS user system
-- Payment
-- Google Sheet export
-- Production frontend dashboard beyond the local onboarding prototype
+- OAuth login / ad-platform connect (dev-mode, no App Review yet)
+- SaaS user system + Google sign-in
+- Durable multi-tenant storage
+- Production frontend onboarding beyond the static prototype
+
+Still deferred — do not implement unless explicitly requested:
+
+- LINE Ads connector and LINE delivery
+- Payment / billing
+- Google Sheets export
+- Google Ads product hardening beyond the existing connector/sync/report-context
+  foundation (basic connect for onboarding is fine; deep field/keyword expansion
+  is not)
 - Bulk or new-channel email delivery beyond the existing account-report SMTP path
-- LINE delivery
 
 ## Product reporting rules
 
