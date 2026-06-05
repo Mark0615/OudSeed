@@ -749,22 +749,31 @@ function renderSelectedAccountPreview(source, selectedAccounts, summary) {
 
 function renderUserSetupPreview(destinationHandoff, payload, selectedAccounts, destinationNames, syncJob) {
   if (!destinationHandoff) {
-    return `<p class="muted-copy">Finish setup to prepare your selected destinations.</p>`;
+    return `<p class="muted-copy">Finish setup to see your data.</p>`;
   }
-  const destinationsMarkup = renderDestinationOutputPreview(destinationHandoff, payload, destinationNames);
-  const accountNames = selectedAccounts.map((account) => accountDisplayName(account));
-  const accountSummary = accountNames.length > 0
-    ? accountNames.slice(0, 3).map(escapeHtml).join(", ") + (accountNames.length > 3 ? ` and ${accountNames.length - 3} more` : "")
-    : "Selected ad accounts";
+  const friendly = (destinationNames || [])
+    .filter(Boolean)
+    .map(userFriendlyDestinationName);
+  const chips = friendly.length
+    ? `<div class="output-where">
+        <span>Your data will appear in</span>
+        <div class="output-chips">${friendly.map((name) => `<span class="output-chip">${escapeHtml(name)}</span>`).join("")}</div>
+      </div>`
+    : "";
   return `
     ${renderCustomerDataPreview(syncJob, selectedAccounts)}
-    <div class="handoff-destinations output-preview-grid">${destinationsMarkup}</div>
+    ${chips}
     ${renderReportSchedulePreview(payload)}
-    <div class="setup-next-step">
-      <strong>Next visible result</strong>
-      <p>${accountSummary} is ready to import into ${escapeHtml(destinationNames.join(", ") || "the selected destinations")}. After the first data sync, dashboard and report outputs become available.</p>
-    </div>
   `;
+}
+
+function userFriendlyDestinationName(name) {
+  const map = {
+    "Looker Studio": "Dashboard",
+    "AI Report Email": "Email report",
+    BigQuery: "Data storage",
+  };
+  return map[name] || name;
 }
 
 function renderCustomerDataPreview(syncJob, selectedAccounts) {
@@ -777,33 +786,33 @@ function renderCustomerDataPreview(syncJob, selectedAccounts) {
   const syncDaysBack = Number(syncJob?.summary?.sync_days_back || 7);
   const completed = syncJob?.status === "completed";
   const readyForSync = syncJob?.status === "ready_for_sync";
-  let title = "Waiting for first data import";
-  let description = `${formatCount(accountCount)} selected account${accountCount === 1 ? "" : "s"} will be checked across the past ${formatCount(syncDaysBack)} days.`;
-  let meta = "No performance data preview yet";
+  let title = "Connected — ready to pull your data";
+  let description = `${formatCount(accountCount)} account${accountCount === 1 ? "" : "s"} connected. We'll pull the past ${formatCount(syncDaysBack)} days when you start the first import.`;
+  let meta = "Your data preview appears after the first import";
   let variant = "pending";
 
   if (completed && dataCheck?.status === "healthy" && rowsInserted > 0) {
-    title = "Recent performance data found";
-    description = `${formatCount(rowsInserted)} daily performance record${rowsInserted === 1 ? "" : "s"} are available for the selected accounts.`;
+    title = "Your data is in ✓";
+    description = `${formatCount(rowsInserted)} day${rowsInserted === 1 ? "" : "s"} of performance data are ready for your selected accounts.`;
     meta = backendSyncPeriod(latest);
     variant = "ready";
   } else if (completed && (dataCheck?.status === "no_data" || rowsInserted === 0)) {
-    title = "No recent performance data found";
-    description = `${formatCount(accountCount)} account${accountCount === 1 ? "" : "s"} connected, but no rows were returned for the latest sync window.`;
+    title = "Connected, but no data in this period";
+    description = `${formatCount(accountCount)} account${accountCount === 1 ? "" : "s"} connected, but there was no activity in the selected date range. Try a longer import range.`;
     meta = latest.sync_start_date ? backendSyncPeriod(latest) : `${formatCount(rowsFetched)} records returned`;
     variant = "empty";
   } else if (readyForSync) {
-    title = "Ready for first data import";
-    description = `Account selection is saved. The first sync will check the past ${formatCount(syncDaysBack)} days after the live-write gate is approved.`;
-    meta = "Dashboard and report previews appear after sync";
+    title = "Connected — ready to import";
+    description = `Your account selection is saved. The first import will pull the past ${formatCount(syncDaysBack)} days of data.`;
+    meta = "Your data preview appears after the first import";
   } else if (syncJob?.status === "running") {
-    title = "Importing performance data";
-    description = "OudSeed is fetching the selected account data now.";
+    title = "Pulling your data…";
+    description = "We're fetching your selected account data now.";
     meta = `${formatCount(syncJob.progress_percent)}% complete`;
   } else if (syncExecution?.status === "failed" || syncJob?.status === "failed") {
-    title = "Data import needs attention";
-    description = syncExecution?.message || "The selected accounts are saved, but the first sync did not complete.";
-    meta = "Try again after fixing the connection";
+    title = "Something needs attention";
+    description = syncExecution?.message || "Your accounts are saved, but the first import didn't finish.";
+    meta = "Try again, or re-check the connection";
     variant = "attention";
   }
 
@@ -860,10 +869,9 @@ function renderReportSchedulePreview(payload) {
   return `
     <article class="report-preview-card">
       <div>
-        <strong>AI report schedule</strong>
+        <strong>Email report</strong>
         <span>${escapeHtml(delivery)} · ${escapeHtml(schedule.timezone || "Asia/Taipei")}</span>
       </div>
-      <small>${escapeHtml(schedule.depth || "standard")} depth</small>
     </article>
   `;
 }
