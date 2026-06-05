@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -77,3 +77,50 @@ class WorkspaceMember(Base):
 
     workspace: Mapped[Workspace] = relationship(back_populates="members")
     user: Mapped[User] = relationship(back_populates="memberships")
+
+
+# Supported ad platforms for a connection.
+SUPPORTED_PLATFORMS = ("meta_ads", "google_ads")
+
+# Connection lifecycle states.
+CONNECTION_STATUSES = ("pending", "active", "error", "revoked")
+
+
+class PlatformConnection(Base):
+    """A workspace's authorized link to one ad-platform account.
+
+    The OAuth token is stored encrypted (``encrypted_token``); plaintext never
+    touches the database. Use the repository helpers to set/read the token.
+    """
+
+    __tablename__ = "platform_connections"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "platform",
+            "external_account_id",
+            name="uq_workspace_platform_account",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    # One of SUPPORTED_PLATFORMS.
+    platform: Mapped[str] = mapped_column(String(32), index=True)
+    # The platform's ad account / customer id (e.g. act_123, 1234567890).
+    external_account_id: Mapped[str] = mapped_column(String(128))
+    account_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # One of CONNECTION_STATUSES.
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    # Fernet-encrypted token blob; None until authorization completes.
+    encrypted_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    scopes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    workspace: Mapped[Workspace] = relationship()
