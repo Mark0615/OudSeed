@@ -15,8 +15,13 @@ from sqlalchemy.orm import Session
 from src.storage.crypto import decrypt_secret, encrypt_secret
 from src.storage.models import (
     CONNECTION_STATUSES,
+    REPORT_DEPTHS,
+    REPORT_TYPES,
     SUPPORTED_PLATFORMS,
+    Client,
+    ClientAccount,
     PlatformConnection,
+    ReportSchedule,
     User,
     Workspace,
     WorkspaceMember,
@@ -169,4 +174,113 @@ def list_connections(
     if platform is not None:
         stmt = stmt.where(PlatformConnection.platform == platform)
     stmt = stmt.order_by(PlatformConnection.created_at, PlatformConnection.id)
+    return list(session.scalars(stmt))
+
+
+# --- Clients, account bindings, report schedules --------------------------
+
+
+def create_client(
+    session: Session, *, workspace_id: str, client_key: str, name: str
+) -> Client:
+    """Create a report-grouping client within a workspace."""
+    client = Client(workspace_id=workspace_id, client_key=client_key, name=name)
+    session.add(client)
+    session.flush()
+    return client
+
+
+def list_clients(session: Session, workspace_id: str) -> list[Client]:
+    """Return a workspace's clients, oldest first."""
+    stmt = (
+        select(Client)
+        .where(Client.workspace_id == workspace_id)
+        .order_by(Client.created_at, Client.id)
+    )
+    return list(session.scalars(stmt))
+
+
+def bind_account(
+    session: Session, *, client: Client, connection: PlatformConnection
+) -> ClientAccount:
+    """Bind a platform connection to a client for reporting.
+
+    Both must belong to the same workspace (tenant isolation).
+    """
+    if client.workspace_id != connection.workspace_id:
+        raise ValueError("Cannot bind a connection from a different workspace.")
+    binding = ClientAccount(client_id=client.id, platform_connection_id=connection.id)
+    session.add(binding)
+    session.flush()
+    return binding
+
+
+def list_client_accounts(session: Session, client_id: str) -> list[ClientAccount]:
+    """Return the account bindings for a client, oldest first."""
+    stmt = (
+        select(ClientAccount)
+        .where(ClientAccount.client_id == client_id)
+        .order_by(ClientAccount.created_at, ClientAccount.id)
+    )
+    return list(session.scalars(stmt))
+
+
+def create_report_schedule(
+    session: Session,
+    *,
+    client_id: str,
+    schedule_key: str,
+    report_type: str,
+    delivery_day: str,
+    channel: str = "email",
+    timezone: str | None = None,
+    depth: str = "standard",
+    email_to: str | None = None,
+    key: str | None = None,
+    account_group_name: str | None = None,
+    account_group_limit: int | None = None,
+    enabled: bool = True,
+) -> ReportSchedule:
+    """Create a client report schedule; the recipient email is encrypted.
+
+    Raises ValueError for an unsupported report type or depth.
+    """
+    if report_type not in REPORT_TYPES:
+        raise ValueError(f"Unsupported report_type: {report_type!r}")
+    if depth not in REPORT_DEPTHS:
+        raise ValueError(f"Unsupported depth: {depth!r}")
+    schedule = ReportSchedule(
+        client_id=client_id,
+        schedule_key=schedule_key,
+        report_type=report_type,
+        delivery_day=str(delivery_day),
+        channel=channel,
+        timezone=timezone,
+        depth=depth,
+        encrypted_email_to=encrypt_secret(email_to, key=key) if email_to else None,
+        account_group_name=account_group_name,
+        account_group_limit=account_group_limit,
+        enabled=enabled,
+    )
+    session.add(schedule)
+    session.flush()
+    return schedule
+
+
+def read_schedule_email_to(
+    schedule: ReportSchedule, *, key: str | None = None
+) -> str | None:
+    """Return the decrypted recipient email, or None when unset."""
+    if not schedule.encrypted_email_to:
+        return None
+    return decrypt_secret(schedule.encrypted_email_to, key=key)
+
+
+def list_report_schedules(session: Session, client_id: str) -> list[ReportSchedule]:
+    """Return a client's report schedules, oldest first."""
+    stmt = (
+        select(ReportSchedule)
+        .where(ReportSchedule.client_id == client_id)
+        .order_by(ReportSchedule.created_at, ReportSchedule.id)
+    )
     return list(session.scalars(stmt))
