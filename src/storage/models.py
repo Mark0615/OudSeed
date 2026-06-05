@@ -124,3 +124,89 @@ class PlatformConnection(Base):
     )
 
     workspace: Mapped[Workspace] = relationship()
+
+
+# Report cadence and depth vocabularies (mirror config + src/ai/report_schedules).
+REPORT_TYPES = ("weekly", "monthly")
+REPORT_DEPTHS = ("brief", "standard", "deep")
+
+
+class Client(Base):
+    """A report-grouping customer within a workspace.
+
+    One client may bind several platform connections (e.g. Meta + Google) so they
+    are combined into a single account-grouped report. ``client_key`` is the
+    stable id used across config and BigQuery (`client_id`).
+    """
+
+    __tablename__ = "clients"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "client_key", name="uq_workspace_client_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    client_key: Mapped[str] = mapped_column(String(128), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    accounts: Mapped[list[ClientAccount]] = relationship(
+        back_populates="client", cascade="all, delete-orphan"
+    )
+    report_schedules: Mapped[list[ReportSchedule]] = relationship(
+        back_populates="client", cascade="all, delete-orphan"
+    )
+
+
+class ClientAccount(Base):
+    """Binds a platform connection (ad account) to a client for reporting."""
+
+    __tablename__ = "client_accounts"
+    __table_args__ = (
+        UniqueConstraint(
+            "client_id", "platform_connection_id", name="uq_client_account"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"), index=True)
+    platform_connection_id: Mapped[str] = mapped_column(
+        ForeignKey("platform_connections.id"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    client: Mapped[Client] = relationship(back_populates="accounts")
+    connection: Mapped[PlatformConnection] = relationship()
+
+
+class ReportSchedule(Base):
+    """A client's AI report schedule (cadence, delivery day, recipient).
+
+    The recipient email is stored encrypted (``encrypted_email_to``).
+    ``delivery_day`` is a string to hold both monthly day-of-month ("10") and
+    weekly weekday ("monday"), matching the existing config vocabulary.
+    """
+
+    __tablename__ = "report_schedules"
+    __table_args__ = (
+        UniqueConstraint("client_id", "schedule_key", name="uq_client_schedule_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"), index=True)
+    schedule_key: Mapped[str] = mapped_column(String(128))
+    report_type: Mapped[str] = mapped_column(String(16))
+    delivery_day: Mapped[str] = mapped_column(String(16))
+    channel: Mapped[str] = mapped_column(String(32), default="email")
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    depth: Mapped[str] = mapped_column(String(16), default="standard")
+    encrypted_email_to: Mapped[str | None] = mapped_column(Text, nullable=True)
+    account_group_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    account_group_limit: Mapped[int | None] = mapped_column(nullable=True)
+    enabled: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    client: Mapped[Client] = relationship(back_populates="report_schedules")
