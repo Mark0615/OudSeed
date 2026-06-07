@@ -83,7 +83,8 @@ class WorkspaceMember(Base):
 SUPPORTED_PLATFORMS = ("meta_ads", "google_ads")
 
 # Connection lifecycle states.
-CONNECTION_STATUSES = ("pending", "active", "error", "revoked")
+# "active" = selected for sync; "paused" = connected but not selected for sync.
+CONNECTION_STATUSES = ("pending", "active", "paused", "error", "revoked")
 
 
 class PlatformConnection(Base):

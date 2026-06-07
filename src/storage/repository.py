@@ -231,6 +231,29 @@ def upsert_platform_connection(
     return connection
 
 
+def set_account_selection(
+    session: Session,
+    *,
+    workspace_id: str,
+    platform: str,
+    selected_external_ids: list[str],
+) -> list[PlatformConnection]:
+    """Mark selected accounts active and the rest paused, for one platform.
+
+    Revoked connections are left untouched. Returns the platform's connections.
+    """
+    selected = set(selected_external_ids)
+    connections = list_connections(session, workspace_id, platform=platform)
+    for connection in connections:
+        if connection.status == "revoked":
+            continue
+        connection.status = (
+            "active" if connection.external_account_id in selected else "paused"
+        )
+    session.flush()
+    return connections
+
+
 # --- Clients, account bindings, report schedules --------------------------
 
 
