@@ -3,22 +3,28 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>OudSeed Connector Prototype</title>
+    <title>OudSeed — Connect your ad data</title>
+    <link rel="icon" type="image/png" href="./assets/oudseed-logo.png" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="prototype-shell">
-      <header class="app-header">
-        <div>
-          <div class="brand-row">
-            <span class="brand-mark">OS</span>
-            <span class="brand-name">OudSeed</span>
-          </div>
-          <h1>Connect ad data</h1>
-          <p>Choose a platform, authorize access, select ad accounts, then decide where the data should go.</p>
+      <nav class="top-nav">
+        <a class="brand-row" href="/">
+          <img class="brand-logo" src="./assets/oudseed-wordmark.png" alt="OudSeed" />
+        </a>
+        <div class="top-nav-actions">
+          <span class="runtime-pill" id="runtimePill">Static mock</span>
+          <button class="secondary-button" type="button" id="resetButton">Reset demo</button>
         </div>
-        <button class="secondary-button" type="button" id="resetButton">Reset demo</button>
-        <span class="runtime-pill" id="runtimePill">Static mock</span>
+      </nav>
+
+      <header class="app-header">
+        <div class="app-header-copy">
+          <span class="eyebrow">Connect your data</span>
+          <h1>Bring every ad account into one place</h1>
+          <p>Connect Meta and Google Ads, choose the accounts that matter, and let OudSeed sync the data and deliver AI performance reports — automatically.</p>
+        </div>
       </header>
 
       <section class="stepper" aria-label="Setup progress">
