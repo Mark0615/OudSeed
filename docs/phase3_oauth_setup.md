@@ -71,8 +71,17 @@ create a **new Web client** so the existing pipeline keeps working.
    **External** + contact email.
 2. **Audience** tab:
    - **User type = External**
-   - **Publishing status = Testing** (no verification needed for test users)
-   - **Test users**: add your own Google email and each friend's Google email.
+   - **Publishing status = In production** — **recommended, keep it here, do NOT
+     switch back to Testing.** Reason: in *Testing* mode, Google expires refresh
+     tokens after **7 days** for sensitive scopes (like `adwords`), which would
+     break the recurring data sync. *Production* issues durable refresh tokens.
+   - Because the app is in production but **not yet verified**, friends will see a
+     one-time "Google hasn't verified this app" screen when they connect. They
+     click **Advanced → Go to OudSeed (continue)** to proceed. This is fine for a
+     handful of trusted users (unverified apps are capped at ~100 users). Do
+     Google verification later to remove the warning / scale up.
+   - Note: the "Test users" list only exists in *Testing* mode, so there is
+     nothing to add here while in production.
 3. **Branding** tab: set App name (e.g. "OudSeed"), user support email, developer
    contact email (if not already set during Get started).
 4. **Data Access** tab → "Add or remove scopes", add:
@@ -143,9 +152,13 @@ connect flow and Google sign-in against these settings.
 
 ## FAQ
 
-- **Do I need to pay or wait for review?** No. Development/testing mode + adding
-  friends as testers/test-users avoids both Meta App Review and Google
-  verification, for a small number of known users.
+- **Do I need to pay or wait for review?** No, not for a handful of users.
+  - **Meta**: keep the app in *development* mode and add friends as *testers* —
+    no App Review.
+  - **Google**: keep the consent screen *in production* but *unverified* — friends
+    click through a one-time "unverified app" warning. No Google verification is
+    required up to ~100 users. (Do not use Google *Testing* mode: it expires
+    refresh tokens after 7 days for sensitive scopes and would break the sync.)
 - **Is this safe to share with friends?** Yes — they only grant read access to
   their own ad data, and only people you explicitly add as testers can connect.
 - **Will this break the current pipeline?** No. We add a new Google *Web* client
