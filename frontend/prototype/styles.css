@@ -1,18 +1,46 @@
 :root {
   color-scheme: light;
-  --ink: #20242a;
-  --muted: #7a828c;
-  --line: #dde1e7;
-  --soft-line: #edf0f4;
-  --surface: #f7f8fb;
+  /* Neutrals: black / gray / silver */
+  --ink: #0f1419;
+  --ink-soft: #2b3440;
+  --muted: #69748a;
+  --line: #e1e6ec;
+  --soft-line: #eef1f5;
+  --surface: #edf0f4;
+  --surface-2: #f6f8fa;
   --panel: #ffffff;
-  --blue: #5570f6;
-  --blue-deep: #3851c8;
-  --blue-soft: #edf1ff;
-  --green: #17a56b;
-  --amber: #f59e0b;
-  --pink: #d946ef;
-  --shadow: 0 14px 36px rgba(21, 29, 42, 0.08);
+
+  /* Brand accents: gray-blue (primary) + light green (positive) */
+  --slate: #3a4b63;
+  --slate-deep: #26344a;
+  --slate-soft: #eef2f7;
+  --blue: var(--slate);
+  --blue-deep: var(--slate-deep);
+  --blue-soft: var(--slate-soft);
+  --green: #4aa886;
+  --green-deep: #2f8568;
+  --green-soft: #e6f3ed;
+  --amber: #cf9430;
+  --pink: #9f6bc9;
+
+  /* Gradients */
+  --grad-surface: linear-gradient(180deg, #f4f7fa 0%, #e7ebf0 100%);
+  --grad-panel: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+  --grad-slate: linear-gradient(135deg, #41547180 0%, #26344a 100%), linear-gradient(135deg, #415471 0%, #26344a 100%);
+  --grad-slate-solid: linear-gradient(135deg, #415471 0%, #29384f 100%);
+  --grad-hero: linear-gradient(135deg, #f5f8fb 0%, #e9eef3 55%, #e6efeb 100%);
+  --grad-green: linear-gradient(135deg, #54b291 0%, #2f8568 100%);
+
+  /* Layered, premium shadows */
+  --shadow-sm: 0 1px 2px rgba(15, 20, 25, 0.04), 0 2px 6px rgba(15, 20, 25, 0.05);
+  --shadow: 0 10px 30px rgba(22, 32, 50, 0.08), 0 2px 8px rgba(22, 32, 50, 0.05);
+  --shadow-lg: 0 24px 60px rgba(22, 32, 50, 0.13);
+  --shadow-accent: 0 10px 22px rgba(38, 52, 74, 0.24);
+
+  --radius: 12px;
+  --radius-lg: 18px;
+  --radius-pill: 999px;
+
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -25,8 +53,11 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--surface);
+  background: var(--grad-surface);
+  background-attachment: fixed;
   color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 button,
@@ -1561,4 +1592,210 @@ pre {
   font-size: 13px;
   font-weight: 600;
   border: 1px solid #dbe3ff;
+}
+
+/* =====================================================================
+   Redesign layer (2026): commercial / minimal — silver·gray·black·
+   gray-blue·light-green, with gradients + layered shadows.
+   Appended last so it refines the components above via the cascade.
+   ===================================================================== */
+
+.prototype-shell {
+  width: min(1240px, calc(100vw - 40px));
+  padding: 20px 0 64px;
+}
+
+/* --- Top navigation: white bar so the white-background logo blends --- */
+.top-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 12px 20px;
+  margin-bottom: 36px;
+}
+.top-nav .brand-row {
+  margin: 0;
+  text-decoration: none;
+}
+.brand-logo {
+  height: 30px;
+  width: auto;
+  display: block;
+}
+.top-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* --- Hero header --- */
+.app-header {
+  display: block;
+  margin-bottom: 32px;
+}
+.app-header-copy {
+  max-width: 760px;
+}
+.eyebrow {
+  display: inline-block;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--green-deep);
+  margin-bottom: 14px;
+}
+h1 {
+  font-size: clamp(34px, 4vw, 50px);
+  font-weight: 850;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  margin-bottom: 14px;
+}
+.app-header-copy p {
+  font-size: 17px;
+  max-width: 660px;
+}
+
+/* --- Panels / cards --- */
+.panel {
+  background: var(--grad-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+.setup-panel {
+  padding: 28px 30px;
+}
+.source-panel {
+  padding: 22px 20px;
+}
+
+/* --- Hero block inside setup panel --- */
+.source-hero {
+  background: var(--grad-hero);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.hero-logo {
+  background: var(--grad-slate-solid);
+  color: #fff;
+  box-shadow: var(--shadow-accent);
+  border-radius: 12px;
+}
+
+/* --- Buttons --- */
+.primary-button {
+  background: var(--grad-slate-solid);
+  border: none;
+  color: #fff;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-accent);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+.primary-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  box-shadow: var(--shadow-lg);
+}
+.primary-button:disabled {
+  background: #c2c9d3;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.secondary-button,
+.tab,
+.segment,
+.icon-button {
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.secondary-button:hover {
+  border-color: var(--slate);
+  color: var(--slate-deep);
+}
+.tab.active,
+.segment.active {
+  background: var(--slate-soft);
+  border-color: var(--slate);
+  color: var(--slate-deep);
+}
+
+/* --- Stepper --- */
+.step.active strong {
+  color: var(--slate-deep);
+}
+.step.active span {
+  background: var(--grad-slate-solid);
+  color: #fff;
+  box-shadow: var(--shadow-accent);
+}
+
+/* --- Pills --- */
+.runtime-pill,
+.status-pill {
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.status-pill {
+  background: var(--green-soft);
+  color: var(--green-deep);
+  border: 1px solid #cfe8dc;
+  padding: 6px 12px;
+}
+
+/* --- Completion: data preview + output chips --- */
+.connection-result {
+  background: var(--grad-hero);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 24px;
+}
+.data-preview-card {
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
+  padding: 18px 20px;
+}
+.data-preview-card.ready {
+  border-left: 4px solid var(--green);
+  background: var(--green-soft);
+}
+.data-preview-card.attention {
+  border-left: 4px solid var(--amber);
+}
+.output-chip {
+  background: var(--slate-soft);
+  color: var(--slate-deep);
+  border: 1px solid #d8e0ea;
+}
+.report-preview-card {
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
+  padding: 14px 18px;
+}
+
+/* --- Connected setups list --- */
+.connection-list .connection-card,
+.connection-list > div:not(.empty-state) {
+  border-radius: var(--radius);
+}
+
+/* --- Focus accessibility --- */
+:focus-visible {
+  outline: 2px solid var(--slate);
+  outline-offset: 2px;
 }
