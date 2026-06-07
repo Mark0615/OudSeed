@@ -60,7 +60,9 @@ def export_workspace_to_config(
             connection = get_connection(session, binding.platform_connection_id)
             if connection is None:
                 continue
-            enabled = connection.status != "revoked"
+            # Only accounts the user selected for sync ("active") are enabled;
+            # paused/pending/revoked accounts are exported disabled.
+            enabled = connection.status == "active"
             if connection.platform == "meta_ads":
                 meta_accounts.append(
                     {

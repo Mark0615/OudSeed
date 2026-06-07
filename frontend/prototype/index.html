@@ -11,7 +11,7 @@
     <main class="prototype-shell">
       <nav class="top-nav">
         <a class="brand-row" href="/">
-          <img class="brand-logo" src="./assets/oudseed-wordmark.png" alt="OudSeed" />
+          <img class="brand-logo" src="./assets/oudseed-horizontal.png" alt="OudSeed" />
         </a>
         <div class="top-nav-actions">
           <span class="runtime-pill" id="runtimePill">Static mock</span>
@@ -121,6 +121,7 @@
               <h3>Initial import</h3>
               <span>First sync range</span>
             </div>
+            <p class="field-help">How much past data to pull on the first sync — e.g. 30 days gives you a fuller history to start. After that, syncs only fetch new days.</p>
             <div class="settings-grid compact">
               <label>
                 Import past
@@ -203,42 +204,6 @@
             </div>
             <button class="primary-button" type="button" id="finishButton" disabled>Finish setup</button>
           </footer>
-
-          <section class="connection-result" id="connectionResult" hidden>
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Setup complete</p>
-                <h3>Accounts are ready</h3>
-              </div>
-              <span id="connectionStatus">Ready</span>
-            </div>
-            <div class="handoff-grid">
-              <div class="handoff-summary" id="handoffSummary"></div>
-              <div class="preview-stack">
-                <div>
-                  <h4>Data preview</h4>
-                  <div class="next-actions" id="nextActions"></div>
-                </div>
-                <details class="developer-details">
-                  <summary>Developer details</summary>
-                  <div class="developer-preview-grid">
-                    <div>
-                      <h4>Local execution status</h4>
-                      <div id="developerStatus"></div>
-                    </div>
-                    <div>
-                      <h4>Selection payload (safe display)</h4>
-                      <pre id="payloadPreview"></pre>
-                    </div>
-                    <div>
-                      <h4>Sanitized config preview</h4>
-                      <pre id="configPreview"></pre>
-                    </div>
-                  </div>
-                </details>
-              </div>
-            </div>
-          </section>
 
           <section class="section-block connection-list-section">
             <div class="section-heading">

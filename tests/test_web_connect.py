@@ -120,7 +120,8 @@ def test_meta_connect_creates_encrypted_connections(ctx):
     assert {c.external_account_id for c in conns} == {"act_111", "act_222"}
     for c in conns:
         assert c.platform == "meta_ads"
-        assert c.status == "active"
+        # Newly connected accounts start unselected (paused), not auto-synced.
+        assert c.status == "paused"
         assert "meta-long-token" not in (c.encrypted_token or "")  # encrypted at rest
         assert read_connection_token(c) == "meta-long-token"
 
@@ -168,6 +169,9 @@ def test_dashboard_lists_connected_accounts_with_checkboxes(ctx):
     assert "Acct One" in home.text and "Acct Two" in home.text
     assert "type='checkbox'" in home.text
     assert "Select accounts to sync" in home.text
+    # Accounts start unselected and a "Select all" toggle is offered.
+    assert "Select all" in home.text
+    assert " checked>" not in home.text  # no checkbox is pre-checked
 
 
 def test_account_selection_marks_active_and_paused(ctx):

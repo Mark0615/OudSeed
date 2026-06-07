@@ -23,6 +23,7 @@ run:
 	$(PYTHON) -m src.main
 
 web:
+	@echo "▶ Open http://localhost:8765  (use localhost, NOT 127.0.0.1 — OAuth cookies/redirect require it)"
 	$(PYTHON) -m uvicorn src.web.server:app --host 127.0.0.1 --port 8765 --reload
 
 check:
