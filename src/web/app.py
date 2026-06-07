@@ -10,10 +10,11 @@ Routes:
 
 from __future__ import annotations
 
+import html
 import secrets
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -25,6 +26,28 @@ from src.web.oauth import GoogleOAuthClient
 
 SESSION_STATE_KEY = "oauth_state"
 SESSION_USER_KEY = "user_id"
+
+
+def _page(body: str) -> str:
+    """Wrap body HTML in a minimal, on-brand page shell."""
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OudSeed</title>
+<style>
+  body {{ margin:0; min-height:100vh; display:grid; place-items:center;
+    background:linear-gradient(180deg,#f4f7fa,#e7ebf0); color:#0f1419;
+    font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif; }}
+  .card {{ background:#fff; border:1px solid #e1e6ec; border-radius:18px;
+    box-shadow:0 10px 30px rgba(22,32,50,.08); padding:40px 44px; max-width:440px; }}
+  h1 {{ margin:0 0 10px; font-size:30px; letter-spacing:-.02em; }}
+  .muted {{ color:#69748a; line-height:1.55; }}
+  .btn, button {{ display:inline-block; margin-top:8px; border:0; cursor:pointer;
+    background:linear-gradient(135deg,#415471,#29384f); color:#fff;
+    padding:12px 22px; border-radius:12px; font-weight:700; text-decoration:none;
+    box-shadow:0 10px 22px rgba(38,52,74,.24); font-size:15px; }}
+</style></head>
+<body><main class="card">{body}</main></body></html>"""
 
 
 def create_app() -> FastAPI:
@@ -41,6 +64,28 @@ def create_app() -> FastAPI:
     @app.get("/healthz")
     def healthz() -> dict:
         return {"status": "ok"}
+
+    @app.get("/", response_class=HTMLResponse)
+    def home(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+        user_id = request.session.get(SESSION_USER_KEY)
+        user = db.get(User, user_id) if user_id else None
+        if user is not None:
+            name = html.escape(user.name or user.email)
+            email = html.escape(user.email)
+            body = (
+                f"<h1>Welcome, {name}</h1>"
+                f"<p class='muted'>Signed in as {email}</p>"
+                "<p>Next: connect your ad accounts (coming soon).</p>"
+                "<form method='post' action='/auth/logout'>"
+                "<button type='submit'>Sign out</button></form>"
+            )
+        else:
+            body = (
+                "<h1>OudSeed</h1>"
+                "<p class='muted'>Connect your ad accounts and get automatic AI performance reports.</p>"
+                "<p><a class='btn' href='/auth/google/login'>Sign in with Google</a></p>"
+            )
+        return HTMLResponse(_page(body))
 
     @app.get("/auth/google/login")
     def google_login(
