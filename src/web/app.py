@@ -25,13 +25,19 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from src.storage.models import SUPPORTED_PLATFORMS, User
+from src.storage.models import REPORT_DEPTHS, REPORT_TYPES, SUPPORTED_PLATFORMS, User
 from src.storage.repository import (
+    bind_connections_to_client,
+    get_or_create_default_client,
     get_or_create_default_workspace,
+    list_clients,
     list_connections,
+    list_report_schedules,
     list_workspaces_for_user,
+    read_schedule_email_to,
     set_account_selection,
     upsert_platform_connection,
+    upsert_report_schedule,
     upsert_user_by_google_sub,
 )
 from src.web import views
@@ -52,6 +58,8 @@ from src.web.oauth import GoogleOAuthClient
 SESSION_STATE_KEY = "oauth_state"
 SESSION_USER_KEY = "user_id"
 CONNECT_STATE_KEY = "connect_state"
+# Single onboarding-managed email report schedule per workspace's default client.
+ONBOARDING_SCHEDULE_KEY = "onboarding_email"
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +105,32 @@ def create_app() -> FastAPI:
             result.append(views.PlatformView(platform=platform, accounts=accounts))
         return result
 
+    def _destination_view(db: Session, workspace_id: str | None) -> views.DestinationView:
+        if not workspace_id:
+            return views.DestinationView()
+        clients = list_clients(db, workspace_id)
+        if not clients:
+            return views.DestinationView()
+        schedule = next(
+            (
+                s
+                for s in list_report_schedules(db, clients[0].id)
+                if s.schedule_key == ONBOARDING_SCHEDULE_KEY
+            ),
+            None,
+        )
+        if schedule is None:
+            return views.DestinationView()
+        return views.DestinationView(
+            configured=True,
+            enabled=schedule.enabled,
+            report_type=schedule.report_type,
+            delivery_day=schedule.delivery_day,
+            depth=schedule.depth,
+            email_to=read_schedule_email_to(schedule) or "",
+            timezone=schedule.timezone or "Asia/Taipei",
+        )
+
     @app.get("/healthz")
     def healthz() -> dict:
         return {"status": "ok"}
@@ -109,7 +143,8 @@ def create_app() -> FastAPI:
         workspaces = list_workspaces_for_user(db, user.id)
         workspace_id = workspaces[0].id if workspaces else None
         platforms = _platform_views(db, workspace_id)
-        return HTMLResponse(views.render_dashboard(user.email, platforms))
+        destination = _destination_view(db, workspace_id)
+        return HTMLResponse(views.render_dashboard(user.email, platforms, destination))
 
     @app.get("/auth/google/login")
     def google_login(
@@ -255,6 +290,43 @@ def create_app() -> FastAPI:
             workspace_id=workspace.id,
             platform=platform,
             selected_external_ids=account,
+        )
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/destination/save")
+    def destination_save(
+        request: Request,
+        enabled: str | None = Form(default=None),
+        report_type: str = Form(default="monthly"),
+        monthly_day: str = Form(default="1"),
+        weekly_day: str = Form(default="monday"),
+        depth: str = Form(default="standard"),
+        email_to: str = Form(default=""),
+        timezone: str = Form(default="Asia/Taipei"),
+        db: Session = Depends(get_db),
+    ) -> RedirectResponse:
+        user = _require_user(request, db)
+        workspace = get_or_create_default_workspace(db, user)
+        # Group the workspace's selected (active) accounts into the default client.
+        active = [
+            c for c in list_connections(db, workspace.id) if c.status == "active"
+        ]
+        client = get_or_create_default_client(db, workspace)
+        bind_connections_to_client(db, client=client, connections=active)
+
+        report_type = report_type if report_type in REPORT_TYPES else "monthly"
+        depth = depth if depth in REPORT_DEPTHS else "standard"
+        delivery_day = monthly_day if report_type == "monthly" else weekly_day
+        upsert_report_schedule(
+            db,
+            client_id=client.id,
+            schedule_key=ONBOARDING_SCHEDULE_KEY,
+            report_type=report_type,
+            delivery_day=str(delivery_day),
+            depth=depth,
+            email_to=email_to.strip() or None,
+            timezone=timezone,
+            enabled=bool(enabled),
         )
         return RedirectResponse("/", status_code=303)
 

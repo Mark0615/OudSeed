@@ -14,8 +14,8 @@ from sqlalchemy import select
 
 from src.storage.crypto import generate_key
 from src.storage.db import build_session_factory, create_all, create_db_engine
-from src.storage.models import PlatformConnection
-from src.storage.repository import read_connection_token
+from src.storage.models import Client, ClientAccount, PlatformConnection, ReportSchedule
+from src.storage.repository import read_connection_token, read_schedule_email_to
 from src.web.ad_oauth import AdAccount, AdConnectionResult, summarize_oauth_http_error
 from src.web.app import create_app
 from src.web.deps import get_db, get_google_ads_oauth, get_google_oauth, get_meta_ads_oauth
@@ -221,6 +221,77 @@ def test_connect_api_error_shows_readable_page_not_500(ctx):
     assert "Developer token is not approved." in resp.text
     # And nothing was persisted from the failed attempt.
     assert _all_connections(ctx.factory) == []
+
+
+def _select_one(client):
+    _sign_in(client)
+    _connect(client, start_path="/connect/meta/start", callback_path="/oauth/meta/callback")
+    client.post("/accounts/select", data={"platform": "meta_ads", "account": ["act_111"]})
+
+
+def test_destination_save_persists_schedule_and_binds_account(ctx):
+    _select_one(ctx.client)
+    resp = ctx.client.post(
+        "/destination/save",
+        data={
+            "enabled": "on",
+            "report_type": "weekly",
+            "weekly_day": "tuesday",
+            "monthly_day": "1",
+            "depth": "deep",
+            "email_to": "buyer@example.com",
+            "timezone": "Asia/Taipei",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    with ctx.factory() as session:
+        assert len(list(session.scalars(select(Client)))) == 1
+        schedules = list(session.scalars(select(ReportSchedule)))
+        assert len(schedules) == 1
+        sched = schedules[0]
+        assert sched.report_type == "weekly"
+        assert sched.delivery_day == "tuesday"
+        assert sched.depth == "deep"
+        assert sched.enabled is True
+        # Recipient email is encrypted at rest, decryptable via the helper.
+        assert "buyer@example.com" not in (sched.encrypted_email_to or "")
+        assert read_schedule_email_to(sched) == "buyer@example.com"
+        # The selected account is bound to the client for reporting.
+        assert len(list(session.scalars(select(ClientAccount)))) == 1
+
+    home = ctx.client.get("/")
+    assert "Choose destination" in home.text
+    assert "buyer@example.com" in home.text  # prefilled on revisit
+
+
+def test_destination_save_updates_in_place(ctx):
+    _select_one(ctx.client)
+    ctx.client.post(
+        "/destination/save",
+        data={"enabled": "on", "report_type": "monthly", "monthly_day": "5",
+              "depth": "standard", "email_to": "a@example.com", "timezone": "Asia/Taipei"},
+    )
+    # Re-save with the email toggle off and different values.
+    ctx.client.post(
+        "/destination/save",
+        data={"report_type": "monthly", "monthly_day": "10",
+              "depth": "brief", "email_to": "a@example.com", "timezone": "Asia/Taipei"},
+    )
+    with ctx.factory() as session:
+        schedules = list(session.scalars(select(ReportSchedule)))
+        assert len(schedules) == 1  # updated in place, not duplicated
+        assert schedules[0].delivery_day == "10"
+        assert schedules[0].depth == "brief"
+        assert schedules[0].enabled is False  # checkbox omitted → disabled
+
+
+def test_destination_save_requires_sign_in(ctx):
+    resp = ctx.client.post(
+        "/destination/save", data={"report_type": "monthly"}, follow_redirects=False
+    )
+    assert resp.status_code == 401
 
 
 def test_summarize_oauth_http_error_shapes():

@@ -291,6 +291,41 @@ def list_clients(session: Session, workspace_id: str) -> list[Client]:
     return list(session.scalars(stmt))
 
 
+def get_or_create_default_client(
+    session: Session, workspace: Workspace, *, name: str | None = None
+) -> Client:
+    """Return the workspace's first client, creating a default one if none exist.
+
+    The onboarding flow groups all of a workspace's selected accounts into one
+    default client (one account-grouped report). ``client_key`` is stable so the
+    exported pipeline config and BigQuery ``client_id`` stay consistent.
+    """
+    existing = list_clients(session, workspace.id)
+    if existing:
+        return existing[0]
+    return create_client(
+        session,
+        workspace_id=workspace.id,
+        client_key="default",
+        name=name or workspace.name,
+    )
+
+
+def bind_connections_to_client(
+    session: Session, *, client: Client, connections: list[PlatformConnection]
+) -> list[ClientAccount]:
+    """Bind any not-yet-bound connections to the client (idempotent)."""
+    existing_ids = {
+        b.platform_connection_id for b in list_client_accounts(session, client.id)
+    }
+    created: list[ClientAccount] = []
+    for connection in connections:
+        if connection.id in existing_ids:
+            continue
+        created.append(bind_account(session, client=client, connection=connection))
+    return created
+
+
 def bind_account(
     session: Session, *, client: Client, connection: PlatformConnection
 ) -> ClientAccount:
@@ -356,6 +391,63 @@ def create_report_schedule(
     session.add(schedule)
     session.flush()
     return schedule
+
+
+def upsert_report_schedule(
+    session: Session,
+    *,
+    client_id: str,
+    schedule_key: str,
+    report_type: str,
+    delivery_day: str,
+    channel: str = "email",
+    timezone: str | None = None,
+    depth: str = "standard",
+    email_to: str | None = None,
+    key: str | None = None,
+    enabled: bool = True,
+) -> ReportSchedule:
+    """Create or update a client's report schedule, keyed by ``schedule_key``.
+
+    Used by onboarding so re-saving the destination updates the existing schedule
+    in place instead of creating duplicates. The recipient email is encrypted.
+    Raises ValueError for an unsupported report type or depth.
+    """
+    if report_type not in REPORT_TYPES:
+        raise ValueError(f"Unsupported report_type: {report_type!r}")
+    if depth not in REPORT_DEPTHS:
+        raise ValueError(f"Unsupported depth: {depth!r}")
+    existing = session.scalar(
+        select(ReportSchedule).where(
+            ReportSchedule.client_id == client_id,
+            ReportSchedule.schedule_key == schedule_key,
+        )
+    )
+    if existing is None:
+        return create_report_schedule(
+            session,
+            client_id=client_id,
+            schedule_key=schedule_key,
+            report_type=report_type,
+            delivery_day=delivery_day,
+            channel=channel,
+            timezone=timezone,
+            depth=depth,
+            email_to=email_to,
+            key=key,
+            enabled=enabled,
+        )
+    existing.report_type = report_type
+    existing.delivery_day = str(delivery_day)
+    existing.channel = channel
+    existing.timezone = timezone
+    existing.depth = depth
+    existing.enabled = enabled
+    existing.encrypted_email_to = (
+        encrypt_secret(email_to, key=key) if email_to else None
+    )
+    session.flush()
+    return existing
 
 
 def read_schedule_email_to(

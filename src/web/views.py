@@ -46,6 +46,19 @@ class AccountView:
 
 
 @dataclass(frozen=True)
+class DestinationView:
+    """Current onboarding destination config (AI report email) for prefill."""
+
+    configured: bool = False
+    enabled: bool = False
+    report_type: str = "monthly"
+    delivery_day: str = "1"
+    depth: str = "standard"
+    email_to: str = ""
+    timezone: str = "Asia/Taipei"
+
+
+@dataclass(frozen=True)
 class PlatformView:
     platform: str
     accounts: list[AccountView]
@@ -146,6 +159,19 @@ h1{font-size:27px;letter-spacing:-.02em;margin:0 0 6px}
 .range a{padding:7px 13px;font-size:13px;font-weight:700;color:var(--muted);background:#fff}
 .range a.active{background:var(--slate-soft);color:var(--slate-deep)}
 .note{color:var(--muted);font-size:13.5px;line-height:1.5;margin:6px 0 0}
+/* Destination step */
+.dest-card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:14px;box-shadow:var(--shadow)}
+.dest-card .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:12px;flex-wrap:wrap}
+.dest-card .head strong{font-size:15px}
+.dest-card.info{background:var(--slate-soft);border-color:#dbe3ee;box-shadow:none}
+.dest-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:14px}
+.dest-grid label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--slate-deep)}
+.dest-grid input,.dest-grid select{font:inherit;font-weight:500;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink)}
+.dest-grid input:focus,.dest-grid select:focus{outline:none;border-color:var(--slate);box-shadow:0 0 0 3px rgba(58,75,99,.12)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;width:max-content}
+.seg-opt{padding:8px 16px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;background:#fff}
+.seg-opt.active{background:var(--slate-soft);color:var(--slate-deep)}
+.seg-opt input{position:absolute;opacity:0;pointer-events:none}
 .signin{max-width:430px;margin:11vh auto 0;text-align:center;background:#fff;border:1px solid var(--line);
   border-radius:18px;box-shadow:var(--shadow);padding:44px}
 .signin img{height:120px;margin-bottom:14px}.muted{color:var(--muted);line-height:1.55}
@@ -178,7 +204,7 @@ def render_signin() -> str:
 
 
 def _flow(current: int) -> str:
-    labels = ["Connect source", "Select accounts", "Preview data", "Done"]
+    labels = ["Connect source", "Select accounts", "Preview data", "Choose destination", "Done"]
     parts = []
     for i, label in enumerate(labels, start=1):
         state = "done" if i < current else ("active" if i == current else "")
@@ -301,20 +327,80 @@ def _preview_section() -> str:
     )
 
 
-def _current_step(platforms: list[PlatformView]) -> int:
+_DEPTH_OPTIONS = (("standard", "Standard"), ("brief", "Brief"), ("deep", "Deep"))
+_TZ_OPTIONS = ("Asia/Taipei", "America/Los_Angeles", "Europe/Berlin")
+_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday")
+
+
+def _options(pairs, selected: str) -> str:
+    out = []
+    for value, label in pairs:
+        sel = " selected" if value == selected else ""
+        out.append(f"<option value='{html.escape(value)}'{sel}>{html.escape(label)}</option>")
+    return "".join(out)
+
+
+def _destination_section(dest: DestinationView) -> str:
+    is_weekly = dest.report_type == "weekly"
+    monthly_day = dest.delivery_day if (not is_weekly and dest.delivery_day.isdigit()) else "1"
+    weekly_day = dest.delivery_day if is_weekly else "monday"
+    enabled = "checked" if (dest.enabled or not dest.configured) else ""
+    m_checked = "" if is_weekly else "checked"
+    w_checked = "checked" if is_weekly else ""
+
+    info = (
+        "<div class='dest-card info'><div class='head'>"
+        "<strong>BigQuery + Looker Studio</strong><span class='pill'>Always on</span></div>"
+        "<p class='note'>Your selected accounts sync into BigQuery and power your Looker "
+        "Studio dashboards automatically — no setup needed.</p></div>"
+    )
+    form = (
+        "<form class='dest-card' method='post' action='/destination/save'>"
+        "<div class='head'><strong>AI report email</strong>"
+        f"<label class='selall'><input type='checkbox' name='enabled' {enabled}> Email me reports</label>"
+        "</div>"
+        "<p class='note'>Get an AI performance report by email on your schedule. "
+        "Data always lands in BigQuery / Looker regardless of this.</p>"
+        "<div class='dest-grid'>"
+        "<label>Report cadence<span class='seg'>"
+        f"<label class='seg-opt {'' if is_weekly else 'active'}'>"
+        f"<input type='radio' name='report_type' value='monthly' {m_checked} onclick=\"oudCadence('monthly')\">Monthly</label>"
+        f"<label class='seg-opt {'active' if is_weekly else ''}'>"
+        f"<input type='radio' name='report_type' value='weekly' {w_checked} onclick=\"oudCadence('weekly')\">Weekly</label>"
+        "</span></label>"
+        f"<label id='f-monthly'{' hidden' if is_weekly else ''}>Monthly delivery day"
+        f"<input type='number' name='monthly_day' min='1' max='28' value='{html.escape(monthly_day)}'></label>"
+        f"<label id='f-weekly'{'' if is_weekly else ' hidden'}>Weekly delivery day"
+        f"<select name='weekly_day'>{_options([(d, d.capitalize()) for d in _WEEKDAYS], weekly_day)}</select></label>"
+        f"<label>Report depth<select name='depth'>{_options(_DEPTH_OPTIONS, dest.depth)}</select></label>"
+        f"<label>Recipient email<input type='email' name='email_to' value='{html.escape(dest.email_to)}' placeholder='you@example.com'></label>"
+        f"<label>Timezone<select name='timezone'>{_options([(t, t) for t in _TZ_OPTIONS], dest.timezone)}</select></label>"
+        "</div>"
+        "<div class='save'><button class='btn sm' type='submit'>Save destination</button></div></form>"
+    )
+    return info + form
+
+
+def _current_step(platforms: list[PlatformView], has_destination: bool) -> int:
     connected = any(p.connected for p in platforms)
     selected = any(p.selected_count > 0 for p in platforms)
     if not connected:
         return 1
     if not selected:
         return 2
-    return 3
+    if not has_destination:
+        return 3  # reviewing preview + choosing destination
+    return 5  # destination configured → done
 
 
-_SELECT_ALL_JS = (
+_PAGE_JS = (
     "<script>"
     "function oudToggleAll(cb){var f=cb.closest('form');if(!f)return;"
     "f.querySelectorAll(\"input[name='account']\").forEach(function(x){x.checked=cb.checked;});}"
+    "function oudCadence(t){var m=document.getElementById('f-monthly'),w=document.getElementById('f-weekly');"
+    "if(m)m.hidden=(t!=='monthly');if(w)w.hidden=(t!=='weekly');"
+    "document.querySelectorAll('.seg-opt').forEach(function(o){var r=o.querySelector('input');"
+    "o.classList.toggle('active',!!(r&&r.checked));});}"
     "document.addEventListener('change',function(e){var t=e.target;"
     "if(!t||t.name!=='account')return;var f=t.closest('form');if(!f)return;"
     "var boxes=f.querySelectorAll(\"input[name='account']\");"
@@ -324,7 +410,12 @@ _SELECT_ALL_JS = (
 )
 
 
-def render_dashboard(user_email: str, platforms: list[PlatformView]) -> str:
+def render_dashboard(
+    user_email: str,
+    platforms: list[PlatformView],
+    destination: DestinationView | None = None,
+) -> str:
+    dest = destination or DestinationView()
     connected = [p for p in platforms if p.connected]
     has_selection = any(p.selected_count > 0 for p in platforms)
 
@@ -341,14 +432,16 @@ def render_dashboard(user_email: str, platforms: list[PlatformView]) -> str:
         if has_selection:
             main.append("<div class='sec'>Preview</div>")
             main.append(_preview_section())
+            main.append("<div class='sec'>Choose destination</div>")
+            main.append(_destination_section(dest))
 
     body = (
-        _topbar(user_email, _current_step(platforms))
+        _topbar(user_email, _current_step(platforms, dest.configured))
         + "<div class='app'>"
         + _nav()
         + "<main class='main'>"
         + "".join(main)
         + "</main></div>"
-        + _SELECT_ALL_JS
+        + _PAGE_JS
     )
     return render_page(body)
