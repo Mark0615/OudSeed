@@ -30,8 +30,12 @@ permission and register the redirect URL.
 3. Left menu → **Facebook Login → Settings**:
    - **Client OAuth Login**: ON
    - **Web OAuth Login**: ON
-   - **Valid OAuth Redirect URIs**: add
-     `http://localhost:8765/oauth/meta/callback`
+   - **Valid OAuth Redirect URIs**: in **development mode you do NOT need to add
+     `http://localhost` here** — Meta allows localhost redirects automatically
+     while the app is in development. (You can leave this field empty.) You will
+     add the real production URL here later when the app goes live on Cloud Run.
+     Note: Google is different — see Part 2B, where the localhost redirect URI
+     **must** be added explicitly.
    - Save changes.
 4. **Add Marketing API**: left menu → "Add product" → **Marketing API** (this is
    what allows reading ad accounts/insights via `ads_read`).
