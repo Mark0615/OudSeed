@@ -192,6 +192,19 @@ def _flow(current: int) -> str:
     return "<div class='flow'>" + "".join(parts) + "</div>"
 
 
+def render_connect_error(platform_label: str, reason: str) -> str:
+    """A friendly error page when an ad-platform connect fails (no raw 500)."""
+    body = (
+        "<div class='signin-wrap'><main class='signin'>"
+        "<img src='/assets/oudseed-logo.png' alt='OudSeed'>"
+        f"<h1 style='font-size:22px;margin:0 0 10px'>Couldn't connect {html.escape(platform_label)}</h1>"
+        f"<p class='muted'>{html.escape(reason)}</p>"
+        "<p style='margin-top:18px'><a class='btn' href='/'>Back to dashboard</a></p>"
+        "</main></div>"
+    )
+    return render_page(body, title="Connection error")
+
+
 def _topbar(user_email: str, current_step: int) -> str:
     initial = html.escape(user_email[:1].upper() or "U")
     name = html.escape(user_email)

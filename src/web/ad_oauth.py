@@ -33,6 +33,31 @@ META_SCOPES = ("ads_read",)
 GOOGLE_ADS_SCOPES = ("https://www.googleapis.com/auth/adwords",)
 
 
+def summarize_oauth_http_error(exc: httpx.HTTPStatusError) -> str:
+    """Extract a short, secret-free message from a provider OAuth/API error.
+
+    Handles the common error shapes: OAuth token endpoints
+    (``{"error": "...", "error_description": "..."}``) and the Graph / Google Ads
+    APIs (``{"error": {"status"/"type": ..., "message": ...}}``). Only provider
+    error codes/messages are returned — never tokens or request payloads.
+    """
+    resp = exc.response
+    try:
+        data = resp.json()
+    except Exception:
+        return f"HTTP {resp.status_code}"
+    err = data.get("error") if isinstance(data, dict) else None
+    if isinstance(err, str):  # OAuth token endpoint
+        desc = data.get("error_description")
+        return f"{err}: {desc}" if desc else err
+    if isinstance(err, dict):  # Graph / Google Ads API
+        status = err.get("status") or err.get("type") or ""
+        message = err.get("message") or ""
+        joined = " — ".join(str(p) for p in (status, message) if p)
+        return joined or f"HTTP {resp.status_code}"
+    return f"HTTP {resp.status_code}"
+
+
 @dataclass(frozen=True)
 class AdAccount:
     """An ad account the authorization can access."""
