@@ -24,10 +24,15 @@ META_ADACCOUNTS_ENDPOINT = f"https://graph.facebook.com/{META_API_VERSION}/me/ad
 
 GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
-GOOGLE_ADS_API_VERSION = "v18"
-GOOGLE_ADS_LIST_CUSTOMERS_ENDPOINT = (
-    f"https://googleads.googleapis.com/{GOOGLE_ADS_API_VERSION}/customers:listAccessibleCustomers"
-)
+# Google Ads API versions sunset roughly yearly; calling a sunset version 404s.
+# This default is the current major as of mid-2026; override via the
+# GOOGLE_ADS_API_VERSION env var when Google deprecates it (no code change needed).
+GOOGLE_ADS_API_VERSION = "v21"
+
+
+def google_ads_list_customers_endpoint(api_version: str) -> str:
+    """Build the listAccessibleCustomers REST endpoint for an API version."""
+    return f"https://googleads.googleapis.com/{api_version}/customers:listAccessibleCustomers"
 
 META_SCOPES = ("ads_read",)
 GOOGLE_ADS_SCOPES = ("https://www.googleapis.com/auth/adwords",)
@@ -169,6 +174,7 @@ class GoogleAdsOAuthClient:
         redirect_uri: str,
         developer_token: str,
         *,
+        api_version: str = GOOGLE_ADS_API_VERSION,
         scopes: tuple[str, ...] = GOOGLE_ADS_SCOPES,
         timeout: float = 20.0,
     ) -> None:
@@ -176,6 +182,8 @@ class GoogleAdsOAuthClient:
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
         self.developer_token = developer_token
+        self.api_version = api_version
+        self.list_customers_endpoint = google_ads_list_customers_endpoint(api_version)
         self.scopes = scopes
         self.timeout = timeout
 
@@ -224,7 +232,7 @@ class GoogleAdsOAuthClient:
         if not access_token:
             return []
         resp = httpx.get(
-            GOOGLE_ADS_LIST_CUSTOMERS_ENDPOINT,
+            self.list_customers_endpoint,
             headers={
                 "Authorization": f"Bearer {access_token}",
                 "developer-token": self.developer_token,
