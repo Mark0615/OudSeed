@@ -14,11 +14,13 @@ Routes:
 
 from __future__ import annotations
 
+import logging
 import secrets
 from pathlib import Path
 
+import httpx
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
@@ -33,7 +35,11 @@ from src.storage.repository import (
     upsert_user_by_google_sub,
 )
 from src.web import views
-from src.web.ad_oauth import GoogleAdsOAuthClient, MetaAdsOAuthClient
+from src.web.ad_oauth import (
+    GoogleAdsOAuthClient,
+    MetaAdsOAuthClient,
+    summarize_oauth_http_error,
+)
 from src.web.config import load_web_settings
 from src.web.deps import (
     get_db,
@@ -46,6 +52,8 @@ from src.web.oauth import GoogleOAuthClient
 SESSION_STATE_KEY = "oauth_state"
 SESSION_USER_KEY = "user_id"
 CONNECT_STATE_KEY = "connect_state"
+
+logger = logging.getLogger(__name__)
 
 ASSETS_DIR = Path(__file__).resolve().parents[2] / "frontend" / "prototype" / "assets"
 
@@ -157,12 +165,28 @@ def create_app() -> FastAPI:
 
     def _finish_connect(
         request: Request, db: Session, client, code: str | None, state: str | None
-    ) -> RedirectResponse:
+    ) -> Response:
         expected_state = request.session.pop(CONNECT_STATE_KEY, None)
         if not code or not state or not expected_state or state != expected_state:
             raise HTTPException(status_code=400, detail="Invalid OAuth state or missing code.")
         user = _require_user(request, db)
-        result = client.fetch_connection(code)
+        label = views.PLATFORM_LABELS.get(client.platform, client.platform)
+        # Surface provider/auth failures as a readable page instead of a raw 500.
+        try:
+            result = client.fetch_connection(code)
+        except httpx.HTTPStatusError as exc:
+            reason = summarize_oauth_http_error(exc)
+            logger.warning("Connect failed (%s): %s", client.platform, reason)
+            return HTMLResponse(views.render_connect_error(label, reason), status_code=502)
+        except httpx.RequestError as exc:
+            logger.warning("Connect network error (%s): %s", client.platform, type(exc).__name__)
+            return HTMLResponse(
+                views.render_connect_error(label, f"Couldn't reach {label}. Please try again."),
+                status_code=504,
+            )
+        except ValueError as exc:
+            logger.warning("Connect rejected (%s): %s", client.platform, exc)
+            return HTMLResponse(views.render_connect_error(label, str(exc)), status_code=400)
         workspace = get_or_create_default_workspace(db, user)
         for account in result.accounts:
             upsert_platform_connection(
@@ -195,7 +219,7 @@ def create_app() -> FastAPI:
         state: str | None = None,
         oauth: MetaAdsOAuthClient = Depends(get_meta_ads_oauth),
         db: Session = Depends(get_db),
-    ) -> RedirectResponse:
+    ) -> Response:
         return _finish_connect(request, db, oauth, code, state)
 
     @app.get("/connect/google-ads/start")
@@ -214,7 +238,7 @@ def create_app() -> FastAPI:
         state: str | None = None,
         oauth: GoogleAdsOAuthClient = Depends(get_google_ads_oauth),
         db: Session = Depends(get_db),
-    ) -> RedirectResponse:
+    ) -> Response:
         return _finish_connect(request, db, oauth, code, state)
 
     @app.post("/accounts/select")

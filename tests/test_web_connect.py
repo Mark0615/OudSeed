@@ -7,6 +7,7 @@ network calls or real credentials are needed.
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -15,7 +16,7 @@ from src.storage.crypto import generate_key
 from src.storage.db import build_session_factory, create_all, create_db_engine
 from src.storage.models import PlatformConnection
 from src.storage.repository import read_connection_token
-from src.web.ad_oauth import AdAccount, AdConnectionResult
+from src.web.ad_oauth import AdAccount, AdConnectionResult, summarize_oauth_http_error
 from src.web.app import create_app
 from src.web.deps import get_db, get_google_ads_oauth, get_google_oauth, get_meta_ads_oauth
 from src.web.oauth import GoogleUser
@@ -58,6 +59,19 @@ class FakeGoogleAdsOAuth:
             scopes="adwords",
             accounts=[AdAccount("1234567890", "Google Ads 1234567890")],
         )
+
+
+class FakeFailingGoogleAdsOAuth(FakeGoogleAdsOAuth):
+    """Simulates the Google Ads API rejecting listAccessibleCustomers."""
+
+    def fetch_connection(self, code: str) -> AdConnectionResult:
+        request = httpx.Request("GET", "https://googleads.example/customers")
+        response = httpx.Response(
+            403,
+            json={"error": {"status": "PERMISSION_DENIED", "message": "Developer token is not approved."}},
+            request=request,
+        )
+        raise httpx.HTTPStatusError("403", request=request, response=response)
 
 
 @pytest.fixture
@@ -191,3 +205,48 @@ def test_account_selection_requires_sign_in(ctx):
         follow_redirects=False,
     )
     assert resp.status_code == 401
+
+
+def test_connect_api_error_shows_readable_page_not_500(ctx):
+    ctx.client.app.dependency_overrides[get_google_ads_oauth] = FakeFailingGoogleAdsOAuth
+    _sign_in(ctx.client)
+    resp = _connect(
+        ctx.client,
+        start_path="/connect/google-ads/start",
+        callback_path="/oauth/google-ads/callback",
+    )
+    # Not a raw 500; a friendly page that names the platform and the reason.
+    assert resp.status_code == 502
+    assert "Couldn't connect Google Ads" in resp.text
+    assert "Developer token is not approved." in resp.text
+    # And nothing was persisted from the failed attempt.
+    assert _all_connections(ctx.factory) == []
+
+
+def test_summarize_oauth_http_error_shapes():
+    req = httpx.Request("GET", "https://x.example")
+    # OAuth token endpoint shape
+    token_err = httpx.HTTPStatusError(
+        "400",
+        request=req,
+        response=httpx.Response(
+            400, json={"error": "invalid_grant", "error_description": "Bad code"}, request=req
+        ),
+    )
+    assert summarize_oauth_http_error(token_err) == "invalid_grant: Bad code"
+    # Google Ads API shape
+    api_err = httpx.HTTPStatusError(
+        "403",
+        request=req,
+        response=httpx.Response(
+            403,
+            json={"error": {"status": "PERMISSION_DENIED", "message": "Not approved"}},
+            request=req,
+        ),
+    )
+    assert summarize_oauth_http_error(api_err) == "PERMISSION_DENIED — Not approved"
+    # Non-JSON body falls back to status code
+    plain_err = httpx.HTTPStatusError(
+        "500", request=req, response=httpx.Response(500, text="oops", request=req)
+    )
+    assert summarize_oauth_http_error(plain_err) == "HTTP 500"
