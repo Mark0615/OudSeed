@@ -113,7 +113,7 @@ def test_meta_connect_creates_encrypted_connections(ctx):
     resp = _connect(
         ctx.client, start_path="/connect/meta/start", callback_path="/oauth/meta/callback"
     )
-    assert resp.status_code == 307
+    assert resp.status_code == 303
 
     conns = _all_connections(ctx.factory)
     assert len(conns) == 2
@@ -135,7 +135,7 @@ def test_google_ads_connect_creates_connection(ctx):
         start_path="/connect/google-ads/start",
         callback_path="/oauth/google-ads/callback",
     )
-    assert resp.status_code == 307
+    assert resp.status_code == 303
 
     conns = _all_connections(ctx.factory)
     assert len(conns) == 1
@@ -159,3 +159,31 @@ def test_reconnect_is_idempotent(ctx):
     _connect(ctx.client, start_path="/connect/meta/start", callback_path="/oauth/meta/callback")
     # Re-authorizing the same accounts updates in place, not duplicates.
     assert len(_all_connections(ctx.factory)) == 2
+
+
+def test_dashboard_lists_connected_accounts_with_checkboxes(ctx):
+    _sign_in(ctx.client)
+    _connect(ctx.client, start_path="/connect/meta/start", callback_path="/oauth/meta/callback")
+    home = ctx.client.get("/")
+    assert "Acct One" in home.text and "Acct Two" in home.text
+    assert "type='checkbox'" in home.text
+    assert "Select accounts to sync" in home.text
+
+
+def test_account_selection_marks_active_and_paused(ctx):
+    _sign_in(ctx.client)
+    _connect(ctx.client, start_path="/connect/meta/start", callback_path="/oauth/meta/callback")
+    # Keep only act_111 selected.
+    ctx.client.post("/accounts/select", data={"platform": "meta_ads", "account": ["act_111"]})
+    by_id = {c.external_account_id: c.status for c in _all_connections(ctx.factory)}
+    assert by_id["act_111"] == "active"
+    assert by_id["act_222"] == "paused"
+
+
+def test_account_selection_requires_sign_in(ctx):
+    resp = ctx.client.post(
+        "/accounts/select",
+        data={"platform": "meta_ads", "account": ["act_111"]},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 401
