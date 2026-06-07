@@ -1,0 +1,218 @@
+"""Ad-platform OAuth connect clients (Meta Ads, Google Ads).
+
+Each client exposes:
+- ``authorization_url(state)`` — where to send the user to authorize, and
+- ``fetch_connection(code)`` — exchange the code, then list the ad accounts the
+  authorization grants, returning the long-lived secret to store plus accounts.
+
+The network calls live in ``fetch_connection`` so tests can fake the whole step.
+The returned ``secret`` is what we encrypt into ``platform_connections`` (Meta:
+a long-lived user token; Google Ads: a refresh token).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from urllib.parse import urlencode
+
+import httpx
+
+META_API_VERSION = "v21.0"
+META_AUTH_ENDPOINT = f"https://www.facebook.com/{META_API_VERSION}/dialog/oauth"
+META_TOKEN_ENDPOINT = f"https://graph.facebook.com/{META_API_VERSION}/oauth/access_token"
+META_ADACCOUNTS_ENDPOINT = f"https://graph.facebook.com/{META_API_VERSION}/me/adaccounts"
+
+GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
+GOOGLE_ADS_API_VERSION = "v18"
+GOOGLE_ADS_LIST_CUSTOMERS_ENDPOINT = (
+    f"https://googleads.googleapis.com/{GOOGLE_ADS_API_VERSION}/customers:listAccessibleCustomers"
+)
+
+META_SCOPES = ("ads_read",)
+GOOGLE_ADS_SCOPES = ("https://www.googleapis.com/auth/adwords",)
+
+
+@dataclass(frozen=True)
+class AdAccount:
+    """An ad account the authorization can access."""
+
+    external_account_id: str
+    account_name: str | None = None
+
+
+@dataclass(frozen=True)
+class AdConnectionResult:
+    """Outcome of an ad-platform authorization."""
+
+    secret: str  # long-lived token to encrypt and store
+    accounts: list[AdAccount] = field(default_factory=list)
+    scopes: str | None = None
+
+
+class MetaAdsOAuthClient:
+    """Meta (Facebook) Ads OAuth connect."""
+
+    platform = "meta_ads"
+
+    def __init__(
+        self,
+        app_id: str,
+        app_secret: str,
+        redirect_uri: str,
+        *,
+        scopes: tuple[str, ...] = META_SCOPES,
+        timeout: float = 20.0,
+    ) -> None:
+        self.app_id = app_id
+        self.app_secret = app_secret
+        self.redirect_uri = redirect_uri
+        self.scopes = scopes
+        self.timeout = timeout
+
+    def authorization_url(self, state: str) -> str:
+        params = {
+            "client_id": self.app_id,
+            "redirect_uri": self.redirect_uri,
+            "state": state,
+            "response_type": "code",
+            "scope": ",".join(self.scopes),
+        }
+        return f"{META_AUTH_ENDPOINT}?{urlencode(params)}"
+
+    def fetch_connection(self, code: str) -> AdConnectionResult:
+        short_token = self._exchange_code(code)
+        long_token = self._exchange_for_long_lived(short_token)
+        accounts = self._list_ad_accounts(long_token)
+        return AdConnectionResult(
+            secret=long_token, accounts=accounts, scopes=",".join(self.scopes)
+        )
+
+    def _exchange_code(self, code: str) -> str:
+        resp = httpx.get(
+            META_TOKEN_ENDPOINT,
+            params={
+                "client_id": self.app_id,
+                "client_secret": self.app_secret,
+                "redirect_uri": self.redirect_uri,
+                "code": code,
+            },
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()["access_token"]
+
+    def _exchange_for_long_lived(self, short_token: str) -> str:
+        resp = httpx.get(
+            META_TOKEN_ENDPOINT,
+            params={
+                "grant_type": "fb_exchange_token",
+                "client_id": self.app_id,
+                "client_secret": self.app_secret,
+                "fb_exchange_token": short_token,
+            },
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        return resp.json().get("access_token", short_token)
+
+    def _list_ad_accounts(self, token: str) -> list[AdAccount]:
+        resp = httpx.get(
+            META_ADACCOUNTS_ENDPOINT,
+            params={"fields": "account_id,name", "access_token": token},
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        data = resp.json().get("data", [])
+        accounts: list[AdAccount] = []
+        for item in data:
+            # Prefer the act_ prefixed id used by the connector.
+            ext_id = item.get("id") or f"act_{item.get('account_id')}"
+            accounts.append(AdAccount(external_account_id=ext_id, account_name=item.get("name")))
+        return accounts
+
+
+class GoogleAdsOAuthClient:
+    """Google Ads OAuth connect (reuses the Google Web OAuth client)."""
+
+    platform = "google_ads"
+
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        redirect_uri: str,
+        developer_token: str,
+        *,
+        scopes: tuple[str, ...] = GOOGLE_ADS_SCOPES,
+        timeout: float = 20.0,
+    ) -> None:
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.redirect_uri = redirect_uri
+        self.developer_token = developer_token
+        self.scopes = scopes
+        self.timeout = timeout
+
+    def authorization_url(self, state: str) -> str:
+        params = {
+            "client_id": self.client_id,
+            "redirect_uri": self.redirect_uri,
+            "state": state,
+            "response_type": "code",
+            "scope": " ".join(self.scopes),
+            "access_type": "offline",
+            "prompt": "consent",
+            "include_granted_scopes": "true",
+        }
+        return f"{GOOGLE_AUTH_ENDPOINT}?{urlencode(params)}"
+
+    def fetch_connection(self, code: str) -> AdConnectionResult:
+        tokens = self._exchange_code(code)
+        refresh_token = tokens.get("refresh_token")
+        access_token = tokens.get("access_token")
+        if not refresh_token:
+            raise ValueError(
+                "Google did not return a refresh token; re-authorize with prompt=consent."
+            )
+        accounts = self._list_customers(access_token)
+        return AdConnectionResult(
+            secret=refresh_token, accounts=accounts, scopes=" ".join(self.scopes)
+        )
+
+    def _exchange_code(self, code: str) -> dict:
+        resp = httpx.post(
+            GOOGLE_TOKEN_ENDPOINT,
+            data={
+                "code": code,
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+                "redirect_uri": self.redirect_uri,
+                "grant_type": "authorization_code",
+            },
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def _list_customers(self, access_token: str | None) -> list[AdAccount]:
+        if not access_token:
+            return []
+        resp = httpx.get(
+            GOOGLE_ADS_LIST_CUSTOMERS_ENDPOINT,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "developer-token": self.developer_token,
+            },
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        resource_names = resp.json().get("resourceNames", [])
+        accounts: list[AdAccount] = []
+        for name in resource_names:
+            # "customers/1234567890" -> "1234567890"
+            customer_id = name.split("/")[-1]
+            accounts.append(
+                AdAccount(external_account_id=customer_id, account_name=f"Google Ads {customer_id}")
+            )
+        return accounts

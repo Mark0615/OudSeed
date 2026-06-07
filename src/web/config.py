@@ -16,6 +16,12 @@ class WebSettings:
     session_secret: str
     app_base_url: str
     database_url: str
+    # Ad-platform connect (Phase 3 slice 2)
+    meta_app_id: str
+    meta_app_secret: str
+    meta_redirect_uri: str
+    google_ads_redirect_uri: str
+    google_ads_developer_token: str
 
 
 def load_web_settings() -> WebSettings:
@@ -30,4 +36,13 @@ def load_web_settings() -> WebSettings:
         session_secret=os.getenv("SESSION_SECRET", "dev-insecure-session-secret"),
         app_base_url=os.getenv("APP_BASE_URL", "http://localhost:8765"),
         database_url=os.getenv("DATABASE_URL", "sqlite:///.local/oudseed.db"),
+        meta_app_id=os.getenv("META_APP_ID", ""),
+        meta_app_secret=os.getenv("META_APP_SECRET", ""),
+        meta_redirect_uri=os.getenv(
+            "META_OAUTH_REDIRECT_URI", "http://localhost:8765/oauth/meta/callback"
+        ),
+        google_ads_redirect_uri=os.getenv(
+            "GOOGLE_ADS_OAUTH_REDIRECT_URI", "http://localhost:8765/oauth/google-ads/callback"
+        ),
+        google_ads_developer_token=os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN", ""),
     )

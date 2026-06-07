@@ -85,6 +85,15 @@ def list_workspaces_for_user(session: Session, user_id: str) -> list[Workspace]:
     return list(session.scalars(stmt))
 
 
+def get_or_create_default_workspace(session: Session, user: User) -> Workspace:
+    """Return the user's first workspace, creating one if they have none."""
+    existing = list_workspaces_for_user(session, user.id)
+    if existing:
+        return existing[0]
+    label = user.name or user.email
+    return create_workspace(session, name=f"{label}'s workspace", owner=user)
+
+
 def list_members(session: Session, workspace_id: str) -> list[WorkspaceMember]:
     """Return all members of a workspace, oldest first."""
     stmt = (
@@ -175,6 +184,51 @@ def list_connections(
         stmt = stmt.where(PlatformConnection.platform == platform)
     stmt = stmt.order_by(PlatformConnection.created_at, PlatformConnection.id)
     return list(session.scalars(stmt))
+
+
+def upsert_platform_connection(
+    session: Session,
+    *,
+    workspace_id: str,
+    platform: str,
+    external_account_id: str,
+    account_name: str | None = None,
+    token: str | None = None,
+    key: str | None = None,
+    scopes: str | None = None,
+    expires_at: datetime | None = None,
+) -> PlatformConnection:
+    """Create or update a connection for (workspace, platform, account).
+
+    If a token is provided it is encrypted and the connection marked active.
+    Re-authorizing an existing account refreshes its token in place.
+    """
+    existing = session.scalar(
+        select(PlatformConnection).where(
+            PlatformConnection.workspace_id == workspace_id,
+            PlatformConnection.platform == platform,
+            PlatformConnection.external_account_id == external_account_id,
+        )
+    )
+    if existing is None:
+        connection = create_platform_connection(
+            session,
+            workspace_id=workspace_id,
+            platform=platform,
+            external_account_id=external_account_id,
+            account_name=account_name,
+        )
+    else:
+        connection = existing
+        if account_name:
+            connection.account_name = account_name
+
+    if token:
+        store_connection_token(
+            connection, secret=token, key=key, scopes=scopes, expires_at=expires_at
+        )
+    session.flush()
+    return connection
 
 
 # --- Clients, account bindings, report schedules --------------------------
