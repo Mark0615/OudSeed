@@ -60,26 +60,33 @@ create a **new Web client** so the existing pipeline keeps working.
 
 ### 2A. OAuth consent screen (who can log in)
 
-1. Go to <https://console.cloud.google.com/> and select the **`oudseed`**
-   project (top-left project picker).
-2. Left menu → **APIs & Services → OAuth consent screen**.
-3. **User type: External** → Create.
-4. Fill in: App name (e.g. "OudSeed"), User support email, Developer contact
-   email. Save and continue.
-5. **Scopes**: click "Add or remove scopes", add:
+> UI note: Google renamed this area to **"Google Auth Platform"**. The old single
+> "OAuth consent screen / User type: External" page is now split across left-nav
+> tabs: **Branding**, **Audience**, **Clients**, **Data Access**. Open it via
+> <https://console.cloud.google.com/auth/overview> (project `oudseed`), or
+> APIs & Services → OAuth consent screen (it redirects to the new UI).
+
+1. Select the **`oudseed`** project (top-left project picker). If the screen
+   shows a "Get started" button, click it and fill App name + choose audience
+   **External** + contact email.
+2. **Audience** tab:
+   - **User type = External**
+   - **Publishing status = Testing** (no verification needed for test users)
+   - **Test users**: add your own Google email and each friend's Google email.
+3. **Branding** tab: set App name (e.g. "OudSeed"), user support email, developer
+   contact email (if not already set during Get started).
+4. **Data Access** tab → "Add or remove scopes", add:
+   - `openid`
    - `.../auth/userinfo.email`
    - `.../auth/userinfo.profile`
-   - `openid`
    - `https://www.googleapis.com/auth/adwords`  (for Google Ads)
-   Save and continue.
-6. **Test users**: add your own Google email and each friend's Google email.
-   Save. **Keep Publishing status = "Testing"** (no verification needed for test
-   users).
+   Save.
 
 ### 2B. Web OAuth client (the login button)
 
-1. Left menu → **APIs & Services → Credentials**.
-2. **Create credentials → OAuth client ID**.
+1. In the **Google Auth Platform → Clients** tab (or APIs & Services →
+   Credentials). Direct link: <https://console.cloud.google.com/auth/clients>.
+2. **Create client** (or "Create credentials → OAuth client ID").
 3. **Application type: Web application**. Name it e.g. "OudSeed Web".
 4. **Authorized redirect URIs** → Add:
    `http://localhost:8765/oauth/google/callback`
