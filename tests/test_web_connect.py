@@ -16,7 +16,13 @@ from src.storage.crypto import generate_key
 from src.storage.db import build_session_factory, create_all, create_db_engine
 from src.storage.models import PlatformConnection
 from src.storage.repository import read_connection_token
-from src.web.ad_oauth import AdAccount, AdConnectionResult, summarize_oauth_http_error
+from src.web.ad_oauth import (
+    GOOGLE_ADS_API_VERSION,
+    AdAccount,
+    AdConnectionResult,
+    GoogleAdsOAuthClient,
+    summarize_oauth_http_error,
+)
 from src.web.app import create_app
 from src.web.deps import get_db, get_google_ads_oauth, get_google_oauth, get_meta_ads_oauth
 from src.web.oauth import GoogleUser
@@ -221,6 +227,26 @@ def test_connect_api_error_shows_readable_page_not_500(ctx):
     assert "Developer token is not approved." in resp.text
     # And nothing was persisted from the failed attempt.
     assert _all_connections(ctx.factory) == []
+
+
+def test_google_ads_client_builds_endpoint_from_version():
+    client = GoogleAdsOAuthClient("id", "secret", "uri", "devtoken", api_version="v22")
+    assert client.list_customers_endpoint == (
+        "https://googleads.googleapis.com/v22/customers:listAccessibleCustomers"
+    )
+
+
+def test_google_ads_default_version_is_not_sunset():
+    # v20 and earlier are sunset by mid-2026 and 404; guard against regressing.
+    assert GOOGLE_ADS_API_VERSION not in {"v17", "v18", "v19", "v20"}
+    assert GOOGLE_ADS_API_VERSION.startswith("v")
+
+
+def test_settings_read_google_ads_api_version_env(monkeypatch):
+    from src.web.config import load_web_settings
+
+    monkeypatch.setenv("GOOGLE_ADS_API_VERSION", "v23")
+    assert load_web_settings().google_ads_api_version == "v23"
 
 
 def test_summarize_oauth_http_error_shapes():

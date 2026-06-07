@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from src.web import ad_oauth
+
 
 @dataclass(frozen=True)
 class WebSettings:
@@ -22,6 +24,7 @@ class WebSettings:
     meta_redirect_uri: str
     google_ads_redirect_uri: str
     google_ads_developer_token: str
+    google_ads_api_version: str
 
 
 def load_web_settings() -> WebSettings:
@@ -45,4 +48,7 @@ def load_web_settings() -> WebSettings:
             "GOOGLE_ADS_OAUTH_REDIRECT_URI", "http://localhost:8765/oauth/google-ads/callback"
         ),
         google_ads_developer_token=os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN", ""),
+        google_ads_api_version=os.getenv(
+            "GOOGLE_ADS_API_VERSION", ad_oauth.GOOGLE_ADS_API_VERSION
+        ),
     )
