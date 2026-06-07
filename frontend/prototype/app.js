@@ -593,6 +593,11 @@ function buildConnectionPayload() {
 }
 
 function renderConnectionResult(payload, result, liveSyncReadiness) {
+  // The post-setup "setup complete" panel was removed; success now shows in the
+  // Connected setups list. Keep this a no-op when the panel is absent.
+  if (!els.connectionResult) {
+    return;
+  }
   const summary = result.config_preview.summary;
   const source = selectedSource();
   const selectedAccounts = selectedSourceAccounts().filter((account) => state.selectedAccounts.has(account.id));
@@ -704,6 +709,9 @@ function clearConnectionResult() {
   stopSyncPolling();
   state.currentSyncJobId = null;
   state.liveSyncReadiness = null;
+  if (!els.connectionResult) {
+    return;
+  }
   els.connectionResult.hidden = true;
   els.connectionStatus.textContent = "Ready";
   els.handoffSummary.innerHTML = "";
@@ -1173,7 +1181,9 @@ function updateSyncJob(syncJob) {
   if (summary) {
     summary.textContent = userSetupStatus(syncJob.status);
   }
-  els.connectionStatus.textContent = userSetupStatus(syncJob.status);
+  if (els.connectionStatus) {
+    els.connectionStatus.textContent = userSetupStatus(syncJob.status);
+  }
   if (title) {
     title.textContent = userSyncStatus(syncJob.status);
   }
