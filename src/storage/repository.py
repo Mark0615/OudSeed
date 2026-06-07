@@ -197,11 +197,15 @@ def upsert_platform_connection(
     key: str | None = None,
     scopes: str | None = None,
     expires_at: datetime | None = None,
+    mark_active: bool = True,
 ) -> PlatformConnection:
     """Create or update a connection for (workspace, platform, account).
 
-    If a token is provided it is encrypted and the connection marked active.
-    Re-authorizing an existing account refreshes its token in place.
+    If a token is provided it is encrypted. When ``mark_active`` is true the
+    connection is marked active (selected for sync); when false a newly created
+    connection is left ``paused`` (connected but not selected) and an existing
+    connection keeps its current selection status. Re-authorizing an existing
+    account refreshes its token in place.
     """
     existing = session.scalar(
         select(PlatformConnection).where(
@@ -210,7 +214,8 @@ def upsert_platform_connection(
             PlatformConnection.external_account_id == external_account_id,
         )
     )
-    if existing is None:
+    is_new = existing is None
+    if is_new:
         connection = create_platform_connection(
             session,
             workspace_id=workspace_id,
@@ -225,8 +230,17 @@ def upsert_platform_connection(
 
     if token:
         store_connection_token(
-            connection, secret=token, key=key, scopes=scopes, expires_at=expires_at
+            connection,
+            secret=token,
+            key=key,
+            scopes=scopes,
+            expires_at=expires_at,
+            mark_active=mark_active,
         )
+    # New connections that aren't auto-activated start "paused": connected but
+    # not selected for sync, so the user opts in explicitly.
+    if is_new and not mark_active:
+        connection.status = "paused"
     session.flush()
     return connection
 

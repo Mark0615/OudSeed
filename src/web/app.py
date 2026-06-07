@@ -173,6 +173,9 @@ def create_app() -> FastAPI:
                 account_name=account.account_name,
                 token=result.secret,
                 scopes=result.scopes,
+                # Newly connected accounts start unselected; the user opts in
+                # which accounts to sync on the next step.
+                mark_active=False,
             )
         return RedirectResponse(settings.app_base_url + "/", status_code=303)
 
