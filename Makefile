@@ -23,7 +23,7 @@ run:
 	$(PYTHON) -m src.main
 
 web:
-	$(PYTHON) -m uvicorn src.web.app:app --host 127.0.0.1 --port 8765 --reload
+	$(PYTHON) -m uvicorn src.web.server:app --host 127.0.0.1 --port 8765 --reload
 
 check:
 	$(PYTHON) -m ruff check src tests && $(PYTHON) -m compileall src tests && $(PYTHON) -m pytest
