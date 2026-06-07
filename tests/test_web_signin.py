@@ -95,6 +95,21 @@ def test_callback_requires_code(client):
     assert resp.status_code == 400
 
 
+def test_home_shows_sign_in_when_logged_out(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "Sign in with Google" in resp.text
+
+
+def test_home_greets_signed_in_user(client):
+    state = _start_login(client)
+    client.get(f"/oauth/google/callback?code=abc&state={state}", follow_redirects=False)
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "alice@example.com" in resp.text
+    assert "Sign out" in resp.text
+
+
 def test_me_requires_sign_in(client):
     assert client.get("/me").status_code == 401
 
