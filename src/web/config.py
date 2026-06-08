@@ -25,6 +25,9 @@ class WebSettings:
     google_ads_redirect_uri: str
     google_ads_developer_token: str
     google_ads_api_version: str
+    # Manager (MCC) customer id used as login-customer-id when querying client
+    # accounts. Digits only; empty when not configured.
+    google_ads_login_customer_id: str
     # BigQuery (for the onboarding data preview). Empty when not configured.
     bigquery_project: str
     bigquery_dataset: str
@@ -53,6 +56,10 @@ def load_web_settings() -> WebSettings:
         google_ads_developer_token=os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN", ""),
         google_ads_api_version=os.getenv(
             "GOOGLE_ADS_API_VERSION", ad_oauth.GOOGLE_ADS_API_VERSION
+        ),
+        # Keep digits only ("123-456-7890" -> "1234567890"); blank if unset.
+        google_ads_login_customer_id="".join(
+            ch for ch in os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID", "") if ch.isdigit()
         ),
         bigquery_project=os.getenv("GCP_PROJECT_ID", ""),
         bigquery_dataset=os.getenv("BIGQUERY_DATASET", ""),

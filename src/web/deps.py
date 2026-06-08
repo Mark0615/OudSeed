@@ -72,4 +72,5 @@ def get_google_ads_oauth() -> GoogleAdsOAuthClient:
         redirect_uri=settings.google_ads_redirect_uri,
         developer_token=settings.google_ads_developer_token,
         api_version=settings.google_ads_api_version,
+        login_customer_id=settings.google_ads_login_customer_id or None,
     )

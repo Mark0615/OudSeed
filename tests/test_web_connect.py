@@ -502,6 +502,43 @@ def test_google_ads_list_customers_falls_back_when_name_lookup_fails(monkeypatch
     assert accounts[0].account_name == "Google Ads 999"
 
 
+def test_settings_read_google_ads_login_customer_id(monkeypatch):
+    from src.web.config import load_web_settings
+
+    monkeypatch.setenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID", "123-456-7890")
+    # Stored digits-only so it can be used directly as login-customer-id.
+    assert load_web_settings().google_ads_login_customer_id == "1234567890"
+
+
+def test_google_ads_name_fetch_uses_manager_login_customer_id(monkeypatch):
+    from src.web import ad_oauth
+
+    captured = {}
+
+    def fake_get(url, headers=None, timeout=None):
+        return httpx.Response(
+            200, json={"resourceNames": ["customers/777"]}, request=httpx.Request("GET", url)
+        )
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["login"] = headers.get("login-customer-id")
+        return httpx.Response(
+            200,
+            json={"results": [{"customer": {"id": "777", "descriptiveName": "Acme"}}]},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(ad_oauth.httpx, "get", fake_get)
+    monkeypatch.setattr(ad_oauth.httpx, "post", fake_post)
+    client = ad_oauth.GoogleAdsOAuthClient(
+        "id", "secret", "uri", "devtoken", login_customer_id="123-456-7890"
+    )
+    accounts = client._list_customers("access-token")
+    # The configured manager id (digits only) is sent, not the client account id.
+    assert captured["login"] == "1234567890"
+    assert accounts[0].account_name == "Acme | 777"
+
+
 def test_summarize_oauth_http_error_shapes():
     req = httpx.Request("GET", "https://x.example")
     # OAuth token endpoint shape

@@ -198,6 +198,7 @@ class GoogleAdsOAuthClient:
         *,
         api_version: str = GOOGLE_ADS_API_VERSION,
         scopes: tuple[str, ...] = GOOGLE_ADS_SCOPES,
+        login_customer_id: str | None = None,
         timeout: float = 20.0,
     ) -> None:
         self.client_id = client_id
@@ -207,6 +208,13 @@ class GoogleAdsOAuthClient:
         self.api_version = api_version
         self.list_customers_endpoint = google_ads_list_customers_endpoint(api_version)
         self.scopes = scopes
+        # Manager (MCC) id used as login-customer-id; digits only. Required to read
+        # client accounts reached through a manager.
+        self.login_customer_id = (
+            "".join(ch for ch in login_customer_id if ch.isdigit())
+            if login_customer_id
+            else None
+        )
         self.timeout = timeout
 
     def authorization_url(self, state: str) -> str:
@@ -289,10 +297,9 @@ class GoogleAdsOAuthClient:
                 headers={
                     "Authorization": f"Bearer {access_token}",
                     "developer-token": self.developer_token,
-                    # Required when the account is reached through a manager; for a
-                    # directly-accessible account this is harmless. Improves the
-                    # odds the descriptive name comes back.
-                    "login-customer-id": customer_id,
+                    # Use the configured manager (MCC) id when accounts are reached
+                    # through a manager; fall back to the account itself otherwise.
+                    "login-customer-id": self.login_customer_id or customer_id,
                 },
                 json={"query": GOOGLE_ADS_CUSTOMER_NAME_QUERY},
                 timeout=self.timeout,

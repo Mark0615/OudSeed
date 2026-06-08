@@ -403,6 +403,7 @@ def create_app() -> FastAPI:
             client_id=settings.google_client_id,
             client_secret=settings.google_client_secret,
             refresh_token=token,
+            login_customer_id=settings.google_ads_login_customer_id or None,
         )
 
     @app.post("/sync/run")
