@@ -83,6 +83,9 @@ class FakeFailingGoogleAdsOAuth(FakeGoogleAdsOAuth):
 @pytest.fixture
 def ctx(tmp_path, monkeypatch):
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", generate_key())
+    # Keep the data preview offline/deterministic: no BigQuery configured.
+    monkeypatch.delenv("GCP_PROJECT_ID", raising=False)
+    monkeypatch.delenv("BIGQUERY_DATASET", raising=False)
     engine = create_db_engine(f"sqlite:///{tmp_path}/web.db")
     create_all(engine)
     factory = build_session_factory(engine)
@@ -319,6 +322,16 @@ def test_destination_save_persists_destinations_and_schedule(ctx):
         assert schedule.enabled is False
         assert schedule.report_type == "weekly"
         assert schedule.delivery_day == "friday"
+
+
+def test_preview_shows_empty_state_when_bigquery_unconfigured(ctx):
+    _select_meta(ctx.client, ctx.factory, ["act_111"])
+    home = ctx.client.get("/")
+    # The preview card renders with its range toggle, but shows the empty state
+    # (no BigQuery configured in tests) rather than crashing.
+    assert "Preview data" in home.text
+    assert "Last 7 days" in home.text and "Last 30 days" in home.text
+    assert "once" in home.text and "first sync" in home.text
 
 
 def test_destination_save_requires_sign_in(ctx):

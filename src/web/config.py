@@ -25,6 +25,9 @@ class WebSettings:
     google_ads_redirect_uri: str
     google_ads_developer_token: str
     google_ads_api_version: str
+    # BigQuery (for the onboarding data preview). Empty when not configured.
+    bigquery_project: str
+    bigquery_dataset: str
 
 
 def load_web_settings() -> WebSettings:
@@ -51,4 +54,6 @@ def load_web_settings() -> WebSettings:
         google_ads_api_version=os.getenv(
             "GOOGLE_ADS_API_VERSION", ad_oauth.GOOGLE_ADS_API_VERSION
         ),
+        bigquery_project=os.getenv("GCP_PROJECT_ID", ""),
+        bigquery_dataset=os.getenv("BIGQUERY_DATASET", ""),
     )
