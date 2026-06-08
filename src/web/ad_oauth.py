@@ -34,6 +34,28 @@ def google_ads_list_customers_endpoint(api_version: str) -> str:
     """Build the listAccessibleCustomers REST endpoint for an API version."""
     return f"https://googleads.googleapis.com/{api_version}/customers:listAccessibleCustomers"
 
+
+def google_ads_search_endpoint(api_version: str, customer_id: str) -> str:
+    """Build the GAQL search endpoint for one customer and API version."""
+    return f"https://googleads.googleapis.com/{api_version}/customers/{customer_id}/googleAds:search"
+
+
+# GAQL to read a customer's human-readable name (for "{name} | {id}" labels).
+GOOGLE_ADS_CUSTOMER_NAME_QUERY = (
+    "SELECT customer.id, customer.descriptive_name FROM customer LIMIT 1"
+)
+
+
+def format_google_ads_account_name(customer_id: str, descriptive_name: str | None) -> str:
+    """Label a Google Ads account as ``{name} | {id}``, or fall back to the id.
+
+    Falls back to ``Google Ads {id}`` when the descriptive name is unavailable
+    (e.g. the account hides it or the name lookup failed) so connect never breaks.
+    """
+    name = (descriptive_name or "").strip()
+    return f"{name} | {customer_id}" if name else f"Google Ads {customer_id}"
+
+
 META_SCOPES = ("ads_read",)
 GOOGLE_ADS_SCOPES = ("https://www.googleapis.com/auth/adwords",)
 
@@ -245,7 +267,36 @@ class GoogleAdsOAuthClient:
         for name in resource_names:
             # "customers/1234567890" -> "1234567890"
             customer_id = name.split("/")[-1]
+            descriptive_name = self._fetch_customer_name(access_token, customer_id)
             accounts.append(
-                AdAccount(external_account_id=customer_id, account_name=f"Google Ads {customer_id}")
+                AdAccount(
+                    external_account_id=customer_id,
+                    account_name=format_google_ads_account_name(customer_id, descriptive_name),
+                )
             )
         return accounts
+
+    def _fetch_customer_name(self, access_token: str, customer_id: str) -> str | None:
+        """Return a customer's descriptive name, or None if it can't be read.
+
+        Best-effort: a failure here (permission, manager-only account, transient
+        error) must not break connect, so we swallow errors and fall back to the
+        id-only label upstream.
+        """
+        try:
+            resp = httpx.post(
+                google_ads_search_endpoint(self.api_version, customer_id),
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "developer-token": self.developer_token,
+                },
+                json={"query": GOOGLE_ADS_CUSTOMER_NAME_QUERY},
+                timeout=self.timeout,
+            )
+            resp.raise_for_status()
+            results = resp.json().get("results", [])
+        except (httpx.HTTPError, ValueError):
+            return None
+        if not results:
+            return None
+        return results[0].get("customer", {}).get("descriptiveName")

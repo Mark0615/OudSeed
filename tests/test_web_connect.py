@@ -330,6 +330,75 @@ def test_destination_save_requires_sign_in(ctx):
     assert resp.status_code == 401
 
 
+def test_format_google_ads_account_name():
+    from src.web.ad_oauth import format_google_ads_account_name
+
+    assert format_google_ads_account_name("123", "Acme Brand") == "Acme Brand | 123"
+    # Missing/blank names fall back to the id-only label so connect never breaks.
+    assert format_google_ads_account_name("123", "   ") == "Google Ads 123"
+    assert format_google_ads_account_name("123", None) == "Google Ads 123"
+
+
+def test_google_ads_search_endpoint_from_version():
+    from src.web.ad_oauth import google_ads_search_endpoint
+
+    assert google_ads_search_endpoint("v21", "123") == (
+        "https://googleads.googleapis.com/v21/customers/123/googleAds:search"
+    )
+
+
+def test_google_ads_list_customers_labels_with_descriptive_name(monkeypatch):
+    from src.web import ad_oauth
+
+    def fake_get(url, headers=None, timeout=None):
+        return httpx.Response(
+            200,
+            json={"resourceNames": ["customers/1234567890"]},
+            request=httpx.Request("GET", url),
+        )
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        assert "googleAds:search" in url
+        return httpx.Response(
+            200,
+            json={"results": [{"customer": {"id": "1234567890", "descriptiveName": "Acme Brand"}}]},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(ad_oauth.httpx, "get", fake_get)
+    monkeypatch.setattr(ad_oauth.httpx, "post", fake_post)
+    client = ad_oauth.GoogleAdsOAuthClient("id", "secret", "uri", "devtoken")
+    accounts = client._list_customers("access-token")
+    assert len(accounts) == 1
+    assert accounts[0].external_account_id == "1234567890"
+    assert accounts[0].account_name == "Acme Brand | 1234567890"
+
+
+def test_google_ads_list_customers_falls_back_when_name_lookup_fails(monkeypatch):
+    from src.web import ad_oauth
+
+    def fake_get(url, headers=None, timeout=None):
+        return httpx.Response(
+            200,
+            json={"resourceNames": ["customers/999"]},
+            request=httpx.Request("GET", url),
+        )
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        # Name lookup denied — must not break connect.
+        return httpx.Response(
+            403,
+            json={"error": {"status": "PERMISSION_DENIED", "message": "no"}},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(ad_oauth.httpx, "get", fake_get)
+    monkeypatch.setattr(ad_oauth.httpx, "post", fake_post)
+    client = ad_oauth.GoogleAdsOAuthClient("id", "secret", "uri", "devtoken")
+    accounts = client._list_customers("access-token")
+    assert accounts[0].account_name == "Google Ads 999"
+
+
 def test_summarize_oauth_http_error_shapes():
     req = httpx.Request("GET", "https://x.example")
     # OAuth token endpoint shape
