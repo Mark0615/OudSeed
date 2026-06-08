@@ -425,6 +425,92 @@ def test_sync_run_surfaces_failure_reason(tmp_path, monkeypatch):
     assert "PERMISSION_DENIED" in resp.text
 
 
+def test_sync_run_refreshes_reporting_marts_on_success(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", generate_key())
+    monkeypatch.setenv("GCP_PROJECT_ID", "proj")
+    monkeypatch.setenv("BIGQUERY_DATASET", "ds")
+    ctx = _build_ctx(tmp_path)
+
+    import src.web.app as web_app
+    from src.web import first_sync as fs
+    from src.web.first_sync import AccountSyncResult, FirstSyncResult
+
+    monkeypatch.setattr(web_app, "BigQueryDestination", lambda **_: object())
+    monkeypatch.setattr(
+        fs,
+        "run_first_sync",
+        lambda **_: FirstSyncResult(
+            results=(AccountSyncResult("meta_ads", "act_111", "success", rows=5),)
+        ),
+    )
+    calls: list = []
+    monkeypatch.setattr(web_app, "refresh_reporting_marts", lambda **k: calls.append(k))
+
+    _select_meta(ctx.client, ctx.factory, ["act_111"])
+    resp = ctx.client.post("/sync/run")
+    # A successful sync must refresh the marts so the report views see the data.
+    assert resp.status_code == 200
+    assert len(calls) == 1
+
+
+def test_sync_run_skips_mart_refresh_when_all_accounts_fail(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", generate_key())
+    monkeypatch.setenv("GCP_PROJECT_ID", "proj")
+    monkeypatch.setenv("BIGQUERY_DATASET", "ds")
+    ctx = _build_ctx(tmp_path)
+
+    import src.web.app as web_app
+    from src.web import first_sync as fs
+    from src.web.first_sync import AccountSyncResult, FirstSyncResult
+
+    monkeypatch.setattr(web_app, "BigQueryDestination", lambda **_: object())
+    monkeypatch.setattr(
+        fs,
+        "run_first_sync",
+        lambda **_: FirstSyncResult(
+            results=(AccountSyncResult("meta_ads", "act_111", "failed", error="boom"),)
+        ),
+    )
+    calls: list = []
+    monkeypatch.setattr(web_app, "refresh_reporting_marts", lambda **k: calls.append(k))
+
+    _select_meta(ctx.client, ctx.factory, ["act_111"])
+    resp = ctx.client.post("/sync/run")
+    assert resp.status_code == 200
+    assert calls == []  # nothing synced → nothing to refresh
+
+
+def test_sync_run_mart_refresh_failure_keeps_success_banner(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", generate_key())
+    monkeypatch.setenv("GCP_PROJECT_ID", "proj")
+    monkeypatch.setenv("BIGQUERY_DATASET", "ds")
+    ctx = _build_ctx(tmp_path)
+
+    import src.web.app as web_app
+    from src.web import first_sync as fs
+    from src.web.first_sync import AccountSyncResult, FirstSyncResult
+
+    monkeypatch.setattr(web_app, "BigQueryDestination", lambda **_: object())
+    monkeypatch.setattr(
+        fs,
+        "run_first_sync",
+        lambda **_: FirstSyncResult(
+            results=(AccountSyncResult("meta_ads", "act_111", "success", rows=5),)
+        ),
+    )
+
+    def boom(**_):
+        raise RuntimeError("mart sql failed")
+
+    monkeypatch.setattr(web_app, "refresh_reporting_marts", boom)
+
+    _select_meta(ctx.client, ctx.factory, ["act_111"])
+    resp = ctx.client.post("/sync/run")
+    # A mart-refresh failure must not turn a successful sync into an error.
+    assert resp.status_code == 200
+    assert "banner ok" in resp.text
+
+
 def _save_email(client, email_to="buyer@example.com"):
     """Save an enabled monthly AI report schedule with a recipient."""
     client.post(
