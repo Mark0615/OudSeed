@@ -334,6 +334,34 @@ def test_preview_shows_empty_state_when_bigquery_unconfigured(ctx):
     assert "once" in home.text and "first sync" in home.text
 
 
+def test_preview_section_has_run_first_sync_button(ctx):
+    _select_meta(ctx.client, ctx.factory, ["act_111"])
+    home = ctx.client.get("/")
+    assert "Run first sync" in home.text
+    assert "action='/sync/run'" in home.text
+
+
+def test_sync_run_requires_sign_in(ctx):
+    resp = ctx.client.post("/sync/run", follow_redirects=False)
+    assert resp.status_code == 401
+
+
+def test_sync_run_without_selection_shows_notice(ctx):
+    _sign_in(ctx.client)
+    _connect(ctx.client, start_path="/connect/meta/start", callback_path="/oauth/meta/callback")
+    # Connected but nothing selected for sync yet.
+    resp = ctx.client.post("/sync/run")  # follows redirect to "/"
+    assert "Select at least one account" in resp.text
+
+
+def test_sync_run_without_bigquery_shows_notice(ctx):
+    _select_meta(ctx.client, ctx.factory, ["act_111"])
+    resp = ctx.client.post("/sync/run")  # follows redirect to "/"
+    # No BigQuery configured in tests → friendly banner, no crash.
+    assert "Data warehouse" in resp.text
+    assert "banner error" in resp.text
+
+
 def test_destination_save_requires_sign_in(ctx):
     resp = ctx.client.post(
         "/destination/save",

@@ -193,6 +193,11 @@ h1{font-size:27px;letter-spacing:-.02em;margin:0 0 6px}
 .pv-table td{padding:9px 10px;border-bottom:1px solid var(--line)}
 .pv-table th.num,.pv-table td.num{text-align:right;font-variant-numeric:tabular-nums}
 .pv-plat{display:inline-block;font-size:11px;font-weight:700;color:var(--slate-deep);background:var(--slate-soft);border-radius:6px;padding:2px 7px}
+.head-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.banner{border-radius:11px;padding:12px 15px;margin:0 0 18px;font-size:14px;font-weight:600;border:1px solid}
+.banner.ok{background:var(--green-soft);border-color:#bfe3d3;color:#1f6b51}
+.banner.warn{background:#fff5e6;border-color:#f2d9a8;color:#8a5a12}
+.banner.error{background:#fdeeee;border-color:#f3c9c9;color:#a23434}
 .note{color:var(--muted);font-size:13.5px;line-height:1.5;margin:6px 0 0}
 /* Choose destination */
 .dest-card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:14px;box-shadow:var(--shadow)}
@@ -407,10 +412,14 @@ def _preview_window(win: PreviewWindow, *, window_id: str, hidden: bool) -> str:
 def _preview_section(preview: PreviewData | None = None) -> str:
     head = (
         "<div class='preview'><div class='head'><h3>Preview data</h3>"
+        "<div class='head-actions'>"
         "<span class='range'>"
         "<button type='button' class='active' data-days='7' onclick='oudPreviewTab(7)'>Last 7 days</button>"
         "<button type='button' data-days='30' onclick='oudPreviewTab(30)'>Last 30 days</button>"
-        "</span></div>"
+        "</span>"
+        "<form method='post' action='/sync/run' style='margin:0'>"
+        "<button class='btn sm' type='submit'>Run first sync</button></form>"
+        "</div></div>"
     )
     if preview is None or not preview.has_data:
         return (
@@ -533,17 +542,28 @@ _PAGE_JS = (
 )
 
 
+def _banner(notice: dict | None) -> str:
+    if not notice:
+        return ""
+    kind = notice.get("kind", "ok")
+    if kind not in {"ok", "warn", "error"}:
+        kind = "ok"
+    return f"<div class='banner {kind}'>{html.escape(str(notice.get('text', '')))}</div>"
+
+
 def render_dashboard(
     user_email: str,
     platforms: list[PlatformView],
     destination: DestinationView | None = None,
     preview: PreviewData | None = None,
+    notice: dict | None = None,
 ) -> str:
     dest = destination or DestinationView()
     connected = [p for p in platforms if p.connected]
     has_selection = any(p.selected_count > 0 for p in platforms)
 
     main = [
+        _banner(notice),
         "<h1>Connect your ad data</h1>",
         "<p class='sub'>Link your ad platforms, choose the accounts to sync, and OudSeed "
         "turns them into dashboards and automatic AI performance reports.</p>",

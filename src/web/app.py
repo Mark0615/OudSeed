@@ -25,6 +25,8 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
+from src.connectors.google_ads import GoogleAdsConnector
+from src.connectors.meta_ads import MetaAdsConnector
 from src.destinations.bigquery import BigQueryDestination
 from src.storage.models import REPORT_DEPTHS, REPORT_TYPES, SUPPORTED_PLATFORMS, User
 from src.storage.repository import (
@@ -43,6 +45,8 @@ from src.storage.repository import (
     upsert_report_schedule,
     upsert_user_by_google_sub,
 )
+from src.utils.date_utils import get_default_sync_range
+from src.web import first_sync as first_sync_mod
 from src.web import preview as preview_mod
 from src.web import views
 from src.web.ad_oauth import (
@@ -64,6 +68,10 @@ SESSION_USER_KEY = "user_id"
 CONNECT_STATE_KEY = "connect_state"
 # Single onboarding-managed email report schedule per workspace's default client.
 ONBOARDING_SCHEDULE_KEY = "onboarding_email"
+# Session key for a one-shot status banner after a "Run first sync".
+SYNC_FLASH_KEY = "sync_flash"
+# How many days back the on-demand first sync pulls (matches the 30-day preview).
+FIRST_SYNC_DAYS = 30
 
 logger = logging.getLogger(__name__)
 
@@ -184,8 +192,11 @@ def create_app() -> FastAPI:
         platforms = _platform_views(db, workspace_id)
         destination = _destination_view(db, workspace_id)
         preview = _preview_view(db, workspace_id)
+        notice = request.session.pop(SYNC_FLASH_KEY, None)
         return HTMLResponse(
-            views.render_dashboard(user.email, platforms, destination, preview)
+            views.render_dashboard(
+                user.email, platforms, destination, preview, notice=notice
+            )
         )
 
     @app.get("/auth/google/login")
@@ -373,6 +384,81 @@ def create_app() -> FastAPI:
             email_to=email_to.strip() or None,
             enabled=bool(enabled),
         )
+        return RedirectResponse("/", status_code=303)
+
+    def _meta_connector_factory(token: str) -> MetaAdsConnector:
+        return MetaAdsConnector(access_token=token)
+
+    def _google_connector_factory(token: str) -> GoogleAdsConnector:
+        return GoogleAdsConnector(
+            developer_token=settings.google_ads_developer_token,
+            client_id=settings.google_client_id,
+            client_secret=settings.google_client_secret,
+            refresh_token=token,
+        )
+
+    @app.post("/sync/run")
+    def sync_run(
+        request: Request, db: Session = Depends(get_db)
+    ) -> RedirectResponse:
+        """On-demand first sync: pull recent data for selected accounts into BigQuery."""
+        user = _require_user(request, db)
+        workspace = get_or_create_default_workspace(db, user)
+        active = [c for c in list_connections(db, workspace.id) if c.status == "active"]
+
+        if not active:
+            request.session[SYNC_FLASH_KEY] = {
+                "kind": "error",
+                "text": "Select at least one account to sync first.",
+            }
+            return RedirectResponse("/", status_code=303)
+        if not settings.bigquery_project or not settings.bigquery_dataset:
+            request.session[SYNC_FLASH_KEY] = {
+                "kind": "error",
+                "text": "Data warehouse isn't configured yet, so the sync can't run.",
+            }
+            return RedirectResponse("/", status_code=303)
+
+        client = get_or_create_default_client(db, workspace)
+        bind_connections_to_client(db, client=client, connections=active)
+        start_date, end_date = get_default_sync_range(
+            days_back=FIRST_SYNC_DAYS, timezone="Asia/Taipei"
+        )
+        destination = BigQueryDestination(
+            project_id=settings.bigquery_project,
+            dataset_id=settings.bigquery_dataset,
+        )
+        result = first_sync_mod.run_first_sync(
+            connections=active,
+            destination=destination,
+            workspace_id=workspace.id,
+            client_id=client.client_key,
+            start_date=start_date,
+            end_date=end_date,
+            meta_connector_factory=_meta_connector_factory,
+            google_connector_factory=_google_connector_factory,
+        )
+        if result.has_failures and not result.succeeded:
+            request.session[SYNC_FLASH_KEY] = {
+                "kind": "error",
+                "text": "Sync couldn't pull data for your accounts. Please try again.",
+            }
+        elif result.has_failures:
+            request.session[SYNC_FLASH_KEY] = {
+                "kind": "warn",
+                "text": (
+                    f"Synced {len(result.succeeded)} of {result.attempted} accounts "
+                    "— the preview below is updated."
+                ),
+            }
+        else:
+            request.session[SYNC_FLASH_KEY] = {
+                "kind": "ok",
+                "text": (
+                    f"Synced {result.attempted} account(s). "
+                    "Your preview below now shows recent data."
+                ),
+            }
         return RedirectResponse("/", status_code=303)
 
     return app
