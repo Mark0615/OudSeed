@@ -30,6 +30,7 @@ from src.ai.openai_client import OpenAITextClient
 from src.connectors.google_ads import GoogleAdsConnector
 from src.connectors.meta_ads import MetaAdsConnector
 from src.destinations.bigquery import BigQueryDestination
+from src.main import refresh_reporting_marts
 from src.notifications.email_delivery import (
     SMTPEmailSender,
     load_smtp_email_config_from_env,
@@ -499,6 +500,20 @@ def create_app() -> FastAPI:
                 "text": "The sync hit an unexpected error and stopped. Please try again.",
             }
             return RedirectResponse("/", status_code=303)
+
+        # Refresh the reporting marts so the AI report views (which read the
+        # weekly/monthly summary tables, not unified_ads_daily) see the new data.
+        # The preview reads unified_ads_daily directly, so it works without this;
+        # the report does not. Best-effort: a refresh failure must not turn a
+        # successful sync into an error banner.
+        if result.succeeded:
+            try:
+                refresh_reporting_marts(destination=destination)
+            except Exception as exc:
+                logger.warning(
+                    "Reporting marts refresh failed after first sync: %s",
+                    type(exc).__name__,
+                )
 
         if result.has_failures and not result.succeeded:
             request.session[SYNC_FLASH_KEY] = {
