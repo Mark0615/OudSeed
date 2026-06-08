@@ -28,6 +28,9 @@ from src.notifications.email_delivery import (
     SMTPEmailSender,
     load_smtp_email_config_from_env,
 )
+from src.storage.config_export import export_workspace_to_config
+from src.storage.db import build_session_factory, create_db_engine, session_scope
+from src.utils.config_loader import load_config_from_yaml
 from src.utils.date_utils import (
     get_default_report_period_start,
     get_scheduled_report_period_start,
@@ -37,7 +40,7 @@ from src.utils.date_utils import (
 def main() -> None:
     """Generate account-grouped reports and send one email per account group."""
     load_dotenv()
-    config = _load_runtime_config()
+    config = _load_account_report_config()
     if _bool_env("AI_REPORT_LIST_SCHEDULES", False):
         for line in format_report_schedule_lines(list_report_schedules(config)):
             print(line)
@@ -128,6 +131,34 @@ def main() -> None:
         report_depth=report_depth,
         recipient=recipient,
     )
+
+
+def _load_account_report_config() -> dict[str, Any]:
+    """Return runtime config from durable workspace storage, or the legacy YAML/Secret source.
+
+    When ``AI_REPORT_WORKSPACE_ID`` is set, schedules and client/account selections
+    are read live from the durable database (the web app's `ReportSchedule` rows)
+    via :func:`export_workspace_to_config`, so the dashboard is the source of
+    truth. Otherwise this falls back to the existing `CLIENTS_CONFIG_YAML` /
+    `CLIENTS_CONFIG_PATH` config used by the deployed Cloud Run job.
+    """
+    workspace_id = os.getenv("AI_REPORT_WORKSPACE_ID")
+    if not workspace_id:
+        return _load_runtime_config()
+
+    project_id = _required_env("GCP_PROJECT_ID")
+    dataset_id = _required_env("BIGQUERY_DATASET")
+    engine = create_db_engine()
+    session_factory = build_session_factory(engine)
+    with session_scope(session_factory) as session:
+        exported = export_workspace_to_config(
+            session,
+            workspace_id,
+            bigquery_project=project_id,
+            bigquery_dataset=dataset_id,
+            encryption_key=os.getenv("TOKEN_ENCRYPTION_KEY"),
+        )
+    return load_config_from_yaml(parsed_config=exported)
 
 
 def discover_account_report_groups(

@@ -11,10 +11,22 @@ from src.ai.send_account_reports import (
     _format_report_group_lines,
     _generate_and_send_account_group_reports,
     _limit_report_groups,
+    _load_account_report_config,
     _optional_positive_int_env,
     _send_account_report_email,
     discover_account_report_groups,
     format_html_email,
+)
+from src.storage.crypto import generate_key
+from src.storage.db import build_session_factory, create_all, create_db_engine, session_scope
+from src.storage.repository import (
+    bind_account,
+    create_client,
+    create_platform_connection,
+    create_report_schedule,
+    create_workspace,
+    store_connection_token,
+    upsert_user_by_google_sub,
 )
 
 
@@ -247,6 +259,64 @@ def test_default_period_start_uses_schedule_delivery_day(monkeypatch) -> None:
         "delivery_day": 10,
         "timezone": "Asia/Taipei",
     }
+
+
+def test_load_account_report_config_uses_database_when_workspace_id_set(monkeypatch, tmp_path) -> None:
+    """AI_REPORT_WORKSPACE_ID makes the durable ReportSchedule rows the config source."""
+    engine = create_db_engine(f"sqlite:///{tmp_path / 'reports.db'}")
+    create_all(engine)
+    session_factory = build_session_factory(engine)
+    key = generate_key()
+
+    with session_scope(session_factory) as session:
+        owner = upsert_user_by_google_sub(session, google_sub="g-1", email="o@example.com")
+        workspace = create_workspace(session, name="Acme", owner=owner)
+        client = create_client(session, workspace_id=workspace.id, client_key="acme_tw", name="Acme TW")
+        meta = create_platform_connection(
+            session,
+            workspace_id=workspace.id,
+            platform="meta_ads",
+            external_account_id="act_123",
+            account_name="Acme Meta",
+        )
+        store_connection_token(meta, secret="meta-token", key=key)
+        bind_account(session, client=client, connection=meta)
+        create_report_schedule(
+            session,
+            client_id=client.id,
+            schedule_key="monthly_email_default",
+            report_type="monthly",
+            delivery_day="1",
+            timezone="Asia/Taipei",
+            depth="standard",
+            email_to="buyer@example.com",
+            key=key,
+        )
+        workspace_id = workspace.id
+
+    monkeypatch.setenv("AI_REPORT_WORKSPACE_ID", workspace_id)
+    monkeypatch.setenv("GCP_PROJECT_ID", "oudseed")
+    monkeypatch.setenv("BIGQUERY_DATASET", "ads_pipeline")
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", key)
+    monkeypatch.setattr("src.ai.send_account_reports.create_db_engine", lambda: engine)
+
+    config = _load_account_report_config()
+
+    assert config["workspace_id"] == workspace_id
+    assert config["clients"][0]["client_id"] == "acme_tw"
+    assert config["clients"][0]["report_schedules"][0]["schedule_id"] == "monthly_email_default"
+    assert config["clients"][0]["report_schedules"][0]["email_to"] == "buyer@example.com"
+
+
+def test_load_account_report_config_falls_back_to_yaml_without_workspace_id(monkeypatch) -> None:
+    """Without AI_REPORT_WORKSPACE_ID, the legacy YAML/Secret Manager config still loads."""
+    monkeypatch.delenv("AI_REPORT_WORKSPACE_ID", raising=False)
+    monkeypatch.setattr(
+        "src.ai.send_account_reports._load_runtime_config",
+        lambda: {"workspace_id": "from_yaml", "clients": []},
+    )
+
+    assert _load_account_report_config() == {"workspace_id": "from_yaml", "clients": []}
 
 
 def test_send_account_report_email_logs_delivery_failure() -> None:
