@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import html
 from dataclasses import dataclass
+from pathlib import Path
+
+_ASSETS_DIR = Path(__file__).resolve().parents[2] / "frontend" / "prototype" / "assets"
 
 PLATFORM_SLUGS = {"meta_ads": "meta", "google_ads": "google-ads"}
 PLATFORM_LABELS = {
@@ -29,6 +32,24 @@ PLATFORM_ICON_FILE = {
 }
 COMING_SOON = ("instagram", "ga4", "line_ads")
 
+# Customer-facing export destinations: (kind, label, description).
+DESTINATIONS = (
+    ("bigquery", "BigQuery", "Send your data to a BigQuery dataset."),
+    ("data_studio", "Data Studio", "Build dashboards in Google Data Studio."),
+    ("google_sheets", "Google Sheets", "Export your data into a Google Sheet."),
+)
+# Brand logos auto-used when present in /assets; otherwise a letter tile shows.
+DESTINATION_ICON_FILE = {
+    "bigquery": "icon-bigquery.png",
+    "data_studio": "icon-data-studio.png",
+    "google_sheets": "icon-google-sheets.png",
+}
+_DEST_FALLBACK = {
+    "bigquery": ("BQ", "#669df6"),
+    "data_studio": ("DS", "#4285f4"),
+    "google_sheets": ("GS", "#0f9d58"),
+}
+
 # Minimal inline SVG nav icons (Lucide-style, currentColor).
 _ICONS = {
     "home": "<path d='M3 10.5 12 4l9 6.5'/><path d='M5 9.5V20h14V9.5'/>",
@@ -43,6 +64,20 @@ class AccountView:
     external_account_id: str
     account_name: str
     selected: bool
+
+
+@dataclass(frozen=True)
+class DestinationView:
+    """Current onboarding destination config, for prefilling the form."""
+
+    configured: bool = False
+    selected: tuple[str, ...] = ()  # selected export destination kinds
+    email_enabled: bool = False
+    report_type: str = "monthly"
+    delivery_day: str = "1"
+    depth: str = "standard"
+    email_to: str = ""
+    timezone: str = "Asia/Taipei"
 
 
 @dataclass(frozen=True)
@@ -146,6 +181,27 @@ h1{font-size:27px;letter-spacing:-.02em;margin:0 0 6px}
 .range a{padding:7px 13px;font-size:13px;font-weight:700;color:var(--muted);background:#fff}
 .range a.active{background:var(--slate-soft);color:var(--slate-deep)}
 .note{color:var(--muted);font-size:13.5px;line-height:1.5;margin:6px 0 0}
+/* Choose destination */
+.dest-card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:14px;box-shadow:var(--shadow)}
+.dgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:6px 0}
+.dchoice{display:flex;align-items:flex-start;gap:11px;border:1.5px solid var(--line);border-radius:12px;padding:13px 14px;cursor:pointer}
+.dchoice:hover{border-color:#cfd6e0}
+.dchoice:has(input:checked){border-color:var(--slate);background:var(--slate-soft)}
+.dchoice input{margin-top:3px;width:18px;height:18px;accent-color:var(--slate);flex:0 0 auto}
+.dchoice .tile{width:34px;height:34px;border-radius:8px}
+.dchoice .dnm{font-weight:700;font-size:14px}
+.dchoice .dds{font-size:12px;color:var(--muted);margin-top:2px;line-height:1.4}
+.ai-block{border-top:1px solid var(--line);margin-top:14px;padding-top:14px}
+.ai-block .head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.ai-block .head strong{font-size:15px}
+.dest-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-top:12px}
+.dest-grid label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--slate-deep)}
+.dest-grid input,.dest-grid select{font:inherit;font-weight:500;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink)}
+.dest-grid input:focus,.dest-grid select:focus{outline:none;border-color:var(--slate);box-shadow:0 0 0 3px rgba(58,75,99,.12)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;width:max-content}
+.seg-opt{padding:8px 16px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;background:#fff}
+.seg-opt.active{background:var(--slate-soft);color:var(--slate-deep)}
+.seg-opt input{position:absolute;opacity:0;pointer-events:none}
 .signin{max-width:430px;margin:11vh auto 0;text-align:center;background:#fff;border:1px solid var(--line);
   border-radius:18px;box-shadow:var(--shadow);padding:44px}
 .signin img{height:120px;margin-bottom:14px}.muted{color:var(--muted);line-height:1.55}
@@ -178,7 +234,7 @@ def render_signin() -> str:
 
 
 def _flow(current: int) -> str:
-    labels = ["Connect source", "Select accounts", "Preview data", "Done"]
+    labels = ["Connect source", "Select accounts", "Preview data", "Choose destination", "Done"]
     parts = []
     for i, label in enumerate(labels, start=1):
         state = "done" if i < current else ("active" if i == current else "")
@@ -301,20 +357,101 @@ def _preview_section() -> str:
     )
 
 
-def _current_step(platforms: list[PlatformView]) -> int:
+_DEPTH_OPTIONS = (("standard", "Standard"), ("brief", "Brief"), ("deep", "Deep"))
+_TZ_OPTIONS = ("Asia/Taipei", "America/Los_Angeles", "Europe/Berlin")
+_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday")
+
+
+def _options(pairs, selected: str) -> str:
+    out = []
+    for value, label in pairs:
+        sel = " selected" if value == selected else ""
+        out.append(f"<option value='{html.escape(value)}'{sel}>{html.escape(label)}</option>")
+    return "".join(out)
+
+
+def _dest_tile(kind: str) -> str:
+    icon = DESTINATION_ICON_FILE.get(kind)
+    if icon and (_ASSETS_DIR / icon).exists():
+        return f"<div class='tile'><img src='/assets/{icon}' alt=''></div>"
+    letter, color = _DEST_FALLBACK.get(kind, ("•", "#69748a"))
+    return (
+        f"<div class='tile fallback' style='background:{color};color:#fff;"
+        f"border-color:transparent'>{html.escape(letter)}</div>"
+    )
+
+
+def _destinations_section(dest: DestinationView) -> str:
+    cards = []
+    for kind, label, desc in DESTINATIONS:
+        checked = "checked" if kind in dest.selected else ""
+        cards.append(
+            "<label class='dchoice'>"
+            f"<input type='checkbox' name='destination' value='{kind}' {checked}>"
+            f"{_dest_tile(kind)}"
+            f"<div><div class='dnm'>{html.escape(label)}</div>"
+            f"<div class='dds'>{html.escape(desc)}</div></div></label>"
+        )
+
+    is_weekly = dest.report_type == "weekly"
+    monthly_day = dest.delivery_day if (not is_weekly and dest.delivery_day.isdigit()) else "1"
+    weekly_day = dest.delivery_day if is_weekly else "monday"
+    email_checked = "checked" if dest.email_enabled else ""
+    fields_hidden = "" if dest.email_enabled else " hidden"
+    m_checked = "" if is_weekly else "checked"
+    w_checked = "checked" if is_weekly else ""
+
+    return (
+        "<form class='dest-card' method='post' action='/destination/save'>"
+        "<p class='note' style='margin-top:0'>Pick where your data should land — we sync it "
+        "for you and deliver it to each destination you choose.</p>"
+        "<div class='dgrid'>" + "".join(cards) + "</div>"
+        "<div class='ai-block'><div class='head'><strong>AI report email</strong>"
+        "<label class='selall'><input type='checkbox' name='enabled' "
+        f"onclick='oudEmailToggle(this)' {email_checked}> Email me reports</label></div>"
+        "<p class='note'>Get an AI performance report by email on your schedule.</p>"
+        f"<div class='dest-grid' id='email-fields'{fields_hidden}>"
+        "<label>Report cadence<span class='seg'>"
+        f"<label class='seg-opt {'' if is_weekly else 'active'}'>"
+        f"<input type='radio' name='report_type' value='monthly' {m_checked} "
+        "onclick=\"oudCadence('monthly')\">Monthly</label>"
+        f"<label class='seg-opt {'active' if is_weekly else ''}'>"
+        f"<input type='radio' name='report_type' value='weekly' {w_checked} "
+        "onclick=\"oudCadence('weekly')\">Weekly</label></span></label>"
+        f"<label id='f-monthly'{' hidden' if is_weekly else ''}>Monthly delivery day"
+        f"<input type='number' name='monthly_day' min='1' max='28' value='{html.escape(monthly_day)}'></label>"
+        f"<label id='f-weekly'{'' if is_weekly else ' hidden'}>Weekly delivery day"
+        f"<select name='weekly_day'>{_options([(d, d.capitalize()) for d in _WEEKDAYS], weekly_day)}</select></label>"
+        f"<label>Report depth<select name='depth'>{_options(_DEPTH_OPTIONS, dest.depth)}</select></label>"
+        f"<label>Recipient email<input type='email' name='email_to' "
+        f"value='{html.escape(dest.email_to)}' placeholder='you@example.com'></label>"
+        f"<label>Timezone<select name='timezone'>{_options([(t, t) for t in _TZ_OPTIONS], dest.timezone)}</select></label>"
+        "</div></div>"
+        "<div class='save'><button class='btn sm' type='submit'>Save destination</button></div></form>"
+    )
+
+
+def _current_step(platforms: list[PlatformView], has_destination: bool) -> int:
     connected = any(p.connected for p in platforms)
     selected = any(p.selected_count > 0 for p in platforms)
     if not connected:
         return 1
     if not selected:
         return 2
-    return 3
+    if not has_destination:
+        return 3  # reviewing preview + choosing destination
+    return 5  # destination configured → done
 
 
-_SELECT_ALL_JS = (
+_PAGE_JS = (
     "<script>"
     "function oudToggleAll(cb){var f=cb.closest('form');if(!f)return;"
     "f.querySelectorAll(\"input[name='account']\").forEach(function(x){x.checked=cb.checked;});}"
+    "function oudCadence(t){var m=document.getElementById('f-monthly'),w=document.getElementById('f-weekly');"
+    "if(m)m.hidden=(t!=='monthly');if(w)w.hidden=(t!=='weekly');"
+    "document.querySelectorAll('.seg-opt').forEach(function(o){var r=o.querySelector('input');"
+    "o.classList.toggle('active',!!(r&&r.checked));});}"
+    "function oudEmailToggle(cb){var f=document.getElementById('email-fields');if(f)f.hidden=!cb.checked;}"
     "document.addEventListener('change',function(e){var t=e.target;"
     "if(!t||t.name!=='account')return;var f=t.closest('form');if(!f)return;"
     "var boxes=f.querySelectorAll(\"input[name='account']\");"
@@ -324,7 +461,12 @@ _SELECT_ALL_JS = (
 )
 
 
-def render_dashboard(user_email: str, platforms: list[PlatformView]) -> str:
+def render_dashboard(
+    user_email: str,
+    platforms: list[PlatformView],
+    destination: DestinationView | None = None,
+) -> str:
+    dest = destination or DestinationView()
     connected = [p for p in platforms if p.connected]
     has_selection = any(p.selected_count > 0 for p in platforms)
 
@@ -341,14 +483,16 @@ def render_dashboard(user_email: str, platforms: list[PlatformView]) -> str:
         if has_selection:
             main.append("<div class='sec'>Preview</div>")
             main.append(_preview_section())
+            main.append("<div class='sec'>Choose destination</div>")
+            main.append(_destinations_section(dest))
 
     body = (
-        _topbar(user_email, _current_step(platforms))
+        _topbar(user_email, _current_step(platforms, dest.configured))
         + "<div class='app'>"
         + _nav()
         + "<main class='main'>"
         + "".join(main)
         + "</main></div>"
-        + _SELECT_ALL_JS
+        + _PAGE_JS
     )
     return render_page(body)

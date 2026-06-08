@@ -17,9 +17,11 @@ from src.storage.models import (
     CONNECTION_STATUSES,
     REPORT_DEPTHS,
     REPORT_TYPES,
+    SUPPORTED_DESTINATIONS,
     SUPPORTED_PLATFORMS,
     Client,
     ClientAccount,
+    ClientDestination,
     PlatformConnection,
     ReportSchedule,
     User,
@@ -291,6 +293,72 @@ def list_clients(session: Session, workspace_id: str) -> list[Client]:
     return list(session.scalars(stmt))
 
 
+def get_or_create_default_client(
+    session: Session, workspace: Workspace, *, name: str | None = None
+) -> Client:
+    """Return the workspace's first client, creating a default one if none exist.
+
+    Onboarding groups a workspace's selected accounts into one default client.
+    ``client_key`` is stable so exported config / BigQuery ``client_id`` agree.
+    """
+    existing = list_clients(session, workspace.id)
+    if existing:
+        return existing[0]
+    return create_client(
+        session,
+        workspace_id=workspace.id,
+        client_key="default",
+        name=name or workspace.name,
+    )
+
+
+def bind_connections_to_client(
+    session: Session, *, client: Client, connections: list[PlatformConnection]
+) -> list[ClientAccount]:
+    """Bind any not-yet-bound connections to the client (idempotent)."""
+    existing_ids = {
+        b.platform_connection_id for b in list_client_accounts(session, client.id)
+    }
+    created: list[ClientAccount] = []
+    for connection in connections:
+        if connection.id in existing_ids:
+            continue
+        created.append(bind_account(session, client=client, connection=connection))
+    return created
+
+
+def list_client_destinations(
+    session: Session, client_id: str
+) -> list[ClientDestination]:
+    """Return a client's export destinations, oldest first."""
+    stmt = (
+        select(ClientDestination)
+        .where(ClientDestination.client_id == client_id)
+        .order_by(ClientDestination.created_at, ClientDestination.id)
+    )
+    return list(session.scalars(stmt))
+
+
+def set_client_destinations(
+    session: Session, *, client: Client, selected_kinds: list[str]
+) -> list[ClientDestination]:
+    """Enable the selected export destinations and disable the rest.
+
+    Rows are created on first selection and toggled on re-save (idempotent).
+    Unsupported kinds are ignored. Returns the client's destination rows.
+    """
+    selected = {k for k in selected_kinds if k in SUPPORTED_DESTINATIONS}
+    existing = {d.kind: d for d in list_client_destinations(session, client.id)}
+    for kind in SUPPORTED_DESTINATIONS:
+        chosen = kind in selected
+        if kind in existing:
+            existing[kind].enabled = chosen
+        elif chosen:
+            session.add(ClientDestination(client_id=client.id, kind=kind, enabled=True))
+    session.flush()
+    return list_client_destinations(session, client.id)
+
+
 def bind_account(
     session: Session, *, client: Client, connection: PlatformConnection
 ) -> ClientAccount:
@@ -356,6 +424,63 @@ def create_report_schedule(
     session.add(schedule)
     session.flush()
     return schedule
+
+
+def upsert_report_schedule(
+    session: Session,
+    *,
+    client_id: str,
+    schedule_key: str,
+    report_type: str,
+    delivery_day: str,
+    channel: str = "email",
+    timezone: str | None = None,
+    depth: str = "standard",
+    email_to: str | None = None,
+    key: str | None = None,
+    enabled: bool = True,
+) -> ReportSchedule:
+    """Create or update a client's report schedule, keyed by ``schedule_key``.
+
+    Used by onboarding so re-saving the destination updates the existing schedule
+    in place instead of duplicating. The recipient email is encrypted. Raises
+    ValueError for an unsupported report type or depth.
+    """
+    if report_type not in REPORT_TYPES:
+        raise ValueError(f"Unsupported report_type: {report_type!r}")
+    if depth not in REPORT_DEPTHS:
+        raise ValueError(f"Unsupported depth: {depth!r}")
+    existing = session.scalar(
+        select(ReportSchedule).where(
+            ReportSchedule.client_id == client_id,
+            ReportSchedule.schedule_key == schedule_key,
+        )
+    )
+    if existing is None:
+        return create_report_schedule(
+            session,
+            client_id=client_id,
+            schedule_key=schedule_key,
+            report_type=report_type,
+            delivery_day=delivery_day,
+            channel=channel,
+            timezone=timezone,
+            depth=depth,
+            email_to=email_to,
+            key=key,
+            enabled=enabled,
+        )
+    existing.report_type = report_type
+    existing.delivery_day = str(delivery_day)
+    existing.channel = channel
+    existing.timezone = timezone
+    existing.depth = depth
+    existing.enabled = enabled
+    existing.encrypted_email_to = (
+        encrypt_secret(email_to, key=key) if email_to else None
+    )
+    session.flush()
+    return existing
 
 
 def read_schedule_email_to(

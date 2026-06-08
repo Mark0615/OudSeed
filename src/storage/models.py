@@ -131,6 +131,11 @@ class PlatformConnection(Base):
 REPORT_TYPES = ("weekly", "monthly")
 REPORT_DEPTHS = ("brief", "standard", "deep")
 
+# Customer-facing export destinations (where the data lands). Internally the
+# product always stages in BigQuery; these are what the customer chooses to
+# export to — "bigquery" here means the customer's own BigQuery.
+SUPPORTED_DESTINATIONS = ("bigquery", "data_studio", "google_sheets")
+
 
 class Client(Base):
     """A report-grouping customer within a workspace.
@@ -157,6 +162,9 @@ class Client(Base):
     report_schedules: Mapped[list[ReportSchedule]] = relationship(
         back_populates="client", cascade="all, delete-orphan"
     )
+    destinations: Mapped[list[ClientDestination]] = relationship(
+        back_populates="client", cascade="all, delete-orphan"
+    )
 
 
 class ClientAccount(Base):
@@ -178,6 +186,30 @@ class ClientAccount(Base):
 
     client: Mapped[Client] = relationship(back_populates="accounts")
     connection: Mapped[PlatformConnection] = relationship()
+
+
+class ClientDestination(Base):
+    """A data-export destination the customer selected for a client.
+
+    ``kind`` is one of SUPPORTED_DESTINATIONS. Export connectors themselves are
+    built later; for now this records the customer's chosen landing spots.
+    """
+
+    __tablename__ = "client_destinations"
+    __table_args__ = (
+        UniqueConstraint("client_id", "kind", name="uq_client_destination"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    enabled: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    client: Mapped[Client] = relationship(back_populates="destinations")
 
 
 class ReportSchedule(Base):
