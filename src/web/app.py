@@ -73,6 +73,14 @@ SYNC_FLASH_KEY = "sync_flash"
 # How many days back the on-demand first sync pulls (matches the 30-day preview).
 FIRST_SYNC_DAYS = 30
 
+
+def _first_failure_reason(result: first_sync_mod.FirstSyncResult) -> str:
+    """Return a short, single-line reason from the first failed account."""
+    for r in result.failed:
+        if r.error:
+            return " ".join(r.error.split())[:200]
+    return "Please try again."
+
 logger = logging.getLogger(__name__)
 
 ASSETS_DIR = Path(__file__).resolve().parents[2] / "frontend" / "prototype" / "assets"
@@ -424,31 +432,43 @@ def create_app() -> FastAPI:
         start_date, end_date = get_default_sync_range(
             days_back=FIRST_SYNC_DAYS, timezone="Asia/Taipei"
         )
-        destination = BigQueryDestination(
-            project_id=settings.bigquery_project,
-            dataset_id=settings.bigquery_dataset,
-        )
-        result = first_sync_mod.run_first_sync(
-            connections=active,
-            destination=destination,
-            workspace_id=workspace.id,
-            client_id=client.client_key,
-            start_date=start_date,
-            end_date=end_date,
-            meta_connector_factory=_meta_connector_factory,
-            google_connector_factory=_google_connector_factory,
-        )
+        # Calling real ad APIs + BigQuery can fail or time out; never let that turn
+        # into a raw 500 — always return a readable status banner.
+        try:
+            destination = BigQueryDestination(
+                project_id=settings.bigquery_project,
+                dataset_id=settings.bigquery_dataset,
+            )
+            result = first_sync_mod.run_first_sync(
+                connections=active,
+                destination=destination,
+                workspace_id=workspace.id,
+                client_id=client.client_key,
+                start_date=start_date,
+                end_date=end_date,
+                meta_connector_factory=_meta_connector_factory,
+                google_connector_factory=_google_connector_factory,
+            )
+        except Exception as exc:
+            # Log only the exception type to avoid leaking ids/secrets.
+            logger.warning("First sync stopped unexpectedly: %s", type(exc).__name__)
+            request.session[SYNC_FLASH_KEY] = {
+                "kind": "error",
+                "text": "The sync hit an unexpected error and stopped. Please try again.",
+            }
+            return RedirectResponse("/", status_code=303)
+
         if result.has_failures and not result.succeeded:
             request.session[SYNC_FLASH_KEY] = {
                 "kind": "error",
-                "text": "Sync couldn't pull data for your accounts. Please try again.",
+                "text": f"Sync couldn't pull data: {_first_failure_reason(result)}",
             }
         elif result.has_failures:
             request.session[SYNC_FLASH_KEY] = {
                 "kind": "warn",
                 "text": (
-                    f"Synced {len(result.succeeded)} of {result.attempted} accounts "
-                    "— the preview below is updated."
+                    f"Synced {len(result.succeeded)} of {result.attempted} accounts. "
+                    f"Some failed: {_first_failure_reason(result)}"
                 ),
             }
         else:

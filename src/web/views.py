@@ -43,8 +43,8 @@ DESTINATIONS = (
 # Brand logos auto-used when present in /assets; otherwise a letter tile shows.
 DESTINATION_ICON_FILE = {
     "bigquery": "icon-bigquery.png",
-    "data_studio": "icon-data-studio.png",
-    "google_sheets": "icon-google-sheets.png",
+    "data_studio": "icon-datastudio.png",
+    "google_sheets": "icon-google_sheet.png",
 }
 _DEST_FALLBACK = {
     "bigquery": ("BQ", "#669df6"),
