@@ -249,6 +249,87 @@ def test_settings_read_google_ads_api_version_env(monkeypatch):
     assert load_web_settings().google_ads_api_version == "v23"
 
 
+def _select_meta(client, factory, external_ids):
+    _sign_in(client)
+    _connect(client, start_path="/connect/meta/start", callback_path="/oauth/meta/callback")
+    client.post("/accounts/select", data={"platform": "meta_ads", "account": external_ids})
+
+
+def test_dashboard_shows_destination_step_after_selection(ctx):
+    _select_meta(ctx.client, ctx.factory, ["act_111"])
+    home = ctx.client.get("/")
+    assert "Choose destination" in home.text
+    # Multi-select destination cards + the independent AI email opt-in.
+    assert "name='destination'" in home.text
+    assert "BigQuery" in home.text and "Data Studio" in home.text and "Google Sheets" in home.text
+    assert "AI report email" in home.text
+
+
+def test_destination_save_persists_destinations_and_schedule(ctx):
+    from src.storage.models import Client, ClientDestination, ReportSchedule
+    from src.storage.repository import read_schedule_email_to
+
+    _select_meta(ctx.client, ctx.factory, ["act_111"])
+    resp = ctx.client.post(
+        "/destination/save",
+        data={
+            "destination": ["bigquery", "data_studio"],
+            "enabled": "on",
+            "report_type": "monthly",
+            "monthly_day": "10",
+            "weekly_day": "monday",
+            "depth": "deep",
+            "email_to": "owner@example.com",
+            "timezone": "Asia/Taipei",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    with ctx.factory() as session:
+        client = session.scalars(select(Client)).one()
+        dests = {
+            d.kind: d.enabled
+            for d in session.scalars(select(ClientDestination))
+        }
+        assert dests == {"bigquery": True, "data_studio": True}
+        schedule = session.scalars(select(ReportSchedule)).one()
+        assert schedule.client_id == client.id
+        assert schedule.enabled is True
+        assert schedule.report_type == "monthly"
+        assert schedule.delivery_day == "10"
+        assert schedule.depth == "deep"
+        # Recipient email is encrypted at rest but decrypts back.
+        assert "owner@example.com" not in (schedule.encrypted_email_to or "")
+        assert read_schedule_email_to(schedule) == "owner@example.com"
+
+    # Re-saving updates in place (idempotent), toggling email off and dropping one dest.
+    ctx.client.post(
+        "/destination/save",
+        data={"destination": ["bigquery"], "report_type": "weekly", "weekly_day": "friday"},
+        follow_redirects=False,
+    )
+    with ctx.factory() as session:
+        dests = {
+            d.kind: d.enabled
+            for d in session.scalars(select(ClientDestination))
+        }
+        assert dests == {"bigquery": True, "data_studio": False}
+        schedule = session.scalars(select(ReportSchedule)).one()
+        assert schedule.enabled is False
+        assert schedule.report_type == "weekly"
+        assert schedule.delivery_day == "friday"
+
+
+def test_destination_save_requires_sign_in(ctx):
+    resp = ctx.client.post(
+        "/destination/save",
+        data={"destination": ["bigquery"]},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 401
+
+
 def test_summarize_oauth_http_error_shapes():
     req = httpx.Request("GET", "https://x.example")
     # OAuth token endpoint shape
