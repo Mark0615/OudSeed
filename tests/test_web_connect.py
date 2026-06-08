@@ -80,12 +80,7 @@ class FakeFailingGoogleAdsOAuth(FakeGoogleAdsOAuth):
         raise httpx.HTTPStatusError("403", request=request, response=response)
 
 
-@pytest.fixture
-def ctx(tmp_path, monkeypatch):
-    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", generate_key())
-    # Keep the data preview offline/deterministic: no BigQuery configured.
-    monkeypatch.delenv("GCP_PROJECT_ID", raising=False)
-    monkeypatch.delenv("BIGQUERY_DATASET", raising=False)
+def _build_ctx(tmp_path) -> SimpleNamespace:
     engine = create_db_engine(f"sqlite:///{tmp_path}/web.db")
     create_all(engine)
     factory = build_session_factory(engine)
@@ -107,6 +102,15 @@ def ctx(tmp_path, monkeypatch):
     app.dependency_overrides[get_meta_ads_oauth] = FakeMetaOAuth
     app.dependency_overrides[get_google_ads_oauth] = FakeGoogleAdsOAuth
     return SimpleNamespace(client=TestClient(app), factory=factory)
+
+
+@pytest.fixture
+def ctx(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", generate_key())
+    # Keep the data preview offline/deterministic: no BigQuery configured.
+    monkeypatch.delenv("GCP_PROJECT_ID", raising=False)
+    monkeypatch.delenv("BIGQUERY_DATASET", raising=False)
+    return _build_ctx(tmp_path)
 
 
 def _sign_in(client):
@@ -334,6 +338,16 @@ def test_preview_shows_empty_state_when_bigquery_unconfigured(ctx):
     assert "once" in home.text and "first sync" in home.text
 
 
+def test_destination_tiles_use_committed_logo_files():
+    from src.web.views import _ASSETS_DIR, DESTINATION_ICON_FILE, _dest_tile
+
+    for kind, fname in DESTINATION_ICON_FILE.items():
+        # The mapping must point at logo files that actually exist, so the tile
+        # renders the brand logo (an <img>) instead of the letter fallback.
+        assert (_ASSETS_DIR / fname).exists(), f"missing logo file: {fname}"
+        assert f"/assets/{fname}" in _dest_tile(kind)
+
+
 def test_preview_section_has_run_first_sync_button(ctx):
     _select_meta(ctx.client, ctx.factory, ["act_111"])
     home = ctx.client.get("/")
@@ -360,6 +374,54 @@ def test_sync_run_without_bigquery_shows_notice(ctx):
     # No BigQuery configured in tests → friendly banner, no crash.
     assert "Data warehouse" in resp.text
     assert "banner error" in resp.text
+
+
+def test_sync_run_never_500s_on_unexpected_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", generate_key())
+    monkeypatch.setenv("GCP_PROJECT_ID", "proj")
+    monkeypatch.setenv("BIGQUERY_DATASET", "ds")
+    ctx = _build_ctx(tmp_path)
+
+    # Make the sync blow up the way a flaky ad API / BigQuery call would.
+    from src.web import first_sync as fs
+
+    def boom(**kwargs):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(fs, "run_first_sync", boom)
+
+    _select_meta(ctx.client, ctx.factory, ["act_111"])
+    resp = ctx.client.post("/sync/run")  # follows redirect to "/"
+    # Friendly banner, not a raw 500.
+    assert resp.status_code == 200
+    assert "banner error" in resp.text
+    assert "unexpected error" in resp.text
+
+
+def test_sync_run_surfaces_failure_reason(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", generate_key())
+    monkeypatch.setenv("GCP_PROJECT_ID", "proj")
+    monkeypatch.setenv("BIGQUERY_DATASET", "ds")
+    ctx = _build_ctx(tmp_path)
+
+    from src.web import first_sync as fs
+    from src.web.first_sync import AccountSyncResult, FirstSyncResult
+
+    def fake_run(**kwargs):
+        return FirstSyncResult(
+            results=(
+                AccountSyncResult(
+                    "google_ads", "8058045945", "failed", error="PERMISSION_DENIED: token not approved"
+                ),
+            )
+        )
+
+    monkeypatch.setattr(fs, "run_first_sync", fake_run)
+
+    _select_meta(ctx.client, ctx.factory, ["act_111"])
+    resp = ctx.client.post("/sync/run")
+    # The real reason is shown so the user can act on it.
+    assert "PERMISSION_DENIED" in resp.text
 
 
 def test_destination_save_requires_sign_in(ctx):

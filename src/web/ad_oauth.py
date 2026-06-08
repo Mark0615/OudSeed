@@ -289,6 +289,10 @@ class GoogleAdsOAuthClient:
                 headers={
                     "Authorization": f"Bearer {access_token}",
                     "developer-token": self.developer_token,
+                    # Required when the account is reached through a manager; for a
+                    # directly-accessible account this is harmless. Improves the
+                    # odds the descriptive name comes back.
+                    "login-customer-id": customer_id,
                 },
                 json={"query": GOOGLE_ADS_CUSTOMER_NAME_QUERY},
                 timeout=self.timeout,
