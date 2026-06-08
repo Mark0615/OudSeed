@@ -26,6 +26,7 @@ from src.web.ad_oauth import (
 from src.web.app import create_app
 from src.web.deps import get_db, get_google_ads_oauth, get_google_oauth, get_meta_ads_oauth
 from src.web.oauth import GoogleUser
+from src.web.send_now import SendNowResult
 
 
 class FakeSigninOAuth:
@@ -422,6 +423,113 @@ def test_sync_run_surfaces_failure_reason(tmp_path, monkeypatch):
     resp = ctx.client.post("/sync/run")
     # The real reason is shown so the user can act on it.
     assert "PERMISSION_DENIED" in resp.text
+
+
+def _save_email(client, email_to="buyer@example.com"):
+    """Save an enabled monthly AI report schedule with a recipient."""
+    client.post(
+        "/destination/save",
+        data={"enabled": "on", "report_type": "monthly", "email_to": email_to},
+        follow_redirects=False,
+    )
+
+
+def test_reports_send_now_requires_sign_in(ctx):
+    resp = ctx.client.post("/reports/send-now", follow_redirects=False)
+    assert resp.status_code == 401
+
+
+def test_reports_send_now_without_recipient_shows_notice(ctx):
+    _select_meta(ctx.client, ctx.factory, ["act_111"])
+    # Email report never enabled → friendly "set it up first" banner.
+    resp = ctx.client.post("/reports/send-now")
+    assert "請先在上方開啟" in resp.text
+    assert "banner error" in resp.text
+
+
+def test_reports_send_now_without_bigquery_shows_notice(ctx):
+    _select_meta(ctx.client, ctx.factory, ["act_111"])
+    _save_email(ctx.client)
+    # Recipient saved but no BigQuery configured in tests → friendly banner.
+    resp = ctx.client.post("/reports/send-now")
+    assert "Data warehouse" in resp.text
+    assert "banner error" in resp.text
+
+
+def test_reports_send_now_without_openai_key_shows_notice(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", generate_key())
+    monkeypatch.setenv("GCP_PROJECT_ID", "proj")
+    monkeypatch.setenv("BIGQUERY_DATASET", "ds")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    ctx = _build_ctx(tmp_path)
+
+    _select_meta(ctx.client, ctx.factory, ["act_111"])
+    _save_email(ctx.client)
+    resp = ctx.client.post("/reports/send-now")
+    assert "OPENAI_API_KEY" in resp.text
+    assert "banner error" in resp.text
+
+
+def test_reports_send_now_success_banner(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", generate_key())
+    monkeypatch.setenv("GCP_PROJECT_ID", "proj")
+    monkeypatch.setenv("BIGQUERY_DATASET", "ds")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    ctx = _build_ctx(tmp_path)
+
+    import src.web.app as web_app
+
+    # Avoid real BigQuery/SMTP clients; assert the routing + banner mapping only.
+    monkeypatch.setattr(web_app, "BigQueryDestination", lambda **_: object())
+    monkeypatch.setattr(web_app, "load_smtp_email_config_from_env", lambda: object())
+    monkeypatch.setattr(web_app, "SMTPEmailSender", lambda *_: object())
+    monkeypatch.setattr(
+        web_app.send_now_mod,
+        "send_workspace_reports_now",
+        lambda **_: SendNowResult("sent", 1),
+    )
+
+    _select_meta(ctx.client, ctx.factory, ["act_111"])
+    _save_email(ctx.client)
+    resp = ctx.client.post("/reports/send-now")
+    assert resp.status_code == 200
+    assert "報告已寄出" in resp.text
+    assert "banner ok" in resp.text
+
+
+def test_reports_send_now_never_500s_on_unexpected_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", generate_key())
+    monkeypatch.setenv("GCP_PROJECT_ID", "proj")
+    monkeypatch.setenv("BIGQUERY_DATASET", "ds")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    ctx = _build_ctx(tmp_path)
+
+    import src.web.app as web_app
+
+    monkeypatch.setattr(web_app, "BigQueryDestination", lambda **_: object())
+    monkeypatch.setattr(web_app, "load_smtp_email_config_from_env", lambda: object())
+    monkeypatch.setattr(web_app, "SMTPEmailSender", lambda *_: object())
+
+    def boom(**_):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(web_app.send_now_mod, "send_workspace_reports_now", boom)
+
+    _select_meta(ctx.client, ctx.factory, ["act_111"])
+    _save_email(ctx.client)
+    resp = ctx.client.post("/reports/send-now")
+    assert resp.status_code == 200
+    assert "banner error" in resp.text
+
+
+def test_send_now_button_appears_only_after_email_saved(ctx):
+    _select_meta(ctx.client, ctx.factory, ["act_111"])
+    # Before configuring email: no test-send button.
+    assert "/reports/send-now" not in ctx.client.get("/").text
+    _save_email(ctx.client)
+    home = ctx.client.get("/").text
+    assert "寄送測試報告" in home
+    assert "formaction='/reports/send-now'" in home
 
 
 def test_destination_save_requires_sign_in(ctx):
