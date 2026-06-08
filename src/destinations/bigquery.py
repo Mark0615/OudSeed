@@ -145,6 +145,10 @@ class BigQueryDestination:
         query_job = self.client.query(sql, job_config=job_config)
         return [dict(row) for row in query_job.result()]
 
+    def qualified_table(self, table_name: str) -> str:
+        """Return the fully-qualified ``project.dataset.table`` id (public)."""
+        return self._table_id(table_name)
+
     def _table_id(self, table_name: str) -> str:
         """Return fully-qualified table id for a local table name."""
         self._validate_identifier(table_name, "table name")

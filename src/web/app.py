@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
+from src.destinations.bigquery import BigQueryDestination
 from src.storage.models import REPORT_DEPTHS, REPORT_TYPES, SUPPORTED_PLATFORMS, User
 from src.storage.repository import (
     bind_connections_to_client,
@@ -42,6 +43,7 @@ from src.storage.repository import (
     upsert_report_schedule,
     upsert_user_by_google_sub,
 )
+from src.web import preview as preview_mod
 from src.web import views
 from src.web.ad_oauth import (
     GoogleAdsOAuthClient,
@@ -139,6 +141,35 @@ def create_app() -> FastAPI:
             timezone=schedule.timezone or "Asia/Taipei",
         )
 
+    def _preview_view(db: Session, workspace_id: str | None) -> preview_mod.PreviewData | None:
+        """Build the data preview for the workspace's selected accounts.
+
+        Best-effort: returns None when BigQuery isn't configured, no accounts are
+        selected, or the query fails — the view then shows the empty state instead
+        of breaking the page.
+        """
+        if not workspace_id or not settings.bigquery_project or not settings.bigquery_dataset:
+            return None
+        active_ids = [
+            c.external_account_id
+            for c in list_connections(db, workspace_id)
+            if c.status == "active"
+        ]
+        if not active_ids:
+            return None
+        try:
+            destination = BigQueryDestination(
+                project_id=settings.bigquery_project,
+                dataset_id=settings.bigquery_dataset,
+            )
+            return preview_mod.build_preview(
+                destination, workspace_id=workspace_id, account_ids=active_ids
+            )
+        except Exception:
+            # Preview is best-effort and must never break the dashboard.
+            logger.warning("Preview unavailable for workspace; showing empty state.")
+            return None
+
     @app.get("/healthz")
     def healthz() -> dict:
         return {"status": "ok"}
@@ -152,7 +183,10 @@ def create_app() -> FastAPI:
         workspace_id = workspaces[0].id if workspaces else None
         platforms = _platform_views(db, workspace_id)
         destination = _destination_view(db, workspace_id)
-        return HTMLResponse(views.render_dashboard(user.email, platforms, destination))
+        preview = _preview_view(db, workspace_id)
+        return HTMLResponse(
+            views.render_dashboard(user.email, platforms, destination, preview)
+        )
 
     @app.get("/auth/google/login")
     def google_login(

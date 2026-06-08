@@ -12,6 +12,8 @@ import html
 from dataclasses import dataclass
 from pathlib import Path
 
+from src.web.preview import PreviewData, PreviewWindow
+
 _ASSETS_DIR = Path(__file__).resolve().parents[2] / "frontend" / "prototype" / "assets"
 
 PLATFORM_SLUGS = {"meta_ads": "meta", "google_ads": "google-ads"}
@@ -180,6 +182,17 @@ h1{font-size:27px;letter-spacing:-.02em;margin:0 0 6px}
 .range{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
 .range a{padding:7px 13px;font-size:13px;font-weight:700;color:var(--muted);background:#fff}
 .range a.active{background:var(--slate-soft);color:var(--slate-deep)}
+.range button{padding:7px 13px;font-size:13px;font-weight:700;color:var(--muted);background:#fff;border:0;cursor:pointer;font-family:inherit}
+.range button.active{background:var(--slate-soft);color:var(--slate-deep)}
+.pv-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(136px,1fr));gap:12px;margin:14px 0 4px}
+.pv-tile{border:1px solid var(--line);border-radius:11px;padding:13px 14px;background:#fbfcfd}
+.pv-tile .k{font-size:12px;color:var(--muted);font-weight:600}
+.pv-tile .v{font-size:21px;font-weight:800;letter-spacing:-.01em;margin-top:4px}
+.pv-table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+.pv-table th{text-align:left;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:8px 10px;border-bottom:1px solid var(--line)}
+.pv-table td{padding:9px 10px;border-bottom:1px solid var(--line)}
+.pv-table th.num,.pv-table td.num{text-align:right;font-variant-numeric:tabular-nums}
+.pv-plat{display:inline-block;font-size:11px;font-weight:700;color:var(--slate-deep);background:var(--slate-soft);border-radius:6px;padding:2px 7px}
 .note{color:var(--muted);font-size:13.5px;line-height:1.5;margin:6px 0 0}
 /* Choose destination */
 .dest-card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:14px;box-shadow:var(--shadow)}
@@ -347,14 +360,69 @@ def _account_form(p: PlatformView) -> str:
     )
 
 
-def _preview_section() -> str:
-    return (
-        "<div class='preview'><div class='head'><h3>Preview data</h3>"
-        "<span class='range'><a class='active' href='#'>Last 7 days</a>"
-        "<a href='#'>Last 30 days</a></span></div>"
-        "<p class='note'>Confirm your selected accounts are pulling data correctly. "
-        "A preview of recent spend and campaigns appears here after the first sync runs.</p></div>"
+def _money(value: float) -> str:
+    return f"${value:,.0f}"
+
+
+def _intf(value: int) -> str:
+    return f"{int(value):,}"
+
+
+def _convf(value: float) -> str:
+    return f"{value:,.0f}" if float(value).is_integer() else f"{value:,.2f}"
+
+
+def _preview_window(win: PreviewWindow, *, window_id: str, hidden: bool) -> str:
+    tiles = (
+        "<div class='pv-tiles'>"
+        f"<div class='pv-tile'><div class='k'>Spend</div><div class='v'>{_money(win.spend)}</div></div>"
+        f"<div class='pv-tile'><div class='k'>Impressions</div><div class='v'>{_intf(win.impressions)}</div></div>"
+        f"<div class='pv-tile'><div class='k'>Clicks</div><div class='v'>{_intf(win.clicks)}</div></div>"
+        f"<div class='pv-tile'><div class='k'>Conversions</div><div class='v'>{_convf(win.conversions)}</div></div>"
+        "</div>"
     )
+    rows = []
+    for c in win.top_campaigns:
+        plat = PLATFORM_LABELS.get(c.platform, c.platform or "—")
+        rows.append(
+            "<tr>"
+            f"<td><span class='pv-plat'>{html.escape(plat)}</span></td>"
+            f"<td>{html.escape(c.campaign_name)}</td>"
+            f"<td class='num'>{_money(c.spend)}</td>"
+            f"<td class='num'>{_intf(c.impressions)}</td>"
+            f"<td class='num'>{_intf(c.clicks)}</td>"
+            f"<td class='num'>{_convf(c.conversions)}</td></tr>"
+        )
+    table = ""
+    if rows:
+        table = (
+            "<table class='pv-table'><thead><tr>"
+            "<th>Platform</th><th>Top campaigns</th><th class='num'>Spend</th>"
+            "<th class='num'>Impr.</th><th class='num'>Clicks</th><th class='num'>Conv.</th>"
+            "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+        )
+    return f"<div class='pv-win' id='{window_id}'{' hidden' if hidden else ''}>{tiles}{table}</div>"
+
+
+def _preview_section(preview: PreviewData | None = None) -> str:
+    head = (
+        "<div class='preview'><div class='head'><h3>Preview data</h3>"
+        "<span class='range'>"
+        "<button type='button' class='active' data-days='7' onclick='oudPreviewTab(7)'>Last 7 days</button>"
+        "<button type='button' data-days='30' onclick='oudPreviewTab(30)'>Last 30 days</button>"
+        "</span></div>"
+    )
+    if preview is None or not preview.has_data:
+        return (
+            head + "<p class='note'>Confirm your selected accounts are pulling data "
+            "correctly. A preview of recent spend and top campaigns appears here once "
+            "your first sync has run.</p></div>"
+        )
+    body = (
+        _preview_window(preview.short, window_id="pv-7", hidden=False)
+        + _preview_window(preview.long, window_id="pv-30", hidden=True)
+    )
+    return head + body + "</div>"
 
 
 _DEPTH_OPTIONS = (("standard", "Standard"), ("brief", "Brief"), ("deep", "Deep"))
@@ -452,6 +520,10 @@ _PAGE_JS = (
     "document.querySelectorAll('.seg-opt').forEach(function(o){var r=o.querySelector('input');"
     "o.classList.toggle('active',!!(r&&r.checked));});}"
     "function oudEmailToggle(cb){var f=document.getElementById('email-fields');if(f)f.hidden=!cb.checked;}"
+    "function oudPreviewTab(d){var a=document.getElementById('pv-7'),b=document.getElementById('pv-30');"
+    "if(a)a.hidden=(d!==7);if(b)b.hidden=(d!==30);"
+    "document.querySelectorAll('.preview .range button').forEach(function(x){"
+    "x.classList.toggle('active',x.getAttribute('data-days')===String(d));});}"
     "document.addEventListener('change',function(e){var t=e.target;"
     "if(!t||t.name!=='account')return;var f=t.closest('form');if(!f)return;"
     "var boxes=f.querySelectorAll(\"input[name='account']\");"
@@ -465,6 +537,7 @@ def render_dashboard(
     user_email: str,
     platforms: list[PlatformView],
     destination: DestinationView | None = None,
+    preview: PreviewData | None = None,
 ) -> str:
     dest = destination or DestinationView()
     connected = [p for p in platforms if p.connected]
@@ -482,7 +555,7 @@ def render_dashboard(
         main.extend(_account_form(p) for p in connected)
         if has_selection:
             main.append("<div class='sec'>Preview</div>")
-            main.append(_preview_section())
+            main.append(_preview_section(preview))
             main.append("<div class='sec'>Choose destination</div>")
             main.append(_destinations_section(dest))
 
