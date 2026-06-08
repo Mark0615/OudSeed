@@ -477,6 +477,15 @@ def _destinations_section(dest: DestinationView) -> str:
     fields_hidden = "" if dest.email_enabled else " hidden"
     m_checked = "" if is_weekly else "checked"
     w_checked = "checked" if is_weekly else ""
+    # Only offer the test send once a recipient has actually been saved. The
+    # button reuses this same form but posts to /reports/send-now via formaction,
+    # so it sends with the saved settings (it ignores the unsaved field edits).
+    test_send = (
+        "<button class='btn sm ghost' type='submit' formaction='/reports/send-now'>"
+        "寄送測試報告</button>"
+        if (dest.email_enabled and dest.email_to)
+        else ""
+    )
 
     return (
         "<form class='dest-card' method='post' action='/destination/save'>"
@@ -504,7 +513,9 @@ def _destinations_section(dest: DestinationView) -> str:
         f"value='{html.escape(dest.email_to)}' placeholder='you@example.com'></label>"
         f"<label>Timezone<select name='timezone'>{_options([(t, t) for t in _TZ_OPTIONS], dest.timezone)}</select></label>"
         "</div></div>"
-        "<div class='save'><button class='btn sm' type='submit'>Save destination</button></div></form>"
+        "<div class='save'><button class='btn sm' type='submit'>Save destination</button>"
+        + test_send
+        + "</div></form>"
     )
 
 

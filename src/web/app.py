@@ -15,6 +15,7 @@ Routes:
 from __future__ import annotations
 
 import logging
+import os
 import secrets
 from pathlib import Path
 
@@ -25,9 +26,14 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
+from src.ai.openai_client import OpenAITextClient
 from src.connectors.google_ads import GoogleAdsConnector
 from src.connectors.meta_ads import MetaAdsConnector
 from src.destinations.bigquery import BigQueryDestination
+from src.notifications.email_delivery import (
+    SMTPEmailSender,
+    load_smtp_email_config_from_env,
+)
 from src.storage.models import REPORT_DEPTHS, REPORT_TYPES, SUPPORTED_PLATFORMS, User
 from src.storage.repository import (
     bind_connections_to_client,
@@ -48,6 +54,7 @@ from src.storage.repository import (
 from src.utils.date_utils import get_default_sync_range
 from src.web import first_sync as first_sync_mod
 from src.web import preview as preview_mod
+from src.web import send_now as send_now_mod
 from src.web import views
 from src.web.ad_oauth import (
     GoogleAdsOAuthClient,
@@ -80,6 +87,40 @@ def _first_failure_reason(result: first_sync_mod.FirstSyncResult) -> str:
         if r.error:
             return " ".join(r.error.split())[:200]
     return "Please try again."
+
+
+def _int_env(name: str, default: int) -> int:
+    """Read a positive int env var, falling back to a default on missing/garbage."""
+    raw = os.getenv(name)
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _send_now_flash(result: send_now_mod.SendNowResult) -> dict:
+    """Map a send-now outcome to a one-shot dashboard banner (no recipient echoed)."""
+    if result.status == "sent":
+        return {
+            "kind": "ok",
+            "text": (
+                f"報告已寄出（{result.group_count} 封）到你設定的收件信箱，請查收。"
+            ),
+        }
+    if result.status == "no_groups":
+        return {
+            "kind": "warn",
+            "text": "目前還沒有可用的成效資料，請先按上方「Run first sync」把資料拉進來再寄送。",
+        }
+    if result.status == "no_recipient":
+        return {
+            "kind": "error",
+            "text": "請先在上方開啟「AI report email」並填好收件人，再寄送測試報告。",
+        }
+    return {"kind": "error", "text": f"報告產生失敗：{result.detail or '請稍後再試。'}"}
 
 logger = logging.getLogger(__name__)
 
@@ -480,6 +521,82 @@ def create_app() -> FastAPI:
                     "Your preview below now shows recent data."
                 ),
             }
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/reports/send-now")
+    def reports_send_now(
+        request: Request, db: Session = Depends(get_db)
+    ) -> RedirectResponse:
+        """Send a test AI report now, using the saved schedule + recipient."""
+        user = _require_user(request, db)
+        workspace = get_or_create_default_workspace(db, user)
+        client = get_or_create_default_client(db, workspace)
+        schedule = next(
+            (
+                s
+                for s in list_report_schedules(db, client.id)
+                if s.schedule_key == ONBOARDING_SCHEDULE_KEY
+            ),
+            None,
+        )
+        recipient = read_schedule_email_to(schedule) if schedule else None
+        if schedule is None or not schedule.enabled or not recipient:
+            request.session[SYNC_FLASH_KEY] = _send_now_flash(
+                send_now_mod.SendNowResult("no_recipient")
+            )
+            return RedirectResponse("/", status_code=303)
+        if not settings.bigquery_project or not settings.bigquery_dataset:
+            request.session[SYNC_FLASH_KEY] = {
+                "kind": "error",
+                "text": "Data warehouse isn't configured yet, so the report can't be generated.",
+            }
+            return RedirectResponse("/", status_code=303)
+        if not os.getenv("OPENAI_API_KEY"):
+            request.session[SYNC_FLASH_KEY] = {
+                "kind": "error",
+                "text": "OPENAI_API_KEY isn't set yet, so the report can't be generated.",
+            }
+            return RedirectResponse("/", status_code=303)
+
+        # Building config + calling OpenAI/SMTP/BigQuery can fail or time out;
+        # never let that become a raw 500 — always show a readable banner.
+        try:
+            config = send_now_mod.build_workspace_report_config(
+                db,
+                workspace.id,
+                bigquery_project=settings.bigquery_project,
+                bigquery_dataset=settings.bigquery_dataset,
+                encryption_key=os.getenv("TOKEN_ENCRYPTION_KEY"),
+            )
+            destination = BigQueryDestination(
+                project_id=settings.bigquery_project,
+                dataset_id=settings.bigquery_dataset,
+            )
+            openai_client = OpenAITextClient(
+                api_key=os.environ["OPENAI_API_KEY"],
+                model=os.getenv("OPENAI_MODEL", "gpt-5.2"),
+                reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "medium"),
+                timeout_seconds=_int_env("OPENAI_TIMEOUT_SECONDS", 120),
+            )
+            sender = SMTPEmailSender(load_smtp_email_config_from_env())
+            result = send_now_mod.send_workspace_reports_now(
+                config=config,
+                destination=destination,
+                openai_client=openai_client,
+                sender=sender,
+                schedule_id=ONBOARDING_SCHEDULE_KEY,
+                max_output_tokens=_int_env("OPENAI_MAX_OUTPUT_TOKENS", 5000),
+            )
+        except Exception as exc:
+            # Log only the exception type to avoid leaking ids/secrets.
+            logger.warning("Send-now report stopped unexpectedly: %s", type(exc).__name__)
+            request.session[SYNC_FLASH_KEY] = {
+                "kind": "error",
+                "text": "Couldn't generate the report this time. Please try again.",
+            }
+            return RedirectResponse("/", status_code=303)
+
+        request.session[SYNC_FLASH_KEY] = _send_now_flash(result)
         return RedirectResponse("/", status_code=303)
 
     return app
