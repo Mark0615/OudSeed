@@ -1,0 +1,20 @@
+substitutions:
+  _IMAGE_URI: asia-east1-docker.pkg.dev/oudseed/ads-ai-pipeline/oudseed-web:latest
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - deploy/Dockerfile.web
+      - -t
+      - ${_IMAGE_URI}
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_IMAGE_URI}
+
+images:
+  - ${_IMAGE_URI}

@@ -1,0 +1,16 @@
+# Web service image (the FastAPI onboarding/dashboard app) for Cloud Run.
+# Separate from deploy/Dockerfile (the batch sync/report Cloud Run Job), which
+# runs `python -m src.main`. This image serves the HTTP app instead.
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# Cloud Run injects $PORT (default 8080) and terminates TLS in front of us.
+ENV PORT=8080
+# exec so uvicorn is PID 1 and receives SIGTERM for graceful shutdown.
+CMD ["sh", "-c", "exec uvicorn src.web.server:app --host 0.0.0.0 --port ${PORT:-8080}"]

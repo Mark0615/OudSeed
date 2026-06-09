@@ -174,7 +174,7 @@ def create_app() -> FastAPI:
         SessionMiddleware,
         secret_key=settings.session_secret,
         same_site="lax",
-        https_only=False,
+        https_only=settings.session_cookie_secure,
     )
     if ASSETS_DIR.is_dir():
         app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
