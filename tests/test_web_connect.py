@@ -520,6 +520,28 @@ def _save_email(client, email_to="buyer@example.com"):
     )
 
 
+def _send_now(client, *, email_to="buyer@example.com", report_type="monthly", enabled="on", **extra):
+    """Post the destination form to /reports/send-now, like the test-send button."""
+    data = {"report_type": report_type, "email_to": email_to, **extra}
+    if enabled is not None:
+        data["enabled"] = enabled
+    return client.post("/reports/send-now", data=data)
+
+
+def _patch_send_pipeline(monkeypatch, *, result=None):
+    """Stub the BigQuery/SMTP construction so route tests stay offline."""
+    import src.web.app as web_app
+
+    monkeypatch.setattr(web_app, "BigQueryDestination", lambda **_: object())
+    monkeypatch.setattr(web_app, "load_smtp_email_config_from_env", lambda: object())
+    monkeypatch.setattr(web_app, "SMTPEmailSender", lambda *_: object())
+    if result is not None:
+        monkeypatch.setattr(
+            web_app.send_now_mod, "send_workspace_reports_now", lambda **_: result
+        )
+    return web_app
+
+
 def test_reports_send_now_requires_sign_in(ctx):
     resp = ctx.client.post("/reports/send-now", follow_redirects=False)
     assert resp.status_code == 401
@@ -527,17 +549,16 @@ def test_reports_send_now_requires_sign_in(ctx):
 
 def test_reports_send_now_without_recipient_shows_notice(ctx):
     _select_meta(ctx.client, ctx.factory, ["act_111"])
-    # Email report never enabled → friendly "set it up first" banner.
-    resp = ctx.client.post("/reports/send-now")
+    # No recipient on screen → friendly "set it up first" banner.
+    resp = _send_now(ctx.client, email_to="", enabled=None)
     assert "請先在上方開啟" in resp.text
     assert "banner error" in resp.text
 
 
 def test_reports_send_now_without_bigquery_shows_notice(ctx):
     _select_meta(ctx.client, ctx.factory, ["act_111"])
-    _save_email(ctx.client)
-    # Recipient saved but no BigQuery configured in tests → friendly banner.
-    resp = ctx.client.post("/reports/send-now")
+    # Recipient on screen but no BigQuery configured in tests → friendly banner.
+    resp = _send_now(ctx.client)
     assert "Data warehouse" in resp.text
     assert "banner error" in resp.text
 
@@ -550,8 +571,7 @@ def test_reports_send_now_without_openai_key_shows_notice(tmp_path, monkeypatch)
     ctx = _build_ctx(tmp_path)
 
     _select_meta(ctx.client, ctx.factory, ["act_111"])
-    _save_email(ctx.client)
-    resp = ctx.client.post("/reports/send-now")
+    resp = _send_now(ctx.client)
     assert "OPENAI_API_KEY" in resp.text
     assert "banner error" in resp.text
 
@@ -563,24 +583,45 @@ def test_reports_send_now_success_banner(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     ctx = _build_ctx(tmp_path)
 
-    import src.web.app as web_app
-
-    # Avoid real BigQuery/SMTP clients; assert the routing + banner mapping only.
-    monkeypatch.setattr(web_app, "BigQueryDestination", lambda **_: object())
-    monkeypatch.setattr(web_app, "load_smtp_email_config_from_env", lambda: object())
-    monkeypatch.setattr(web_app, "SMTPEmailSender", lambda *_: object())
-    monkeypatch.setattr(
-        web_app.send_now_mod,
-        "send_workspace_reports_now",
-        lambda **_: SendNowResult("sent", 1),
-    )
+    _patch_send_pipeline(monkeypatch, result=SendNowResult("sent", 1))
 
     _select_meta(ctx.client, ctx.factory, ["act_111"])
-    _save_email(ctx.client)
-    resp = ctx.client.post("/reports/send-now")
+    resp = _send_now(ctx.client)
     assert resp.status_code == 200
     assert "報告已寄出" in resp.text
     assert "banner ok" in resp.text
+
+
+def test_reports_send_now_saves_onscreen_cadence_before_sending(tmp_path, monkeypatch):
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", generate_key())
+    monkeypatch.setenv("GCP_PROJECT_ID", "proj")
+    monkeypatch.setenv("BIGQUERY_DATASET", "ds")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    ctx = _build_ctx(tmp_path)
+
+    web_app = _patch_send_pipeline(monkeypatch)
+    captured: dict = {}
+
+    def fake_send(**kwargs):
+        captured.update(kwargs)
+        return SendNowResult("sent", 1)
+
+    monkeypatch.setattr(web_app.send_now_mod, "send_workspace_reports_now", fake_send)
+
+    _select_meta(ctx.client, ctx.factory, ["act_111"])
+    # User switches to Weekly and clicks "send test" WITHOUT clicking Save first.
+    resp = _send_now(ctx.client, report_type="weekly", weekly_day="friday")
+    assert resp.status_code == 200
+
+    # The on-screen weekly cadence is persisted before the send.
+    from src.storage.models import ReportSchedule
+
+    with ctx.factory() as session:
+        schedule = session.scalars(select(ReportSchedule)).one()
+        assert schedule.report_type == "weekly"
+        assert schedule.delivery_day == "friday"
+    # ...and the config handed to the sender reflects weekly, not a stale monthly.
+    assert captured["config"]["clients"][0]["report_schedules"][0]["report_type"] == "weekly"
 
 
 def test_reports_send_now_never_500s_on_unexpected_error(tmp_path, monkeypatch):
@@ -590,11 +631,7 @@ def test_reports_send_now_never_500s_on_unexpected_error(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     ctx = _build_ctx(tmp_path)
 
-    import src.web.app as web_app
-
-    monkeypatch.setattr(web_app, "BigQueryDestination", lambda **_: object())
-    monkeypatch.setattr(web_app, "load_smtp_email_config_from_env", lambda: object())
-    monkeypatch.setattr(web_app, "SMTPEmailSender", lambda *_: object())
+    web_app = _patch_send_pipeline(monkeypatch)
 
     def boom(**_):
         raise RuntimeError("kaboom")
@@ -602,8 +639,7 @@ def test_reports_send_now_never_500s_on_unexpected_error(tmp_path, monkeypatch):
     monkeypatch.setattr(web_app.send_now_mod, "send_workspace_reports_now", boom)
 
     _select_meta(ctx.client, ctx.factory, ["act_111"])
-    _save_email(ctx.client)
-    resp = ctx.client.post("/reports/send-now")
+    resp = _send_now(ctx.client)
     assert resp.status_code == 200
     assert "banner error" in resp.text
 

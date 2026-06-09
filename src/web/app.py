@@ -102,6 +102,44 @@ def _int_env(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
+def _persist_onboarding_schedule(
+    db: Session,
+    workspace,
+    *,
+    report_type: str,
+    monthly_day: str,
+    weekly_day: str,
+    depth: str,
+    email_to: str,
+    timezone: str,
+    enabled: bool,
+):
+    """Upsert the workspace's single onboarding report schedule from form values.
+
+    Shared by /destination/save and /reports/send-now so the test-send button
+    writes the on-screen cadence/recipient before sending (no stale settings).
+    Returns the default client the schedule is attached to.
+    """
+    client = get_or_create_default_client(db, workspace)
+    active = [c for c in list_connections(db, workspace.id) if c.status == "active"]
+    bind_connections_to_client(db, client=client, connections=active)
+    report_type = report_type if report_type in REPORT_TYPES else "monthly"
+    depth = depth if depth in REPORT_DEPTHS else "standard"
+    delivery_day = weekly_day if report_type == "weekly" else (monthly_day or "1")
+    upsert_report_schedule(
+        db,
+        client_id=client.id,
+        schedule_key=ONBOARDING_SCHEDULE_KEY,
+        report_type=report_type,
+        delivery_day=delivery_day,
+        timezone=timezone or None,
+        depth=depth,
+        email_to=email_to.strip() or None,
+        enabled=enabled,
+    )
+    return client
+
+
 def _send_now_flash(result: send_now_mod.SendNowResult) -> dict:
     """Map a send-now outcome to a one-shot dashboard banner (no recipient echoed)."""
     if result.status == "sent":
@@ -413,27 +451,19 @@ def create_app() -> FastAPI:
         workspace = get_or_create_default_workspace(db, user)
         # Group the workspace's selected (active) accounts into one default client
         # so the chosen destinations and report schedule apply to them.
-        client = get_or_create_default_client(db, workspace)
-        active = [c for c in list_connections(db, workspace.id) if c.status == "active"]
-        bind_connections_to_client(db, client=client, connections=active)
-
-        set_client_destinations(db, client=client, selected_kinds=destination)
-
         # AI report email is an independent opt-in, separate from destinations.
-        report_type = report_type if report_type in REPORT_TYPES else "monthly"
-        depth = depth if depth in REPORT_DEPTHS else "standard"
-        delivery_day = weekly_day if report_type == "weekly" else (monthly_day or "1")
-        upsert_report_schedule(
+        client = _persist_onboarding_schedule(
             db,
-            client_id=client.id,
-            schedule_key=ONBOARDING_SCHEDULE_KEY,
+            workspace,
             report_type=report_type,
-            delivery_day=delivery_day,
-            timezone=timezone or None,
+            monthly_day=monthly_day,
+            weekly_day=weekly_day,
             depth=depth,
-            email_to=email_to.strip() or None,
+            email_to=email_to,
+            timezone=timezone,
             enabled=bool(enabled),
         )
+        set_client_destinations(db, client=client, selected_kinds=destination)
         return RedirectResponse("/", status_code=303)
 
     def _meta_connector_factory(token: str) -> MetaAdsConnector:
@@ -540,12 +570,34 @@ def create_app() -> FastAPI:
 
     @app.post("/reports/send-now")
     def reports_send_now(
-        request: Request, db: Session = Depends(get_db)
+        request: Request,
+        report_type: str = Form("monthly"),
+        monthly_day: str = Form("1"),
+        weekly_day: str = Form("monday"),
+        depth: str = Form("standard"),
+        email_to: str = Form(""),
+        timezone: str = Form("Asia/Taipei"),
+        enabled: str | None = Form(None),
+        db: Session = Depends(get_db),
     ) -> RedirectResponse:
-        """Send a test AI report now, using the saved schedule + recipient."""
+        """Send a test AI report now, using the on-screen schedule + recipient.
+
+        Saves the submitted cadence/recipient first (so the test send reflects
+        exactly what's on screen, not a stale saved value), then sends.
+        """
         user = _require_user(request, db)
         workspace = get_or_create_default_workspace(db, user)
-        client = get_or_create_default_client(db, workspace)
+        client = _persist_onboarding_schedule(
+            db,
+            workspace,
+            report_type=report_type,
+            monthly_day=monthly_day,
+            weekly_day=weekly_day,
+            depth=depth,
+            email_to=email_to,
+            timezone=timezone,
+            enabled=bool(enabled),
+        )
         schedule = next(
             (
                 s
