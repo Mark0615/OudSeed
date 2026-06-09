@@ -29,16 +29,26 @@ def _conn(platform: str, account_id: str, token: str = "tok") -> PlatformConnect
 
 
 class FakeDestination:
-    """Records replace_date_range calls and returns the row count written."""
+    """Records replace_date_range/execute_sql calls and returns the row count."""
 
     def __init__(self):
         self.calls = []
+        self.ddl = []
 
     def replace_date_range(self, *, table_name, rows, start_date, end_date, filters):
         self.calls.append(
             {"table_name": table_name, "rows": rows, "filters": filters}
         )
         return len(rows)
+
+    def execute_sql(self, sql):
+        self.ddl.append(sql)
+
+    def qualified_table(self, table_name):
+        return f"proj.ds.{table_name}"
+
+    def calls_for(self, table_name):
+        return [c for c in self.calls if c["table_name"] == table_name]
 
 
 class FakeMetaConnector:
@@ -108,8 +118,7 @@ def test_first_sync_writes_unified_rows_with_web_tenant_ids():
     assert result.total_rows == 1
 
     # Wrote to unified_ads_daily, scoped to the web tenant ids.
-    call = dest.calls[0]
-    assert call["table_name"] == "unified_ads_daily"
+    call = dest.calls_for("unified_ads_daily")[0]
     assert call["filters"] == {
         "workspace_id": "w1",
         "client_id": "default",
@@ -121,6 +130,12 @@ def test_first_sync_writes_unified_rows_with_web_tenant_ids():
     assert row["workspace_id"] == "w1"
     assert row["client_id"] == "default"
     assert row["account_id"] == "act_111"
+
+    # Also preserved the full payload in raw_meta_ads_daily (for the wide view),
+    # after ensuring the raw table exists.
+    raw_call = dest.calls_for("raw_meta_ads_daily")[0]
+    assert raw_call["rows"][0]["raw_payload"]["campaign_name"] == "Brand A"
+    assert any("CREATE TABLE IF NOT EXISTS" in d for d in dest.ddl)
 
 
 def test_first_sync_handles_both_platforms():
@@ -150,8 +165,9 @@ def test_first_sync_isolates_per_account_failures():
     assert len(result.failed) == 1
     assert result.failed[0].account_id == "bad_2"
     assert "exploded" in (result.failed[0].error or "")
-    # The good account was still written.
-    assert len(dest.calls) == 1
+    # The good account was still written (raw + unified), the bad one not at all.
+    assert len(dest.calls_for("unified_ads_daily")) == 1
+    assert len(dest.calls_for("raw_meta_ads_daily")) == 1
 
 
 def test_first_sync_fails_account_without_token():
@@ -229,7 +245,9 @@ def test_first_sync_chunks_a_large_window():
         sleep=_NO_SLEEP,
     )
     # 30-day window / 7 -> 5 chunks; the fake returns one row per chunk, all
-    # written in a single replace_date_range call for the account.
+    # written in a single unified (and a single raw) replace_date_range call.
     assert result.total_rows == 5
-    assert len(dest.calls) == 1
-    assert len(dest.calls[0]["rows"]) == 5
+    unified = dest.calls_for("unified_ads_daily")
+    assert len(unified) == 1
+    assert len(unified[0]["rows"]) == 5
+    assert len(dest.calls_for("raw_meta_ads_daily")[0]["rows"]) == 5

@@ -25,8 +25,71 @@ from src.transforms.normalize_meta import normalize_meta_ads_rows
 
 UNIFIED_TABLE = "unified_ads_daily"
 
+# Per-platform raw daily tables that keep the full API payload as JSON. The wide
+# Data Studio views (e.g. vw_looker_meta_ads_wide) read these, so the onboarding
+# sync must populate them too — not just the compact unified table.
+RAW_TABLE_BY_PLATFORM = {
+    "meta_ads": "raw_meta_ads_daily",
+    "google_ads": "raw_google_ads_daily",
+}
+
+# Schema mirrors sql/create_tables.sql; raw_payload MUST be JSON so the wide views'
+# JSON functions work (autodetected loads would type it as STRING and break them).
+_RAW_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS `{table}` (
+  date DATE NOT NULL,
+  workspace_id STRING NOT NULL,
+  client_id STRING NOT NULL,
+  platform STRING NOT NULL,
+  account_id STRING NOT NULL,
+  report_level STRING NOT NULL,
+  attribution_setting STRING,
+  timezone_setting STRING,
+  raw_payload JSON NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  updated_at TIMESTAMP NOT NULL
+)
+PARTITION BY date
+CLUSTER BY workspace_id, client_id, platform, account_id
+"""
+
 # token -> a connector exposing fetch_daily_report(...).
 ConnectorFactory = Callable[[str], object]
+
+
+def _ensure_raw_table(destination: BigQueryDestination, table_name: str) -> None:
+    """Create the raw daily table (with a JSON raw_payload) if it doesn't exist."""
+    destination.execute_sql(_RAW_TABLE_DDL.format(table=destination.qualified_table(table_name)))
+
+
+def _build_raw_rows(
+    raw_rows: list[dict],
+    *,
+    workspace_id: str,
+    client_id: str,
+    account_id: str,
+    platform: str,
+) -> list[dict]:
+    """Wrap raw API rows for the platform raw daily table (JSON payload preserved)."""
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC).isoformat()
+    return [
+        {
+            "date": row.get("date_start") or row.get("date"),
+            "workspace_id": workspace_id,
+            "client_id": client_id,
+            "platform": platform,
+            "account_id": account_id,
+            "report_level": row.get("report_level") or "ad",
+            "attribution_setting": "platform_default",
+            "timezone_setting": "platform_account_default",
+            "raw_payload": row,
+            "created_at": now,
+            "updated_at": now,
+        }
+        for row in raw_rows
+    ]
 
 # Meta's ad-level Insights API often can't serve a full 30-day window
 # synchronously for large accounts and returns transient "Service temporarily
@@ -238,17 +301,38 @@ def _sync_one(
         else:
             return AccountSyncResult(platform, account_id, "skipped")
 
+        filters = {
+            "workspace_id": workspace_id,
+            "client_id": client_id,
+            "platform": platform,
+            "account_id": account_id,
+        }
+
+        # Preserve the full API payload in the platform raw table so the wide
+        # Data Studio views have data (the unified table is intentionally compact).
+        raw_table = RAW_TABLE_BY_PLATFORM.get(platform)
+        if raw_table:
+            _ensure_raw_table(destination, raw_table)
+            destination.replace_date_range(
+                table_name=raw_table,
+                rows=_build_raw_rows(
+                    raw_rows,
+                    workspace_id=workspace_id,
+                    client_id=client_id,
+                    account_id=account_id,
+                    platform=platform,
+                ),
+                start_date=start_date,
+                end_date=end_date,
+                filters=filters,
+            )
+
         rows = destination.replace_date_range(
             table_name=UNIFIED_TABLE,
             rows=normalized,
             start_date=start_date,
             end_date=end_date,
-            filters={
-                "workspace_id": workspace_id,
-                "client_id": client_id,
-                "platform": platform,
-                "account_id": account_id,
-            },
+            filters=filters,
         )
         return AccountSyncResult(platform, account_id, "success", rows=rows)
     except Exception as exc:
