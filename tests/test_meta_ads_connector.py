@@ -59,6 +59,10 @@ def test_fetch_daily_report_calls_insights_endpoint() -> None:
     assert "cost_per_action_type" in params["fields"]
     assert "outbound_clicks" in params["fields"]
     assert "currency" not in params["fields"]
+    # Windsor-style core fields feed the wide BigQuery view.
+    for field in ("reach", "frequency", "cpc", "cpm", "ctr", "objective",
+                  "purchase_roas", "video_thruplay_watched_actions"):
+        assert field in DEFAULT_META_INSIGHTS_FIELDS
     assert params["level"] == "ad"
     assert params["time_increment"] == 1
     assert params["time_range"] == '{"since": "2026-04-26", "until": "2026-05-03"}'

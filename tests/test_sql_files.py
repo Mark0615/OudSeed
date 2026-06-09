@@ -77,6 +77,43 @@ def test_looker_views_include_ai_report_logs_view() -> None:
     assert "report_text_chars" in sql
 
 
+def test_meta_wide_view_exposes_windsor_style_columns() -> None:
+    """The wide Meta view flattens raw_payload into named Windsor-style columns."""
+    sql = Path("sql/meta_ads_wide_view.sql").read_text(encoding="utf-8")
+
+    # Built as a view over the raw JSON payload (not the unified/compact table).
+    assert "vw_looker_meta_ads_wide" in sql
+    assert "raw_meta_ads_daily" in sql
+    assert "JSON_QUERY_ARRAY(r.raw_payload, '$.actions')" in sql
+
+    # A representative spread of the flattened columns Data Studio will read.
+    required_columns = [
+        "AS spend",
+        "AS impressions",
+        "AS reach",
+        "AS frequency",
+        "AS link_clicks",
+        "AS purchases",
+        "AS purchases_value",
+        "AS purchase_roas",
+        "AS adds_to_cart",
+        "AS checkouts_initiated",
+        "AS leads",
+        "AS landing_page_views",
+        "AS thruplays",
+        "AS video_watched_100",
+    ]
+    for column in required_columns:
+        assert column in sql, f"missing wide-view column: {column}"
+
+
+def test_meta_wide_view_is_wired_into_reporting_refresh() -> None:
+    """The wide view is part of the refreshed reporting SQL so it stays current."""
+    from src.main import SUMMARY_SQL_PATHS
+
+    assert any(p.name == "meta_ads_wide_view.sql" for p in SUMMARY_SQL_PATHS)
+
+
 def test_create_tables_includes_summary_marts() -> None:
     """Warehouse bootstrap SQL includes weekly and monthly summary tables."""
     sql = Path("sql/create_tables.sql").read_text(encoding="utf-8")
