@@ -114,7 +114,9 @@ def send_workspace_reports_now(
         period_start_date=period_start_date,
     )
     if not groups:
-        return SendNowResult("no_groups")
+        # Surface the period that was checked so an empty result is diagnosable
+        # (vs. a stale mart): callers can show "period started <date>".
+        return SendNowResult("no_groups", detail=period_start_date)
 
     try:
         _generate_and_send_account_group_reports(

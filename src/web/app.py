@@ -150,9 +150,13 @@ def _send_now_flash(result: send_now_mod.SendNowResult) -> dict:
             ),
         }
     if result.status == "no_groups":
+        period = f"（報告週期起算日 {result.detail}）" if result.detail else ""
         return {
             "kind": "warn",
-            "text": "目前還沒有可用的成效資料，請先按上方「Run first sync」把資料拉進來再寄送。",
+            "text": (
+                f"這個報告週期{period}還沒有可用的成效資料。"
+                "請先按上方「Run first sync」把資料拉進來，或改用涵蓋範圍內的週期再寄送。"
+            ),
         }
     if result.status == "no_recipient":
         return {

@@ -82,7 +82,9 @@ def test_send_now_returns_no_groups_when_no_data(monkeypatch) -> None:
         sender=object(),
         schedule_id="onboarding_email",
     )
-    assert result == SendNowResult("no_groups")
+    assert result.status == "no_groups"
+    # The checked period is surfaced so an empty result is diagnosable.
+    assert result.detail
 
 
 def test_send_now_sent_passes_schedule_values_to_pipeline(monkeypatch) -> None:
