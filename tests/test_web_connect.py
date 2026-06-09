@@ -740,6 +740,18 @@ def test_settings_read_google_ads_login_customer_id(monkeypatch):
     assert load_web_settings().google_ads_login_customer_id == "1234567890"
 
 
+def test_settings_session_cookie_secure_defaults_false_and_parses_true(monkeypatch):
+    from src.web.config import load_web_settings
+
+    monkeypatch.delenv("SESSION_COOKIE_SECURE", raising=False)
+    # Local default keeps the cookie usable over http://localhost.
+    assert load_web_settings().session_cookie_secure is False
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
+    assert load_web_settings().session_cookie_secure is True
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "0")
+    assert load_web_settings().session_cookie_secure is False
+
+
 def test_google_ads_name_fetch_uses_manager_login_customer_id(monkeypatch):
     from src.web import ad_oauth
 

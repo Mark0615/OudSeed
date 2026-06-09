@@ -8,6 +8,14 @@ from dataclasses import dataclass
 from src.web import ad_oauth
 
 
+def _bool_env(name: str, *, default: bool) -> bool:
+    """Read a boolean env var ("1/true/yes/on" → True); fall back to default."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class WebSettings:
     """Runtime settings for the FastAPI app."""
@@ -16,6 +24,10 @@ class WebSettings:
     google_client_secret: str
     google_redirect_uri: str
     session_secret: str
+    # Mark the session cookie Secure (HTTPS-only). True in production (Cloud Run
+    # serves HTTPS); must stay False for local http://localhost so the cookie is
+    # still sent.
+    session_cookie_secure: bool
     app_base_url: str
     database_url: str
     # Ad-platform connect (Phase 3 slice 2)
@@ -43,6 +55,7 @@ def load_web_settings() -> WebSettings:
         ),
         # Falls back to a dev value so local runs/tests work; production must set it.
         session_secret=os.getenv("SESSION_SECRET", "dev-insecure-session-secret"),
+        session_cookie_secure=_bool_env("SESSION_COOKIE_SECURE", default=False),
         app_base_url=os.getenv("APP_BASE_URL", "http://localhost:8765"),
         database_url=os.getenv("DATABASE_URL", "sqlite:///.local/oudseed.db"),
         meta_app_id=os.getenv("META_APP_ID", ""),

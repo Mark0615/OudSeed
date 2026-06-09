@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 
-.PHONY: install install-dev test lint format run web check onboarding-prototype onboarding-prototype-real-meta onboarding-prototype-real-google onboarding-prototype-real-sources onboarding-prototype-persistent onboarding-prototype-google-persistent onboarding-prototype-live-sync onboarding-prototype-google-live-sync onboarding-live-sync-ready onboarding-google-live-sync-ready onboarding-sync-local-config onboarding-google-sync-local-config ai-report-deploy-dry-run ai-report-status ai-report-ready ai-report-preflight ai-report-logs ai-report-post-run ai-report-verify clean
+.PHONY: install install-dev test lint format run web web-deploy web-image-build check onboarding-prototype onboarding-prototype-real-meta onboarding-prototype-real-google onboarding-prototype-real-sources onboarding-prototype-persistent onboarding-prototype-google-persistent onboarding-prototype-live-sync onboarding-prototype-google-live-sync onboarding-live-sync-ready onboarding-google-live-sync-ready onboarding-sync-local-config onboarding-google-sync-local-config ai-report-deploy-dry-run ai-report-status ai-report-ready ai-report-preflight ai-report-logs ai-report-post-run ai-report-verify clean
 
 install:
 	$(PIP) install -r requirements.txt
@@ -25,6 +25,16 @@ run:
 web:
 	@echo "▶ Open http://localhost:8765  (use localhost, NOT 127.0.0.1 — OAuth cookies/redirect require it)"
 	$(PYTHON) -m uvicorn src.web.server:app --host 127.0.0.1 --port 8765 --reload
+
+# Deploy the web app to Cloud Run (reads .env, touches GCP/billing — manual/opt-in).
+# Full walkthrough: docs/web_deployment_runbook.md
+web-deploy:
+	@echo "▶ Deploying web app to Cloud Run. See docs/web_deployment_runbook.md"
+	bash deploy/deploy_cloud_run_web.sh
+
+# Build + push the web image only (no service deploy).
+web-image-build:
+	gcloud builds submit --config=deploy/cloudbuild.web.yaml .
 
 check:
 	$(PYTHON) -m ruff check src tests && $(PYTHON) -m compileall src tests && $(PYTHON) -m pytest
