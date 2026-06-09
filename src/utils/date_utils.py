@@ -139,10 +139,14 @@ def _get_scheduled_report_period_start_for_now(
     """Return period start for a cadence-specific delivery day."""
     today = _today_in_timezone(timezone, now=now)
     if report_type == "weekly":
-        weekday = _parse_weekday(delivery_day)
-        days_since_delivery = (today.weekday() - weekday) % 7
-        latest_delivery_date = today - timedelta(days=days_since_delivery)
-        return (latest_delivery_date - timedelta(days=7)).isoformat()
+        # The weekly mart buckets by ISO week (Monday start), so a weekly report
+        # always covers the last complete Monday–Sunday week. delivery_day only
+        # controls which day the email goes out (see is_report_due_today), not
+        # which week is reported — otherwise the period start lands on a non-Monday
+        # and never matches the mart's week_start_date.
+        _parse_weekday(delivery_day)  # validate the configured day
+        current_week_start = today - timedelta(days=today.weekday())
+        return (current_week_start - timedelta(days=7)).isoformat()
 
     if report_type == "monthly":
         day = _parse_month_day(delivery_day)

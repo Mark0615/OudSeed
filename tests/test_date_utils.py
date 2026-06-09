@@ -79,16 +79,19 @@ def test_get_default_monthly_report_period_start() -> None:
     ) == "2026-04-01"
 
 
-def test_get_scheduled_weekly_report_period_start_uses_delivery_day() -> None:
-    """Weekly schedule periods end the day before the latest configured delivery day."""
-    now = datetime(2026, 5, 27, 10, 0, tzinfo=ZoneInfo("Asia/Taipei"))
+def test_get_scheduled_weekly_report_period_start_is_last_complete_iso_week() -> None:
+    """Weekly periods cover the last complete Monday–Sunday week (to match the mart),
+    regardless of the configured delivery day."""
+    now = datetime(2026, 5, 27, 10, 0, tzinfo=ZoneInfo("Asia/Taipei"))  # a Wednesday
 
-    assert _get_scheduled_report_period_start_for_now(
-        report_type="weekly",
-        delivery_day="wednesday",
-        timezone="Asia/Taipei",
-        now=now,
-    ) == "2026-05-20"
+    # The previous complete ISO week starts Monday 2026-05-18, whatever the day.
+    for delivery_day in ("monday", "wednesday", "sunday"):
+        assert _get_scheduled_report_period_start_for_now(
+            report_type="weekly",
+            delivery_day=delivery_day,
+            timezone="Asia/Taipei",
+            now=now,
+        ) == "2026-05-18"
 
 
 def test_get_scheduled_monthly_report_period_start_waits_for_delivery_day() -> None:
