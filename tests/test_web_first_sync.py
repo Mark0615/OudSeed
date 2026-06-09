@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import pytest
+
 from src.storage.crypto import encrypt_secret, generate_key
 from src.storage.models import PlatformConnection
-from src.web.first_sync import run_first_sync
+from src.web.first_sync import (
+    _date_chunks,
+    _fetch_chunked,
+    _fetch_with_retry,
+    run_first_sync,
+)
 
 KEY = generate_key()
+_NO_SLEEP = lambda *_: None  # noqa: E731 - tiny test stub
 
 
 def _conn(platform: str, account_id: str, token: str = "tok") -> PlatformConnection:
@@ -84,6 +92,9 @@ def _run(connections, dest, *, meta=FakeMetaConnector, google=FakeGoogleConnecto
         meta_connector_factory=meta,
         google_connector_factory=google,
         token_key=KEY,
+        # Single chunk + no real backoff so these behavior tests stay deterministic.
+        chunk_days=60,
+        sleep=_NO_SLEEP,
     )
 
 
@@ -156,3 +167,69 @@ def test_first_sync_fails_account_without_token():
     assert len(result.failed) == 1
     assert "token" in (result.failed[0].error or "").lower()
     assert dest.calls == []
+
+
+def test_date_chunks_splits_inclusive_range():
+    chunks = _date_chunks("2026-05-10", "2026-06-08", 7)
+    # 30 inclusive days / 7 -> 5 contiguous, non-overlapping windows.
+    assert len(chunks) == 5
+    assert chunks[0] == ("2026-05-10", "2026-05-16")
+    assert chunks[1][0] == "2026-05-17"
+    assert chunks[-1] == ("2026-06-07", "2026-06-08")
+
+
+def test_fetch_chunked_retries_transient_then_concatenates():
+    calls: list[tuple[str, str]] = []
+
+    def fetch(start_date, end_date):
+        calls.append((start_date, end_date))
+        # The second chunk fails transiently on its first attempt, then succeeds.
+        if start_date == "2026-05-17" and calls.count((start_date, end_date)) == 1:
+            raise RuntimeError(
+                "Meta Ads API request failed with status 400: Service temporarily unavailable"
+            )
+        return [{"window": start_date}]
+
+    rows = _fetch_chunked(
+        fetch, "2026-05-10", "2026-05-23", chunk_days=7, max_attempts=3, sleep=_NO_SLEEP
+    )
+    # Two chunks; the second was retried once -> two rows total.
+    assert [r["window"] for r in rows] == ["2026-05-10", "2026-05-17"]
+    assert calls.count(("2026-05-17", "2026-05-23")) == 2
+
+
+def test_fetch_with_retry_fails_fast_on_permanent_error():
+    calls: list[tuple[str, str]] = []
+
+    def fetch(start_date, end_date):
+        calls.append((start_date, end_date))
+        raise RuntimeError("Meta Ads API request failed with status 403: PERMISSION_DENIED")
+
+    with pytest.raises(RuntimeError):
+        _fetch_with_retry(
+            fetch, "2026-05-10", "2026-05-16", max_attempts=3, sleep=_NO_SLEEP
+        )
+    # Permanent errors are not retried.
+    assert len(calls) == 1
+
+
+def test_first_sync_chunks_a_large_window():
+    dest = FakeDestination()
+    result = run_first_sync(
+        connections=[_conn("meta_ads", "act_111")],
+        destination=dest,
+        workspace_id="w1",
+        client_id="default",
+        start_date="2026-05-10",
+        end_date="2026-06-08",
+        meta_connector_factory=FakeMetaConnector,
+        google_connector_factory=FakeGoogleConnector,
+        token_key=KEY,
+        chunk_days=7,
+        sleep=_NO_SLEEP,
+    )
+    # 30-day window / 7 -> 5 chunks; the fake returns one row per chunk, all
+    # written in a single replace_date_range call for the account.
+    assert result.total_rows == 5
+    assert len(dest.calls) == 1
+    assert len(dest.calls[0]["rows"]) == 5
