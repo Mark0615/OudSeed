@@ -19,14 +19,37 @@ DEFAULT_META_INSIGHTS_FIELDS = [
     "adset_name",
     "ad_id",
     "ad_name",
+    "objective",
     "impressions",
+    "reach",
+    "frequency",
     "clicks",
+    "unique_clicks",
     "inline_link_clicks",
     "spend",
+    "cpc",
+    "cpm",
+    "ctr",
+    "outbound_clicks",
+    "outbound_clicks_ctr",
+    # Nested arrays (action_type -> value). The wide BigQuery view flattens these
+    # into named columns (purchases, adds_to_cart, leads, ...).
     "actions",
     "action_values",
     "cost_per_action_type",
-    "outbound_clicks",
+    "unique_actions",
+    "cost_per_unique_action_type",
+    # ROAS arrays (action_type -> value).
+    "purchase_roas",
+    "website_purchase_roas",
+    # Video engagement (arrays keyed by action_type).
+    "video_play_actions",
+    "video_thruplay_watched_actions",
+    "video_p25_watched_actions",
+    "video_p50_watched_actions",
+    "video_p75_watched_actions",
+    "video_p100_watched_actions",
+    "video_avg_time_watched_actions",
 ]
 
 
