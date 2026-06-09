@@ -12,6 +12,7 @@ from src.utils.date_utils import (
     _today_in_timezone,
     get_default_report_period_start,
     get_default_sync_range,
+    is_report_due_today,
     today_in_timezone,
 )
 
@@ -124,3 +125,40 @@ def test_invalid_timezone_raises_error() -> None:
     """Invalid IANA timezone names raise an exception from zoneinfo."""
     with pytest.raises(ZoneInfoNotFoundError):
         today_in_timezone("Not/A_Timezone")
+
+
+_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+
+def test_is_report_due_today_weekly_only_on_matching_weekday() -> None:
+    now = datetime(2026, 6, 10, 9, 0, tzinfo=ZoneInfo("Asia/Taipei"))
+    today_name = _WEEKDAYS[now.weekday()]
+    other_name = _WEEKDAYS[(now.weekday() + 1) % 7]
+    assert is_report_due_today("weekly", today_name, "Asia/Taipei", now=now) is True
+    assert is_report_due_today("weekly", other_name, "Asia/Taipei", now=now) is False
+
+
+def test_is_report_due_today_monthly_on_day_of_month() -> None:
+    now = datetime(2026, 6, 1, 9, 0, tzinfo=ZoneInfo("Asia/Taipei"))
+    assert is_report_due_today("monthly", 1, "Asia/Taipei", now=now) is True
+    assert is_report_due_today("monthly", 2, "Asia/Taipei", now=now) is False
+
+
+def test_is_report_due_today_monthly_clamps_to_last_day() -> None:
+    # Day 31 in 30-day June fires on the 30th, not the 29th.
+    due = datetime(2026, 6, 30, 9, 0, tzinfo=ZoneInfo("Asia/Taipei"))
+    not_due = datetime(2026, 6, 29, 9, 0, tzinfo=ZoneInfo("Asia/Taipei"))
+    assert is_report_due_today("monthly", 31, "Asia/Taipei", now=due) is True
+    assert is_report_due_today("monthly", 31, "Asia/Taipei", now=not_due) is False
+
+
+def test_is_report_due_today_respects_timezone() -> None:
+    # 23:30 UTC on May 31 is already June 1 in Taipei (+8) -> a day-1 monthly is due.
+    now = datetime(2026, 5, 31, 23, 30, tzinfo=ZoneInfo("UTC"))
+    assert is_report_due_today("monthly", 1, "Asia/Taipei", now=now) is True
+
+
+def test_is_report_due_today_rejects_unknown_report_type() -> None:
+    now = datetime(2026, 6, 1, 9, 0, tzinfo=ZoneInfo("Asia/Taipei"))
+    with pytest.raises(ValueError):
+        is_report_due_today("daily", 1, "Asia/Taipei", now=now)

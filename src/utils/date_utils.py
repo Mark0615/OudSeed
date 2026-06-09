@@ -108,6 +108,28 @@ def _get_default_report_period_start_for_now(
     raise ValueError("report_type must be 'weekly' or 'monthly'.")
 
 
+def is_report_due_today(
+    report_type: str,
+    delivery_day: Any,
+    timezone: str = "Asia/Taipei",
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Return whether a report schedule should be sent today, in its timezone.
+
+    Weekly: due on the configured weekday. Monthly: due on the configured day of
+    month, clamped to the month's last day (so day 31 fires on the 28th/30th in
+    short months). ``now`` is injectable for tests.
+    """
+    today = _today_in_timezone(timezone, now=now)
+    if report_type == "weekly":
+        return today.weekday() == _parse_weekday(delivery_day)
+    if report_type == "monthly":
+        day = _parse_month_day(delivery_day)
+        return today == _month_delivery_date(today.year, today.month, day)
+    raise ValueError("report_type must be 'weekly' or 'monthly'.")
+
+
 def _get_scheduled_report_period_start_for_now(
     report_type: str,
     delivery_day: Any,

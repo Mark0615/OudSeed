@@ -87,6 +87,12 @@ def list_workspaces_for_user(session: Session, user_id: str) -> list[Workspace]:
     return list(session.scalars(stmt))
 
 
+def list_all_workspaces(session: Session) -> list[Workspace]:
+    """Return every workspace, oldest first (for cross-tenant batch jobs)."""
+    stmt = select(Workspace).order_by(Workspace.created_at, Workspace.id)
+    return list(session.scalars(stmt))
+
+
 def get_or_create_default_workspace(session: Session, user: User) -> Workspace:
     """Return the user's first workspace, creating one if they have none."""
     existing = list_workspaces_for_user(session, user.id)

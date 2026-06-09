@@ -1,13 +1,14 @@
-"""Tests for the on-demand report send (the dashboard's test-send button).
+"""Tests for the workspace report send (dashboard button + scheduled dispatcher).
 
 The heavy generate + send loop is reused from the deployed pipeline (and tested
-in test_send_account_reports.py), so here we only verify the web wrapper's
-schedule resolution and outcome mapping, with that loop and discovery faked.
+in test_send_account_reports.py), so here we only verify the wrapper's schedule
+resolution and outcome mapping, with that loop and discovery faked.
 """
 
 from __future__ import annotations
 
-import src.web.send_now as send_now
+import src.ai.workspace_reports as send_now
+from src.ai.workspace_reports import SendNowResult, send_workspace_reports_now
 from src.storage.crypto import generate_key
 from src.storage.db import build_session_factory, create_all, create_db_engine, session_scope
 from src.storage.repository import (
@@ -19,7 +20,6 @@ from src.storage.repository import (
     store_connection_token,
     upsert_user_by_google_sub,
 )
-from src.web.send_now import SendNowResult, send_workspace_reports_now
 
 
 def _config_with_schedule(*, email_to: str | None) -> dict:

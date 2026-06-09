@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 
-.PHONY: install install-dev test lint format run web web-deploy web-image-build check onboarding-prototype onboarding-prototype-real-meta onboarding-prototype-real-google onboarding-prototype-real-sources onboarding-prototype-persistent onboarding-prototype-google-persistent onboarding-prototype-live-sync onboarding-prototype-google-live-sync onboarding-live-sync-ready onboarding-google-live-sync-ready onboarding-sync-local-config onboarding-google-sync-local-config ai-report-deploy-dry-run ai-report-status ai-report-ready ai-report-preflight ai-report-logs ai-report-post-run ai-report-verify clean
+.PHONY: install install-dev test lint format run dispatch-reports web web-deploy web-image-build check onboarding-prototype onboarding-prototype-real-meta onboarding-prototype-real-google onboarding-prototype-real-sources onboarding-prototype-persistent onboarding-prototype-google-persistent onboarding-prototype-live-sync onboarding-prototype-google-live-sync onboarding-live-sync-ready onboarding-google-live-sync-ready onboarding-sync-local-config onboarding-google-sync-local-config ai-report-deploy-dry-run ai-report-status ai-report-ready ai-report-preflight ai-report-logs ai-report-post-run ai-report-verify clean
 
 install:
 	$(PIP) install -r requirements.txt
@@ -21,6 +21,12 @@ format:
 
 run:
 	$(PYTHON) -m src.main
+
+# Send every workspace report that is due today (the automatic dispatcher).
+# Run daily in production via Cloud Scheduler -> Cloud Run Job. Touches real
+# BigQuery/OpenAI/SMTP, so it is manual/opt-in here.
+dispatch-reports:
+	$(PYTHON) -m src.ai.dispatch_scheduled_reports
 
 web:
 	@echo "▶ Open http://localhost:8765  (use localhost, NOT 127.0.0.1 — OAuth cookies/redirect require it)"
