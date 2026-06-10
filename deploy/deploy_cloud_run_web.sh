@@ -5,10 +5,11 @@
 #
 # Prereqs (one-time, see docs/web_deployment_runbook.md):
 #   * gcloud is installed and authenticated (`gcloud auth login`).
-#   * A Cloud SQL Postgres instance + database + user exist, and DATABASE_URL in
-#     .env points at it via the unix socket, e.g.
-#       postgresql+psycopg://USER:PASSWORD@/DBNAME?host=/cloudsql/PROJECT:REGION:INSTANCE
-#   * CLOUD_SQL_INSTANCE is set to that connection name (PROJECT:REGION:INSTANCE).
+#   * A Postgres database exists and DATABASE_URL in .env points at it. Two ways:
+#       - External Postgres (Neon/Supabase, free): leave CLOUD_SQL_INSTANCE empty,
+#         DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST/DBNAME?sslmode=require
+#       - Cloud SQL: set CLOUD_SQL_INSTANCE=PROJECT:REGION:INSTANCE and
+#         DATABASE_URL=postgresql+psycopg://USER:PASSWORD@/DBNAME?host=/cloudsql/PROJECT:REGION:INSTANCE
 #   * .env has the web app's OAuth/SMTP/OpenAI/session values filled in.
 #
 # This script is idempotent and never prints secret values. It does NOT create
@@ -30,15 +31,19 @@ if [[ -f "${ENV_FILE}" ]]; then
   set +a
 fi
 
-# Connection name PROJECT:REGION:INSTANCE for the Cloud SQL instance.
+# Cloud SQL connection name PROJECT:REGION:INSTANCE. Leave it EMPTY to use an
+# external Postgres (e.g. Neon/Supabase) reached over the network via DATABASE_URL.
 CLOUD_SQL_INSTANCE="${CLOUD_SQL_INSTANCE:-}"
-if [[ -z "${CLOUD_SQL_INSTANCE}" ]]; then
-  echo "Missing CLOUD_SQL_INSTANCE (PROJECT:REGION:INSTANCE). Set it in ${ENV_FILE} or the environment." >&2
+USE_CLOUD_SQL=false
+[[ -n "${CLOUD_SQL_INSTANCE}" ]] && USE_CLOUD_SQL=true
+if [[ -z "${DATABASE_URL:-}" ]]; then
+  echo "Missing DATABASE_URL. Set your database connection string in ${ENV_FILE}." >&2
   exit 1
 fi
-if [[ -z "${DATABASE_URL:-}" ]]; then
-  echo "Missing DATABASE_URL. Set the Cloud SQL connection string in ${ENV_FILE}." >&2
-  exit 1
+if [[ "${USE_CLOUD_SQL}" == "true" ]]; then
+  echo "Database: Cloud SQL (${CLOUD_SQL_INSTANCE})."
+else
+  echo "Database: external Postgres via DATABASE_URL (no Cloud SQL attached)."
 fi
 
 # Sensitive values -> Secret Manager (mounted as env vars at runtime).
@@ -82,13 +87,15 @@ echo "Deploying web service '${SERVICE_NAME}' to project ${PROJECT_ID} (${REGION
 
 gcloud config set project "${PROJECT_ID}" >/dev/null
 
-gcloud services enable \
-  artifactregistry.googleapis.com \
-  bigquery.googleapis.com \
-  cloudbuild.googleapis.com \
-  run.googleapis.com \
-  secretmanager.googleapis.com \
-  sqladmin.googleapis.com
+SERVICES=(
+  artifactregistry.googleapis.com
+  bigquery.googleapis.com
+  cloudbuild.googleapis.com
+  run.googleapis.com
+  secretmanager.googleapis.com
+)
+[[ "${USE_CLOUD_SQL}" == "true" ]] && SERVICES+=(sqladmin.googleapis.com)
+gcloud services enable "${SERVICES[@]}"
 
 if ! gcloud artifacts repositories describe "${REPOSITORY}" --location="${REGION}" >/dev/null 2>&1; then
   gcloud artifacts repositories create "${REPOSITORY}" \
@@ -102,12 +109,15 @@ if ! gcloud iam service-accounts describe "${RUNTIME_SERVICE_ACCOUNT}" >/dev/nul
     --display-name="OudSeed Web Runner"
 fi
 
-# BigQuery (sync/preview/report), Secret Manager (read secrets), Cloud SQL (DB).
-for role in \
-  roles/bigquery.jobUser \
-  roles/bigquery.dataEditor \
-  roles/secretmanager.secretAccessor \
-  roles/cloudsql.client; do
+# BigQuery (sync/preview/report) + Secret Manager (read secrets); Cloud SQL
+# client role only when actually attaching a Cloud SQL instance.
+ROLES=(
+  roles/bigquery.jobUser
+  roles/bigquery.dataEditor
+  roles/secretmanager.secretAccessor
+)
+[[ "${USE_CLOUD_SQL}" == "true" ]] && ROLES+=(roles/cloudsql.client)
+for role in "${ROLES[@]}"; do
   gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --member="serviceAccount:${RUNTIME_SERVICE_ACCOUNT}" \
     --role="${role}" \
@@ -162,12 +172,12 @@ DEPLOY_ARGS=(
   --platform=managed
   --allow-unauthenticated
   --port=8080
-  --add-cloudsql-instances="${CLOUD_SQL_INSTANCE}"
   --cpu=1
   --memory=512Mi
   --min-instances=0
   --max-instances=2
 )
+[[ "${USE_CLOUD_SQL}" == "true" ]] && DEPLOY_ARGS+=(--add-cloudsql-instances="${CLOUD_SQL_INSTANCE}")
 [[ -n "${ENV_FLAGS}" ]] && DEPLOY_ARGS+=(--set-env-vars="${ENV_FLAGS}")
 [[ -n "${SECRET_FLAGS}" ]] && DEPLOY_ARGS+=(--set-secrets="${SECRET_FLAGS}")
 
