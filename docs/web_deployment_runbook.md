@@ -28,8 +28,27 @@ Architecture: `Browser → Cloud Run (oudseed-web) → Cloud SQL (Postgres) + Bi
 
 ## 1. Create the database (one-time)
 
-Cloud Run's filesystem is ephemeral, so the durable multi-tenant data lives in
-Cloud SQL (Postgres). Create the smallest instance, a database, and a user:
+Cloud Run's filesystem is ephemeral, so the durable multi-tenant data lives in a
+Postgres database. Pick **one** option. Both use the same code; the deploy
+scripts auto-detect which one from whether `CLOUD_SQL_INSTANCE` is set.
+
+### Option A — Neon (free, recommended for a single user)
+
+Near-zero cost (free tier), serverless (sleeps when idle). One small caveat: a
+"cold start" of ~0.5–few seconds on the first query after it's been idle — which
+is irrelevant to the daily scheduled sync.
+
+1. Create a free project + database at <https://neon.tech>; copy the connection
+   string it gives you (host looks like `ep-xxx.<region>.aws.neon.tech`).
+2. Put it in `.env` (rewrite the scheme to `postgresql+psycopg://` and keep
+   `?sslmode=require`), and **leave `CLOUD_SQL_INSTANCE` empty/unset**:
+
+   ```bash
+   # CLOUD_SQL_INSTANCE=            # leave empty -> scripts use external Postgres
+   DATABASE_URL=postgresql+psycopg://USER:PASSWORD@ep-xxx.REGION.aws.neon.tech/DBNAME?sslmode=require
+   ```
+
+### Option B — Cloud SQL (always-on, ~NT$300/mo for db-f1-micro)
 
 ```bash
 # Cheapest tier (db-f1-micro, ~US$8–10/mo) — plenty for one user. Step up to
@@ -54,6 +73,13 @@ DATABASE_URL=postgresql+psycopg://oudseed_app:CHOOSE-A-STRONG-PASSWORD@/oudseed?
 ```
 
 > The app creates its tables automatically on first boot — no migration step.
+
+### Switching Neon → Cloud SQL later (when volume grows)
+
+Create the Cloud SQL instance (Option B), then either re-connect your accounts in
+the deployed app against the new DB, or copy the data once with
+`pg_dump <neon-url> | psql <cloudsql-url>`. Set `CLOUD_SQL_INSTANCE` +
+the new `DATABASE_URL`, then re-run `make web-deploy` and `make daily-sync-deploy`.
 
 ---
 
