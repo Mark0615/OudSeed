@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 
-.PHONY: install install-dev test lint format run dispatch-reports web web-deploy web-image-build check onboarding-prototype onboarding-prototype-real-meta onboarding-prototype-real-google onboarding-prototype-real-sources onboarding-prototype-persistent onboarding-prototype-google-persistent onboarding-prototype-live-sync onboarding-prototype-google-live-sync onboarding-live-sync-ready onboarding-google-live-sync-ready onboarding-sync-local-config onboarding-google-sync-local-config ai-report-deploy-dry-run ai-report-status ai-report-ready ai-report-preflight ai-report-logs ai-report-post-run ai-report-verify clean
+.PHONY: install install-dev test lint format run refresh-marts dispatch-reports web web-deploy web-image-build check onboarding-prototype onboarding-prototype-real-meta onboarding-prototype-real-google onboarding-prototype-real-sources onboarding-prototype-persistent onboarding-prototype-google-persistent onboarding-prototype-live-sync onboarding-prototype-google-live-sync onboarding-live-sync-ready onboarding-google-live-sync-ready onboarding-sync-local-config onboarding-google-sync-local-config ai-report-deploy-dry-run ai-report-status ai-report-ready ai-report-preflight ai-report-logs ai-report-post-run ai-report-verify clean
 
 install:
 	$(PIP) install -r requirements.txt
@@ -21,6 +21,12 @@ format:
 
 run:
 	$(PYTHON) -m src.main
+
+# (Re)create the BigQuery reporting marts + Looker Studio views without
+# re-syncing ad data. Run this once after a new view is added so it appears in
+# Data Studio. Touches real BigQuery, so it is manual/opt-in here.
+refresh-marts:
+	$(PYTHON) -m src.refresh_marts
 
 # Send every workspace report that is due today (the automatic dispatcher).
 # Run daily in production via Cloud Scheduler -> Cloud Run Job. Touches real
