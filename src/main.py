@@ -25,8 +25,9 @@ SUMMARY_SQL_PATHS = (
     Path("sql/weekly_summary.sql"),
     Path("sql/monthly_summary.sql"),
     Path("sql/looker_studio_views.sql"),
-    # Windsor-style wide Meta view for Data Studio (flattens raw_meta_ads_daily).
+    # Windsor-style wide views for Data Studio (flatten the raw_* JSON payloads).
     Path("sql/meta_ads_wide_view.sql"),
+    Path("sql/google_ads_wide_view.sql"),
 )
 
 

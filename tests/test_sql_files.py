@@ -107,11 +107,40 @@ def test_meta_wide_view_exposes_windsor_style_columns() -> None:
         assert column in sql, f"missing wide-view column: {column}"
 
 
+def test_google_wide_view_exposes_windsor_style_columns() -> None:
+    """The wide Google view flattens raw_payload into named Windsor-style columns."""
+    sql = Path("sql/google_ads_wide_view.sql").read_text(encoding="utf-8")
+
+    # Built as a view over the raw Google JSON payload (not the unified table),
+    # filtered to the ad grain so spend is not multiplied across breakdowns.
+    assert "vw_looker_google_ads_wide" in sql
+    assert "raw_google_ads_daily" in sql
+    assert "r.report_level = 'ad'" in sql
+
+    required_columns = [
+        "AS spend",
+        "AS impressions",
+        "AS clicks",
+        "AS conversions",
+        "AS conversion_value",
+        "AS ctr",
+        "AS cpc",
+        "AS cpm",
+        "AS cpa",
+        "AS campaign_name",
+        "AS ad_group_name",
+        "AS ad_name",
+    ]
+    for column in required_columns:
+        assert column in sql, f"missing wide-view column: {column}"
+
+
 def test_meta_wide_view_is_wired_into_reporting_refresh() -> None:
-    """The wide view is part of the refreshed reporting SQL so it stays current."""
+    """The wide views are part of the refreshed reporting SQL so they stay current."""
     from src.main import SUMMARY_SQL_PATHS
 
     assert any(p.name == "meta_ads_wide_view.sql" for p in SUMMARY_SQL_PATHS)
+    assert any(p.name == "google_ads_wide_view.sql" for p in SUMMARY_SQL_PATHS)
 
 
 def test_create_tables_includes_summary_marts() -> None:
