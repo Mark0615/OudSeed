@@ -4,9 +4,14 @@ How to put the OudSeed web app (sign-in → connect → onboarding dashboard) on
 so a few friendly users can reach it by URL. This is the production counterpart
 of running `make web` locally.
 
-> **Cost note:** this adds a small always-available **Cloud SQL** instance
-> (roughly US$8–25/month for the smallest tiers) plus pay-per-use Cloud Run
-> (≈US$0 when idle). You can delete the Cloud SQL instance to stop the cost.
+> **Cost note (read this if you're trying to beat a paid tool):** the only
+> always-on cost is **Cloud SQL**. The cheapest tier `db-f1-micro` is ~US$8–10/mo
+> (~NT$300) — well under a ~NT$500/mo subscription and fine for one user. The
+> beefier `db-g1-small` is ~US$25/mo (~NT$800), which can cost *more* than the
+> tool you're replacing, so start with `db-f1-micro`. Cloud Run + BigQuery are
+> pay-per-use (≈US$0 when idle). Delete the Cloud SQL instance to stop the cost.
+> Near-zero alternative: a free external Postgres (Neon/Supabase) instead of
+> Cloud SQL — ask if you want that path instead.
 
 Architecture: `Browser → Cloud Run (oudseed-web) → Cloud SQL (Postgres) + BigQuery`.
 
@@ -27,10 +32,11 @@ Cloud Run's filesystem is ephemeral, so the durable multi-tenant data lives in
 Cloud SQL (Postgres). Create the smallest instance, a database, and a user:
 
 ```bash
-# Smallest shared-core tier; pick a strong password.
+# Cheapest tier (db-f1-micro, ~US$8–10/mo) — plenty for one user. Step up to
+# db-g1-small only if you later notice it's underpowered. Pick a strong password.
 gcloud sql instances create oudseed-db \
   --database-version=POSTGRES_16 \
-  --tier=db-g1-small \
+  --tier=db-f1-micro \
   --region=asia-east1
 
 gcloud sql databases create oudseed --instance=oudseed-db
