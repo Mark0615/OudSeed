@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 
-.PHONY: install install-dev test lint format run refresh-marts backfill daily-sync dispatch-reports web web-deploy web-image-build check onboarding-prototype onboarding-prototype-real-meta onboarding-prototype-real-google onboarding-prototype-real-sources onboarding-prototype-persistent onboarding-prototype-google-persistent onboarding-prototype-live-sync onboarding-prototype-google-live-sync onboarding-live-sync-ready onboarding-google-live-sync-ready onboarding-sync-local-config onboarding-google-sync-local-config ai-report-deploy-dry-run ai-report-status ai-report-ready ai-report-preflight ai-report-logs ai-report-post-run ai-report-verify clean
+.PHONY: install install-dev test lint format run refresh-marts backfill daily-sync daily-sync-deploy dispatch-reports web web-deploy web-image-build check onboarding-prototype onboarding-prototype-real-meta onboarding-prototype-real-google onboarding-prototype-real-sources onboarding-prototype-persistent onboarding-prototype-google-persistent onboarding-prototype-live-sync onboarding-prototype-google-live-sync onboarding-live-sync-ready onboarding-google-live-sync-ready onboarding-sync-local-config onboarding-google-sync-local-config ai-report-deploy-dry-run ai-report-status ai-report-ready ai-report-preflight ai-report-logs ai-report-post-run ai-report-verify clean
 
 install:
 	$(PIP) install -r requirements.txt
@@ -59,6 +59,13 @@ web-deploy:
 # Build + push the web image only (no service deploy).
 web-image-build:
 	gcloud builds submit --config=deploy/cloudbuild.web.yaml .
+
+# Deploy the automatic sync to Cloud Run: a DAILY-scheduled daily_sync job and a
+# manual backfill job (both read accounts from Cloud SQL). Touches GCP/billing.
+# Full walkthrough: docs/web_deployment_runbook.md
+daily-sync-deploy:
+	@echo "▶ Deploying sync jobs to Cloud Run. See docs/web_deployment_runbook.md"
+	bash deploy/deploy_daily_sync_job.sh
 
 check:
 	$(PYTHON) -m ruff check src tests && $(PYTHON) -m compileall src tests && $(PYTHON) -m pytest

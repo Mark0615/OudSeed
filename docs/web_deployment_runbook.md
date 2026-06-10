@@ -143,6 +143,59 @@ To stop all cost: delete the Cloud Run service and the Cloud SQL instance
 
 ---
 
+## 7. Automatic daily sync + one-time history backfill
+
+This makes the accounts you selected in the dashboard refresh **automatically
+every day**, with no button-clicking — and lets you pull full history once.
+
+> **Depends on the cloud DB.** These jobs read your selected accounts from Cloud
+> SQL, so they only work after the web app (steps 1–6) is deployed and you have
+> connected/selected accounts in the **deployed** app (not the local SQLite one).
+> They reuse the web app's runtime service account + secrets.
+
+```bash
+# .env must still have CLOUD_SQL_INSTANCE, DATABASE_URL, TOKEN_ENCRYPTION_KEY and
+# the Google OAuth/Ads values (same file you used for the web deploy).
+make daily-sync-deploy
+```
+
+This deploys two Cloud Run Jobs from the web image and a daily trigger:
+
+- **`oudseed-daily-sync`** — runs every day at 05:00 Asia/Taipei (override with
+  `SCHEDULE=...`). Re-pulls the last few days (`DAILY_SYNC_LOOKBACK_DAYS`,
+  default 3) for every workspace's active accounts, then refreshes the views.
+- **`oudseed-backfill`** — **not** scheduled. Run it **once** to pull full
+  history (Meta ~36 months / Google ~36 months; the Meta API can't go past ~37
+  months — a platform limit). It writes window-by-window and is idempotent, so
+  re-running just resumes.
+
+```bash
+# Optional: run the daily sync immediately to confirm it works.
+gcloud run jobs execute oudseed-daily-sync --region=asia-east1 --wait
+
+# Recommended once: pull full history (can take a while; safe to re-run).
+gcloud run jobs execute oudseed-backfill --region=asia-east1 --wait
+
+# Logs for either job
+gcloud run jobs executions list --job=oudseed-daily-sync --region=asia-east1 --limit=5
+```
+
+Cost: a daily run is a few minutes of a small container + one Cloud Scheduler
+job — typically a few NT$/month. To stop it: `gcloud scheduler jobs delete
+oudseed-daily-sync-trigger --location=asia-east1`.
+
+### Cheaper alternative (single user, no always-on cloud)
+
+If it's just you and you don't want a cloud DB running 24/7, skip the jobs above
+and run the sync **locally on a schedule** instead (uses your local SQLite DB):
+
+```bash
+# Runs once; point cron/launchd at it daily. No cloud cost.
+cd /path/to/OudSeed && make daily-sync
+```
+
+---
+
 ## What this does **not** do yet
 
 - **Automatic scheduled report sending** — reports are sent on demand from the
