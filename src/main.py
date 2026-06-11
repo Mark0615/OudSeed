@@ -28,6 +28,8 @@ SUMMARY_SQL_PATHS = (
     # Windsor-style wide views for Data Studio (flatten the raw_* JSON payloads).
     Path("sql/meta_ads_wide_view.sql"),
     Path("sql/google_ads_wide_view.sql"),
+    Path("sql/google_ads_keyword_wide_view.sql"),
+    Path("sql/google_ads_search_term_wide_view.sql"),
 )
 
 

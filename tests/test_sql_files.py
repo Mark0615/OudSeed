@@ -135,12 +135,31 @@ def test_google_wide_view_exposes_windsor_style_columns() -> None:
         assert column in sql, f"missing wide-view column: {column}"
 
 
+def test_google_keyword_and_search_term_wide_views() -> None:
+    """Keyword + search-term wide views flatten the already-collected raw rows."""
+    kw = Path("sql/google_ads_keyword_wide_view.sql").read_text(encoding="utf-8")
+    assert "vw_looker_google_ads_keyword_wide" in kw
+    assert "r.report_level = 'keyword'" in kw
+    for column in ("AS keyword_text", "AS keyword_match_type", "AS spend",
+                   "AS conversions", "AS clicks"):
+        assert column in kw, f"missing keyword-view column: {column}"
+
+    st = Path("sql/google_ads_search_term_wide_view.sql").read_text(encoding="utf-8")
+    assert "vw_looker_google_ads_search_term_wide" in st
+    assert "r.report_level = 'search_term'" in st
+    for column in ("AS search_term", "AS spend", "AS conversions", "AS clicks"):
+        assert column in st, f"missing search-term-view column: {column}"
+
+
 def test_meta_wide_view_is_wired_into_reporting_refresh() -> None:
     """The wide views are part of the refreshed reporting SQL so they stay current."""
     from src.main import SUMMARY_SQL_PATHS
 
-    assert any(p.name == "meta_ads_wide_view.sql" for p in SUMMARY_SQL_PATHS)
-    assert any(p.name == "google_ads_wide_view.sql" for p in SUMMARY_SQL_PATHS)
+    names = {p.name for p in SUMMARY_SQL_PATHS}
+    assert "meta_ads_wide_view.sql" in names
+    assert "google_ads_wide_view.sql" in names
+    assert "google_ads_keyword_wide_view.sql" in names
+    assert "google_ads_search_term_wide_view.sql" in names
 
 
 def test_create_tables_includes_summary_marts() -> None:
