@@ -14,7 +14,7 @@ from pathlib import Path
 
 from src.web.preview import PreviewData, PreviewWindow
 
-_ASSETS_DIR = Path(__file__).resolve().parents[2] / "frontend" / "prototype" / "assets"
+_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
 PLATFORM_SLUGS = {"meta_ads": "meta", "google_ads": "google-ads"}
 PLATFORM_LABELS = {
@@ -24,7 +24,7 @@ PLATFORM_LABELS = {
     "ga4": "Google Analytics 4",
     "line_ads": "LINE Ads",
 }
-# Brand logo files served from /assets (frontend/prototype/assets).
+# Brand logo/icon files served from /assets (src/web/assets).
 PLATFORM_ICON_FILE = {
     "meta_ads": "icon-meta.png",
     "google_ads": "icon-google-ads.png",

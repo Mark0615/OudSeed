@@ -39,7 +39,7 @@ Meta Ads → BigQuery → unified_ads_daily → Looker Studio
 ```
 
 This line describes the original v0.1 target. The repository has since advanced
-past that baseline; use `AGENTS.md` and `docs/productization_status.md` for the
+past that baseline; use `AGENTS.md` for the
 current productization state.
 
 ### 0.1 Productization decision (2026-06-05)

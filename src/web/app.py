@@ -167,7 +167,7 @@ def _send_now_flash(result: send_now_mod.SendNowResult) -> dict:
 
 logger = logging.getLogger(__name__)
 
-ASSETS_DIR = Path(__file__).resolve().parents[2] / "frontend" / "prototype" / "assets"
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
 
 def create_app() -> FastAPI:

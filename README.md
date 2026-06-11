@@ -247,7 +247,7 @@ REFRESH_REPORTING_MARTS=false make run
 ```
 
 Current account-report productization status and operational commands are
-tracked in `docs/productization_status.md`.
+tracked in `docs/web_deployment_runbook.md` and `docs/ai_report_operations_runbook.md`.
 
 ## AI Report Generation
 
@@ -490,7 +490,7 @@ Run the Cloud Run Job manually:
 gcloud run jobs execute oudseed-meta-ads-sync --region asia-east1 --wait
 ```
 
-See [docs/cloud_run_scheduler.md](docs/cloud_run_scheduler.md) for the full deployment runbook.
+See [docs/web_deployment_runbook.md](docs/web_deployment_runbook.md) for the full deployment runbook.
 
 ## AI Report Scheduler
 
