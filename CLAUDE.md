@@ -80,15 +80,14 @@ src/
     send_account_reports.py # account-grouped batch send (deployed job entrypoint)
     send_report_email.py   report_log_status.py
   notifications/email_delivery.py   # SMTP HTML email
-  onboarding/              # local prototype: api_server, config_bridge,
-                           # state_store, sync_runner, live_sync_readiness
+  web/                     # FastAPI app: sign-in, OAuth connect, dashboard; assets/
+  sync/                    # daily_sync + historical backfill entrypoints (read DB)
   utils/                   # config_loader, date_utils, logger, secret_manager
 sql/                       # create_tables, weekly/monthly_summary, looker_studio_views
 deploy/                    # Cloud Run / Scheduler deploy + ops verification scripts
-frontend/prototype/        # static onboarding wizard (mock-api.js)
 tests/                     # pytest, one file per module; fixtures in tests/fixtures
 config/clients.yaml        # local, gitignored — real account config
-docs/                      # spec, productization_status, runbooks, handoff contract
+docs/                      # spec, runbooks (deploy, AI report), Looker setup guide
 ```
 
 Data layering rule: preserve full **raw API payloads**; keep `unified_ads_daily`
@@ -117,10 +116,10 @@ SYNC_ENABLED_PLATFORMS=meta_ads SYNC_START_DATE=YYYY-MM-DD SYNC_END_DATE=YYYY-MM
 REFRESH_REPORTING_MARTS=false .venv/bin/python -m src.main
 ```
 
-Onboarding prototype: `make onboarding-prototype` (safe, static) → see the
-`onboarding-prototype-*` targets in the `Makefile` for real-discovery and
-first-sync variants. AI report ops: `make ai-report-{deploy-dry-run,status,ready,preflight,logs,verify,post-run}`.
-The `ai-report-*` and `onboarding-*-real-*` / `*-live-sync` targets touch GCP,
+Cloud sync lifecycle: `make refresh-marts` (rebuild views), `make backfill`
+(one-time history), `make daily-sync` (the daily job), `make daily-sync-deploy`
+(Cloud Run Job + Scheduler). AI report ops: `make ai-report-{deploy-dry-run,status,ready,preflight,logs,verify,post-run}`.
+The `ai-report-*`, `backfill`, `daily-sync*`, and `*-deploy` targets touch GCP,
 real APIs, or BigQuery — treat as manual/opt-in, never run them unprompted.
 
 Use the `.venv` interpreter (`.venv/bin/python`); the repo targets Python 3.11+.
