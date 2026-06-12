@@ -30,6 +30,7 @@ SUMMARY_SQL_PATHS = (
     Path("sql/google_ads_wide_view.sql"),
     Path("sql/google_ads_keyword_wide_view.sql"),
     Path("sql/google_ads_search_term_wide_view.sql"),
+    Path("sql/google_ads_conversion_action_wide_view.sql"),
 )
 
 

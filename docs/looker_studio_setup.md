@@ -96,3 +96,47 @@ Data Studio 的資料來源選單、且接上就自動分好維度/指標/貨幣
 **Looker Studio Community Connector**（Apps Script / JavaScript 專案，讀我們的 BigQuery
 或 API）。這條路 **不需要 Cloud SQL**；只有要「公開分享給其他人用」時才需要送 Google 審核，
 自己私用可以直接用未審核版本。屬於之後的進階項目。
+
+---
+
+## 6. 一個帳號一張資料來源（per-account views）
+
+想要「一個 Data Studio 資料來源 = 一個廣告帳號」時，**不用**幫每個帳號各建一張實體表
+（那會浪費儲存、又要重跑）。改用一支產生器，幫每個帳號各建一張**只篩該帳號**的 view，
+都是疊在寬表上的薄薄一層過濾，**不需要重新同步**：
+
+```bash
+# 先看會建哪些（dry-run，不會真的動到 BigQuery）
+make per-account-views
+
+# 確認後實際建立
+.venv/bin/python scripts/generate_per_account_views.py --apply
+```
+
+會建出（名字裡的就是你自己的帳號 ID，方便在 Data Studio 裡認）：
+
+- `vw_acct_meta_<帳號ID>`：疊在 `vw_looker_meta_ads_wide` 上
+- `vw_acct_google_<帳號ID>`：疊在 `vw_looker_google_ads_wide` 上
+
+之後新加帳號，再跑一次 `--apply` 即可（`CREATE OR REPLACE`，可重複執行、不會壞）。
+在 Data Studio 新增資料來源時，選對應那張 `vw_acct_...` view 就只會看到那一個帳號。
+
+---
+
+## 7. Google 轉換動作 / 自訂轉換（conversion action 維度）
+
+Google 的「各個轉換動作」（含你在後台設定的**自訂轉換**）會放在一張獨立的寬表
+`vw_looker_google_ads_conversion_action_wide`，用**長表 / 維度**形式呈現：每一列是
+（日期 × 活動 × 轉換動作），用 `conversion_action_name` 當維度去 group，就能看到每個
+轉換動作各自的 `conversions` / `conversion_value` / `all_conversions` / `all_conversions_value`。
+
+注意這張表**故意不含花費/曝光/點擊**（那些會在每個轉換動作上重複，加總會錯）；要看花費請用
+ad-level 的 `vw_looker_google_ads_wide`。
+
+> 這份資料是**新的**（要連接器多撈一段 GAQL），所以跟前面幾張「只加 view 就有」不一樣：
+> 需要**重跑一次同步**才會有 `report_level = 'conversion_action'` 的資料。每日自動同步上線後
+> 會自動往後累積；要補近期歷史可以跑一段有界回補，例如近 180 天（避免一次回補 36 個月逾時）：
+>
+> ```bash
+> BACKFILL_GOOGLE_DAYS=180 make backfill
+> ```

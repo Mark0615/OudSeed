@@ -151,6 +151,28 @@ def test_google_keyword_and_search_term_wide_views() -> None:
         assert column in st, f"missing search-term-view column: {column}"
 
 
+def test_google_conversion_action_wide_view() -> None:
+    """Conversion-action wide view exposes the per-action breakdown (dimension form)."""
+    ca = Path("sql/google_ads_conversion_action_wide_view.sql").read_text(encoding="utf-8")
+    assert "vw_looker_google_ads_conversion_action_wide" in ca
+    assert "raw_google_ads_daily" in ca
+    # Filtered to the conversion-action grain so spend is never mixed in.
+    assert "r.report_level = 'conversion_action'" in ca
+    # conversion action exposed as dimensions + the additive conversion metrics.
+    for column in (
+        "AS conversion_action_name",
+        "AS conversion_action_category",
+        "AS conversions",
+        "AS conversion_value",
+        "AS all_conversions",
+        "AS all_conversions_value",
+    ):
+        assert column in ca, f"missing conversion-action-view column: {column}"
+    # Must NOT carry spend/impressions/clicks (those would be duplicated per action).
+    assert "AS spend" not in ca
+    assert "AS impressions" not in ca
+
+
 def test_meta_wide_view_is_wired_into_reporting_refresh() -> None:
     """The wide views are part of the refreshed reporting SQL so they stay current."""
     from src.main import SUMMARY_SQL_PATHS
@@ -160,6 +182,7 @@ def test_meta_wide_view_is_wired_into_reporting_refresh() -> None:
     assert "google_ads_wide_view.sql" in names
     assert "google_ads_keyword_wide_view.sql" in names
     assert "google_ads_search_term_wide_view.sql" in names
+    assert "google_ads_conversion_action_wide_view.sql" in names
 
 
 def test_create_tables_includes_summary_marts() -> None:

@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 
-.PHONY: install install-dev test lint format run refresh-marts backfill daily-sync daily-sync-deploy dispatch-reports web web-deploy web-image-build check ai-report-deploy-dry-run ai-report-status ai-report-ready ai-report-preflight ai-report-logs ai-report-post-run ai-report-verify clean
+.PHONY: install install-dev test lint format run refresh-marts per-account-views backfill daily-sync daily-sync-deploy dispatch-reports web web-deploy web-image-build check ai-report-deploy-dry-run ai-report-status ai-report-ready ai-report-preflight ai-report-logs ai-report-post-run ai-report-verify clean
 
 install:
 	$(PIP) install -r requirements.txt
@@ -27,6 +27,13 @@ run:
 # Data Studio. Touches real BigQuery, so it is manual/opt-in here.
 refresh-marts:
 	$(PYTHON) -m src.refresh_marts
+
+# Generate one Looker/Data Studio view per ad account (vw_acct_<platform>_<id>)
+# so each Data Studio source maps to a single account. Thin filters over the wide
+# views — no re-sync. DRY-RUN here; add --apply to actually create the views.
+# Touches real BigQuery, so it is manual/opt-in.
+per-account-views:
+	$(PYTHON) scripts/generate_per_account_views.py
 
 # One-time historical backfill of every workspace's selected accounts to the
 # platform limit (~36 months), one ~30-day window at a time. Heavy + one-off.

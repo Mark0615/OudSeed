@@ -96,6 +96,32 @@ WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
   AND metrics.impressions > 0
 """
 
+# Per-conversion-action breakdown (segmented by conversion action). Each row is
+# one (date, campaign, conversion action) — this is how CUSTOM conversions show
+# up: they are conversion actions with their own names. Deliberately carries NO
+# spend/impressions/clicks: those would be duplicated across every conversion
+# action of the same campaign, so we keep this grain conversion-only and never
+# mix it with the ad-level spend (the wide view filters on report_level too).
+CONVERSION_ACTION_QUERY = """
+SELECT
+  segments.date,
+  customer.id,
+  customer.descriptive_name,
+  customer.currency_code,
+  campaign.id,
+  campaign.name,
+  campaign.status,
+  campaign.advertising_channel_type,
+  segments.conversion_action_name,
+  segments.conversion_action_category,
+  metrics.conversions,
+  metrics.conversions_value,
+  metrics.all_conversions,
+  metrics.all_conversions_value
+FROM campaign
+WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
+"""
+
 CUSTOMER_ACCOUNT_QUERY = """
 SELECT
   customer.id,
@@ -192,7 +218,7 @@ class GoogleAdsConnector(BaseAdsConnector):
         start_date: str,
         end_date: str,
     ) -> list[dict]:
-        """Fetch ad-level and keyword-level daily rows for a customer."""
+        """Fetch ad / keyword / search-term / conversion-action daily rows."""
         customer_id = customer_id.replace("-", "")
         ad_rows = self._run_query(
             customer_id=customer_id,
@@ -209,28 +235,54 @@ class GoogleAdsConnector(BaseAdsConnector):
             query=SEARCH_TERM_LEVEL_QUERY.format(start_date=start_date, end_date=end_date),
             report_level="search_term",
         )
-        return ad_rows + keyword_rows + search_term_rows
+        # Conversion-action / custom-conversion breakdown is additive enrichment;
+        # run it as optional so an account that can't serve it never aborts the
+        # core ad/keyword/search-term sync that already works.
+        conversion_action_rows = self._run_query(
+            customer_id=customer_id,
+            query=CONVERSION_ACTION_QUERY.format(start_date=start_date, end_date=end_date),
+            report_level="conversion_action",
+            optional=True,
+        )
+        return ad_rows + keyword_rows + search_term_rows + conversion_action_rows
 
     def _run_query(
         self,
         customer_id: str,
         query: str,
         report_level: str,
+        *,
+        optional: bool = False,
     ) -> list[dict]:
-        """Run one GAQL query and flatten response rows."""
+        """Run one GAQL query and flatten response rows.
+
+        When ``optional`` is True a query failure returns ``[]`` instead of
+        raising, so a non-essential breakdown can't break the rest of the sync.
+        """
         rows: list[dict] = []
-        stream = self.google_ads_service.search_stream(
-            customer_id=customer_id,
-            query=query,
-        )
-        for batch in stream:
-            for row in batch.results:
-                rows.append(_flatten_google_ads_row(row, report_level=report_level))
+        try:
+            stream = self.google_ads_service.search_stream(
+                customer_id=customer_id,
+                query=query,
+            )
+            for batch in stream:
+                for row in batch.results:
+                    rows.append(_flatten_google_ads_row(row, report_level=report_level))
+        except Exception:
+            if not optional:
+                raise
+            return []
         return rows
 
 
 def _flatten_google_ads_row(row: Any, report_level: str) -> dict[str, Any]:
     """Flatten a Google Ads API row into JSON-serializable primitives."""
+    if report_level == "conversion_action":
+        # Conversion-action rows have a different shape (no ad_group, no
+        # spend/impressions) — flatten them on their own to avoid reading fields
+        # that this query never selected.
+        return _flatten_conversion_action_row(row)
+
     metrics = row.metrics
     campaign = row.campaign
     ad_group = row.ad_group
@@ -282,6 +334,30 @@ def _flatten_google_ads_row(row: Any, report_level: str) -> dict[str, Any]:
         flattened["search_term"] = row.search_term_view.search_term
 
     return flattened
+
+
+def _flatten_conversion_action_row(row: Any) -> dict[str, Any]:
+    """Flatten one conversion-action segmented row (date × campaign × action)."""
+    metrics = row.metrics
+    campaign = row.campaign
+    segments = row.segments
+    return {
+        "date": str(segments.date),
+        "report_level": "conversion_action",
+        "customer_id": str(row.customer.id),
+        "account_name": row.customer.descriptive_name,
+        "currency": row.customer.currency_code,
+        "campaign_id": str(campaign.id),
+        "campaign_name": campaign.name,
+        "campaign_status": campaign.status.name,
+        "campaign_channel_type": campaign.advertising_channel_type.name,
+        "conversion_action_name": segments.conversion_action_name,
+        "conversion_action_category": segments.conversion_action_category.name,
+        "conversions": float(metrics.conversions),
+        "conversion_value": float(metrics.conversions_value),
+        "all_conversions": float(metrics.all_conversions),
+        "all_conversions_value": float(metrics.all_conversions_value),
+    }
 
 
 def _flatten_google_customer_account(row: Any, *, fallback_customer_id: str) -> dict[str, Any]:
