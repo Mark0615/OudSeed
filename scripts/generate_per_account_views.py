@@ -1,11 +1,15 @@
 """Generate one Looker / Data Studio view per ad account ("one source per account").
 
-Goal: let each Data Studio data source point at exactly **one** ad account. For
-every account that already has data in the WIDE views, this creates a dedicated
-BigQuery view filtered to that single ``account_id``:
+Goal: let each Data Studio data source point at exactly **one** ad account, for
+every report type. For every account that already has data in the WIDE views,
+this creates a dedicated BigQuery view per (account, report type), filtered to
+that single ``account_id``:
 
-  vw_acct_meta_<account_id>     <- over vw_looker_meta_ads_wide
-  vw_acct_google_<account_id>   <- over vw_looker_google_ads_wide
+  vw_acct_meta_<account_id>               <- Meta: spend / clicks / ads
+  vw_acct_google_<account_id>             <- Google ad-level: spend / clicks / ads
+  vw_acct_google_keyword_<account_id>     <- Google keywords
+  vw_acct_google_searchterm_<account_id>  <- Google search terms
+  vw_acct_google_conversion_<account_id>  <- Google campaign × conversion action
 
 These are thin ``CREATE OR REPLACE VIEW`` filters over the existing wide views,
 so:
@@ -35,7 +39,7 @@ import argparse
 import os
 import re
 import sys
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
 # Allow running as a plain script: put the repo root on sys.path so imports work.
@@ -43,11 +47,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv  # noqa: E402
 
-# platform short name -> the wide view each per-account view is built over.
-SOURCE_VIEWS: dict[str, str] = {
-    "meta": "vw_looker_meta_ads_wide",
-    "google": "vw_looker_google_ads_wide",
-}
+# (label, wide view) for each report type. The per-account view is named
+# vw_acct_<label>_<account_id>. The "meta"/"google" labels are kept for the
+# ad-level views so existing per-account view names stay identical (re-running is
+# idempotent — it never orphans the views created by an earlier run).
+SOURCE_VIEWS: tuple[tuple[str, str], ...] = (
+    ("meta", "vw_looker_meta_ads_wide"),                                    # Meta: spend/clicks/ads
+    ("google", "vw_looker_google_ads_wide"),                               # Google ad-level
+    ("google_keyword", "vw_looker_google_ads_keyword_wide"),               # Google keywords
+    ("google_searchterm", "vw_looker_google_ads_search_term_wide"),        # Google search terms
+    ("google_conversion", "vw_looker_google_ads_conversion_action_wide"),  # campaign × conversion action
+)
 
 VIEW_PREFIX = "vw_acct"
 
@@ -57,9 +67,9 @@ def _safe_id(account_id: str) -> str:
     return re.sub(r"[^0-9A-Za-z]", "_", str(account_id))
 
 
-def _view_name(platform_short: str, account_id: str) -> str:
+def _view_name(label: str, account_id: str) -> str:
     """Deterministic per-account view name, e.g. vw_acct_meta_act_123."""
-    return f"{VIEW_PREFIX}_{platform_short}_{_safe_id(account_id)}"
+    return f"{VIEW_PREFIX}_{label}_{_safe_id(account_id)}"
 
 
 def _redact(account_id: str) -> str:
@@ -83,16 +93,16 @@ def plan_per_account_views(
     *,
     project_id: str,
     dataset_id: str,
-    source_views: dict[str, str] = SOURCE_VIEWS,
+    source_views: Sequence[tuple[str, str]] = SOURCE_VIEWS,
     log: Callable[[str], None] = print,
 ) -> list[tuple[str, str, str, str]]:
-    """Build the (platform, account_id, view_name, ddl) plan for every account.
+    """Build the (label, account_id, view_name, ddl) plan for every account.
 
     Reads the distinct account ids from each wide view. A missing source view
     (e.g. no Google data yet) is skipped rather than fatal.
     """
     plans: list[tuple[str, str, str, str]] = []
-    for platform_short, source_view in source_views.items():
+    for label, source_view in source_views:
         fq_source = f"{project_id}.{dataset_id}.{source_view}"
         try:
             account_ids = _list_account_ids(client, fq_source)
@@ -102,7 +112,7 @@ def plan_per_account_views(
 
         log(f"  {source_view}: {len(account_ids)} account(s)")
         for account_id in account_ids:
-            view_name = _view_name(platform_short, account_id)
+            view_name = _view_name(label, account_id)
             fq_view = f"{project_id}.{dataset_id}.{view_name}"
             # account ids are alphanumeric; strip quotes defensively before inlining.
             escaped = str(account_id).replace("'", "")
@@ -111,7 +121,7 @@ def plan_per_account_views(
                 f"SELECT * FROM `{fq_source}`\n"
                 f"WHERE account_id = '{escaped}'"
             )
-            plans.append((platform_short, account_id, view_name, ddl))
+            plans.append((label, account_id, view_name, ddl))
     return plans
 
 
@@ -121,7 +131,7 @@ def generate(
     project_id: str,
     dataset_id: str,
     apply: bool = False,
-    source_views: dict[str, str] = SOURCE_VIEWS,
+    source_views: Sequence[tuple[str, str]] = SOURCE_VIEWS,
     log: Callable[[str], None] = print,
 ) -> list[tuple[str, str, str, str]]:
     """Plan (and, when ``apply``, create) one view per account. Returns the plan."""
@@ -133,10 +143,10 @@ def generate(
         log=log,
     )
     verb = "created" if apply else "would create"
-    for platform_short, account_id, view_name, ddl in plans:
+    for label, account_id, view_name, ddl in plans:
         if apply:
             client.query(ddl).result()  # type: ignore[attr-defined]
-        log(f"  {verb} {VIEW_PREFIX}_{platform_short}_{_redact(account_id)}")
+        log(f"  {verb} {VIEW_PREFIX}_{label}_{_redact(account_id)}")
 
     if not apply:
         log(f"\nDRY-RUN: {len(plans)} per-account view(s) would be created. Re-run with --apply.")

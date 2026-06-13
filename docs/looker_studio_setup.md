@@ -113,13 +113,19 @@ make per-account-views
 .venv/bin/python scripts/generate_per_account_views.py --apply
 ```
 
-會建出（名字裡的就是你自己的帳號 ID，方便在 Data Studio 裡認）：
+會幫**每個帳號、每一種報表類型**各建一張 view（名字裡就是你自己的帳號 ID，方便在
+Data Studio 裡認）：
 
-- `vw_acct_meta_<帳號ID>`：疊在 `vw_looker_meta_ads_wide` 上
-- `vw_acct_google_<帳號ID>`：疊在 `vw_looker_google_ads_wide` 上
+- `vw_acct_meta_<帳號ID>`：Meta — 花費/點擊/廣告
+- `vw_acct_google_<帳號ID>`：Google — 花費/點擊/廣告（ad 層）
+- `vw_acct_google_keyword_<帳號ID>`：Google 關鍵字
+- `vw_acct_google_searchterm_<帳號ID>`：Google 搜尋字詞
+- `vw_acct_google_conversion_<帳號ID>`：Google **廣告活動 × 轉換動作**
 
 之後新加帳號，再跑一次 `--apply` 即可（`CREATE OR REPLACE`，可重複執行、不會壞）。
-在 Data Studio 新增資料來源時，選對應那張 `vw_acct_...` view 就只會看到那一個帳號。
+在 Data Studio 新增資料來源時，選對應那張 `vw_acct_...` view 就只會看到那一個帳號、
+那一種報表。`google_conversion` 那張就是「活動 × 轉換動作」報表的資料來源（維度用
+`campaign_name` + `conversion_action_name`，指標用 `all_conversions` + `conversion_value`）。
 
 ---
 
