@@ -109,8 +109,13 @@ def build_pivot_ddl(
     )
 
     if action_names:
+        # Per-action columns use all_conversions (the action's own total count) so
+        # micro-actions like Page view show their real volume — Google's primary
+        # "conversions" count is 0 for actions not flagged as conversions. The
+        # campaign summary keeps total_conversions/value (the primary metric that
+        # spend / ROAS tie to).
         conv_cols = ",\n         ".join(
-            f"SUM(IF(conversion_action_name = '{_sql_str(name)}', conversions, 0)) AS `{alias}`"
+            f"SUM(IF(conversion_action_name = '{_sql_str(name)}', all_conversions, 0)) AS `{alias}`"
             for name, alias in _aliased_actions(action_names)
         )
         ddl = (
