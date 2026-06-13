@@ -146,3 +146,25 @@ ad-level 的 `vw_looker_google_ads_wide`。
 > ```bash
 > BACKFILL_GOOGLE_DAYS=180 make backfill
 > ```
+
+---
+
+## 8. 一張表同時看「花費 + 每個轉換動作」（活動樞紐表）
+
+花費/點擊/曝光跟「各個轉換動作的轉換數」是**不同層級**，硬塞同一張平表會讓花費在每個轉換
+動作上重複、加總出錯。要在**同一張表**同時看到，就要把轉換動作**展開成欄位（pivot）**。
+
+產生器會對每個 Google 帳號建一張 `vw_acct_google_campaign_pivot_<帳號ID>`：每個 campaign
+一列，欄位是 `spend` / `clicks` / `impressions` / `total_conversions` /
+`total_conversion_value`，**外加每個轉換動作各一欄**（`conv_<動作名>`，例如
+`conv_Request_quote_LINE`、`conv_加入詢價車`）。轉換動作的欄位是**執行時**從帳號資料讀出來
+動態長的（所以客戶的轉換動作名稱不會寫進 git，新增轉換動作也會自動補欄位）。
+
+```bash
+make campaign-pivot-views                                          # 先看會建哪些（dry-run）
+.venv/bin/python scripts/generate_campaign_pivot_views.py --apply  # 真的建立
+```
+
+在 Data Studio 接這張 `vw_acct_google_campaign_pivot_<id>`，一張表就同時有花費和每個轉換
+動作的轉換數了。注意：這是 **campaign 層級**；關鍵字/搜尋字詞層級的「各轉換動作」拆分需要
+連接器另外多撈 + 重跑（見上）。
