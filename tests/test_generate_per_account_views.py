@@ -14,7 +14,11 @@ from scripts.generate_per_account_views import (
 
 PROJECT = "proj"
 DATASET = "ds"
-SOURCES = {"meta": "vw_looker_meta_ads_wide", "google": "vw_looker_google_ads_wide"}
+SOURCES = (
+    ("meta", "vw_looker_meta_ads_wide"),
+    ("google", "vw_looker_google_ads_wide"),
+)
+META_ONLY = (("meta", "vw_looker_meta_ads_wide"),)
 
 
 class FakeJob:
@@ -57,6 +61,51 @@ def test_safe_id_and_view_name_sanitize_identifiers() -> None:
     assert _safe_id("act_123-456") == "act_123_456"
     assert _view_name("meta", "act_123-456") == "vw_acct_meta_act_123_456"
     assert _view_name("google", "987654321") == "vw_acct_google_987654321"
+    assert _view_name("google_conversion", "987654321") == "vw_acct_google_conversion_987654321"
+
+
+def test_default_sources_cover_every_report_type() -> None:
+    """Each selected Google account gets ad / keyword / search-term / conversion views."""
+    from scripts.generate_per_account_views import SOURCE_VIEWS
+
+    labels = {label for label, _ in SOURCE_VIEWS}
+    assert {
+        "meta",
+        "google",
+        "google_keyword",
+        "google_searchterm",
+        "google_conversion",
+    } <= labels
+    views = {view for _, view in SOURCE_VIEWS}
+    assert "vw_looker_google_ads_conversion_action_wide" in views
+
+
+def test_plan_covers_all_report_types_for_one_account() -> None:
+    """A Google account present in every wide view gets one per-account view each."""
+    client = FakeClient(
+        {
+            "vw_looker_google_ads_wide": ["333"],
+            "vw_looker_google_ads_keyword_wide": ["333"],
+            "vw_looker_google_ads_search_term_wide": ["333"],
+            "vw_looker_google_ads_conversion_action_wide": ["333"],
+        }
+    )
+
+    plans = plan_per_account_views(
+        client, project_id=PROJECT, dataset_id=DATASET, log=_silent  # default SOURCE_VIEWS
+    )
+
+    names = {view_name for _, _, view_name, _ in plans}
+    assert {
+        "vw_acct_google_333",
+        "vw_acct_google_keyword_333",
+        "vw_acct_google_searchterm_333",
+        "vw_acct_google_conversion_333",
+    } <= names
+    # The conversion per-account view filters the campaign × conversion-action source.
+    ddl_by_name = {view_name: ddl for _, _, view_name, ddl in plans}
+    assert "vw_looker_google_ads_conversion_action_wide" in ddl_by_name["vw_acct_google_conversion_333"]
+    assert "WHERE account_id = '333'" in ddl_by_name["vw_acct_google_conversion_333"]
 
 
 def test_plan_builds_one_view_per_account_with_account_filter() -> None:
@@ -93,7 +142,7 @@ def test_dry_run_does_not_issue_any_ddl() -> None:
         project_id=PROJECT,
         dataset_id=DATASET,
         apply=False,
-        source_views={"meta": "vw_looker_meta_ads_wide"},
+        source_views=META_ONLY,
         log=_silent,
     )
 
@@ -110,7 +159,7 @@ def test_apply_creates_one_view_per_account() -> None:
         project_id=PROJECT,
         dataset_id=DATASET,
         apply=True,
-        source_views={"meta": "vw_looker_meta_ads_wide"},
+        source_views=META_ONLY,
         log=_silent,
     )
 
@@ -146,7 +195,7 @@ def test_output_redacts_full_account_ids() -> None:
         project_id=PROJECT,
         dataset_id=DATASET,
         apply=False,
-        source_views={"meta": "vw_looker_meta_ads_wide"},
+        source_views=META_ONLY,
         log=lines.append,
     )
 
