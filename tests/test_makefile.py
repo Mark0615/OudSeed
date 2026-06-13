@@ -29,6 +29,7 @@ def test_makefile_includes_sync_targets() -> None:
 
     assert "refresh-marts:" in makefile
     assert "per-account-views:" in makefile
+    assert "campaign-pivot-views:" in makefile
     assert "backfill:" in makefile
     assert "daily-sync:" in makefile
     assert "daily-sync-deploy:" in makefile

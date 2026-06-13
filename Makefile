@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 
-.PHONY: install install-dev test lint format run refresh-marts per-account-views backfill daily-sync daily-sync-deploy dispatch-reports web web-deploy web-image-build check ai-report-deploy-dry-run ai-report-status ai-report-ready ai-report-preflight ai-report-logs ai-report-post-run ai-report-verify clean
+.PHONY: install install-dev test lint format run refresh-marts per-account-views campaign-pivot-views backfill daily-sync daily-sync-deploy dispatch-reports web web-deploy web-image-build check ai-report-deploy-dry-run ai-report-status ai-report-ready ai-report-preflight ai-report-logs ai-report-post-run ai-report-verify clean
 
 install:
 	$(PIP) install -r requirements.txt
@@ -34,6 +34,13 @@ refresh-marts:
 # Touches real BigQuery, so it is manual/opt-in.
 per-account-views:
 	$(PYTHON) scripts/generate_per_account_views.py
+
+# Generate per-account "campaign pivot" views: one row per campaign with spend /
+# clicks / impressions AND one column per conversion action (Windsor-style single
+# table). Conversion-action columns are built at runtime from the account's data.
+# DRY-RUN here; add --apply to create. Touches real BigQuery, so manual/opt-in.
+campaign-pivot-views:
+	$(PYTHON) scripts/generate_campaign_pivot_views.py
 
 # One-time historical backfill of every workspace's selected accounts to the
 # platform limit (~36 months), one ~30-day window at a time. Heavy + one-off.
