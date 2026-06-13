@@ -80,9 +80,9 @@ def test_build_pivot_ddl_pivots_actions_into_columns() -> None:
     assert "SUM(spend) AS spend" in ddl
     assert "SUM(impressions) AS impressions" in ddl
     assert "WHERE account_id = '333'" in ddl
-    # One pivoted column per conversion action.
+    # One pivoted column per conversion action (each action's own total count).
     assert (
-        "SUM(IF(conversion_action_name = 'Request quote (LINE)', conversions, 0)) "
+        "SUM(IF(conversion_action_name = 'Request quote (LINE)', all_conversions, 0)) "
         "AS `conv_Request_quote_LINE`" in ddl
     )
     assert "AS `conv_加入詢價車`" in ddl
