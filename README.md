@@ -1,25 +1,49 @@
-# OudSeed Ads AI Pipeline
+# OudSeed
 
-OudSeed is a Python ads data pipeline for syncing advertising performance data into BigQuery, then making it available to Looker Studio and future reporting workflows.
+OudSeed is an automated ads performance assistant for media buyers and small
+agencies. It connects ad accounts, syncs performance data into BigQuery, exposes
+reporting views to Looker Studio, and generates account-grouped AI email reports.
 
-The current MVP priority is:
+Current product path:
 
 ```text
-Meta Ads + Google Ads -> BigQuery -> unified_ads_daily -> Looker Studio -> AI reports
+Google sign-in -> Meta/Google Ads connect -> BigQuery -> Looker Studio -> AI reports
 ```
 
-Future phases will add LINE Ads, Google Sheet export, and SaaS onboarding.
+Current MVP priority:
+
+```text
+Meta Ads + Google Ads -> BigQuery -> unified_ads_daily -> Looker Studio -> AI HTML email reports
+```
+
+Deferred until explicitly requested: LINE Ads, LINE delivery, payments, Google
+Sheets export, and deep Google Ads product hardening beyond the existing
+connector/sync/report foundation.
 
 ## Project Structure
 
 ```text
 config/        Example client configuration
+deploy/        Cloud Run, Cloud Scheduler, and image build scripts
 docs/          Product and engineering specifications
-src/           Pipeline source code
+src/           Pipeline, connector, AI reporting, storage, and web app code
 sql/           BigQuery SQL scripts
 tests/         Unit tests and fixtures
-deploy/        Deployment files for later Cloud Run usage
 ```
+
+Key product areas:
+
+| Area | Status |
+|---|---|
+| Meta Ads sync | Implemented: raw payloads, normalized rows, BigQuery writes, reporting views |
+| Google Ads sync | Implemented foundation: connector, normalization, raw/unified writes, report context |
+| Looker Studio | Implemented: campaign/ad daily views, weekly/monthly marts, AI report log view |
+| AI reports | Implemented: weekly/monthly generation, account-grouped HTML email delivery, logs |
+| Self-serve onboarding | Implemented foundation: Google sign-in, dev-mode Meta/Google Ads OAuth connect, account selection, BigQuery destination setup, preview, first sync, test report send |
+| Durable storage | Implemented foundation: SQLAlchemy storage for users, workspaces, connections, encrypted tokens, clients, destinations, and schedules |
+| Production web hosting | Implemented deploy path: Cloud Run web app plus Postgres via Neon, Supabase, or Cloud SQL |
+| Scheduled customer sync | Implemented deploy path: daily Cloud Run Job reads selected accounts from durable storage |
+| Scheduled report dispatch | Implemented foundation: due-schedule dispatcher exists; production per-workspace scheduling is the next hardening step |
 
 ## Local Setup
 
@@ -34,7 +58,49 @@ Copy `config/clients.example.yaml` to `config/clients.yaml` for local developmen
 
 Do not commit real credentials, ad account IDs, service account JSON files, `.env`, or `config/clients.yaml`.
 
-## Local Run
+## Self-Serve Web App
+
+Run the local onboarding product:
+
+```bash
+make web
+```
+
+Open:
+
+```text
+http://localhost:8765
+```
+
+Use `localhost`, not `127.0.0.1`, because local OAuth cookies and redirect URLs
+are configured for `localhost` by default.
+
+The web app currently supports:
+
+- Google sign-in as the platform login
+- Meta Ads OAuth connect in app development mode
+- Google Ads OAuth connect in test mode
+- ad account discovery and selection
+- BigQuery destination setup
+- 30-day onboarding preview from BigQuery when data exists
+- opt-in first sync for selected accounts
+- AI report cadence, recipient, depth, and test-send controls
+
+For local development, `.env.example` includes the needed placeholder settings:
+
+```bash
+DATABASE_URL=sqlite:///.local/oudseed.db
+APP_BASE_URL=http://localhost:8765
+GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8765/oauth/google/callback
+META_OAUTH_REDIRECT_URI=http://localhost:8765/oauth/meta/callback
+GOOGLE_ADS_OAUTH_REDIRECT_URI=http://localhost:8765/oauth/google-ads/callback
+```
+
+Production deployment uses Cloud Run plus a Postgres database. See
+[docs/web_deployment_runbook.md](docs/web_deployment_runbook.md) for the full
+Cloud Run, database, OAuth redirect, daily sync, and backfill steps.
+
+## Pipeline Local Run
 
 Create local-only config files:
 
@@ -647,21 +713,35 @@ bash deploy/deploy_ai_report_job.sh
 
 ## Current Scope
 
-This repository currently includes the product-shaped MVP foundation:
+The active productization goal is to turn the working pipeline into a usable
+self-serve product for a few friendly users:
 
-- Project skeleton
-- BigQuery schema
-- Config loader
-- Date utilities
-- BigQuery destination
-- Base connector
-- Meta Ads connector
-- Meta Ads normalize
-- Google Ads connector
-- Google Ads normalize
-- Main Meta + Google Ads sync flow
-- AI report generation and email delivery
-- Sync logs
+```text
+Google sign-in -> dev-mode Meta/Google OAuth -> durable storage -> selected account sync -> Looker Studio + AI reports
+```
 
-LINE Ads, SaaS login, payment, Google Sheets export, and frontend dashboard work
-remain out of scope until explicitly requested.
+Implemented foundations:
+
+- BigQuery schema, raw tables, unified daily table, weekly/monthly marts, and
+  Looker Studio views
+- Meta Ads daily sync with raw payload preservation
+- Google Ads connector, normalization, raw/unified sync foundation, and report
+  context support
+- Cloud Run Job and Cloud Scheduler deployment for the original Meta sync path
+- OpenAI weekly/monthly report generation and BigQuery report logs
+- Account-grouped HTML email delivery through SMTP
+- FastAPI web app for Google sign-in, Meta/Google Ads OAuth connect, account
+  selection, BigQuery destination setup, preview, first sync, and test report
+  send
+- Durable multi-tenant storage for users, workspaces, connections, encrypted
+  tokens, clients, destinations, and report schedules
+- Cloud Run web deployment path and daily selected-account sync deployment path
+
+Still deferred:
+
+- LINE Ads connector and LINE delivery
+- payment and billing
+- Google Sheets export
+- public OAuth verification / Meta App Review
+- deep Google Ads reporting expansion beyond the current connector and report
+  context foundation
