@@ -17,8 +17,9 @@ secret-free and never include workspace/account identifiers.
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
@@ -26,7 +27,7 @@ from sqlalchemy.orm import Session
 from src.connectors.google_ads import GoogleAdsConnector
 from src.connectors.meta_ads import MetaAdsConnector
 from src.destinations.bigquery import BigQueryDestination
-from src.main import refresh_reporting_marts
+from src.main import _redacted_identifier, refresh_reporting_marts
 from src.storage.db import build_session_factory, create_db_engine, session_scope
 from src.storage.repository import (
     bind_connections_to_client,
@@ -43,7 +44,20 @@ from src.web.first_sync import FirstSyncResult, run_first_sync
 # overwrites the whole window, so re-pulling is safe and self-healing.
 DEFAULT_LOOKBACK_DAYS = 3
 
+# Account errors are echoed to the log so a partial failure is visible; cap the
+# provider message so a long API payload can't flood Cloud Logging.
+MAX_LOGGED_ERROR_CHARS = 200
+
 ConnectorFactory = Callable[[str], object]
+
+
+@dataclass(frozen=True)
+class AccountFailure:
+    """One account that failed to sync, for logging and the run summary."""
+
+    platform: str
+    account_id: str
+    error: str
 
 
 @dataclass(frozen=True)
@@ -56,6 +70,7 @@ class WorkspaceSyncResult:
     failed: int
     status: str  # "synced" | "skipped" (no active accounts) | "error"
     detail: str = ""
+    failures: tuple[AccountFailure, ...] = field(default_factory=tuple)
 
 
 def make_meta_factory() -> ConnectorFactory:
@@ -115,6 +130,20 @@ def sync_all_workspaces(
                 google_connector_factory=google_connector_factory,
                 token_key=encryption_key,
             )
+            failures = tuple(
+                AccountFailure(r.platform, r.account_id, (r.error or "")[:MAX_LOGGED_ERROR_CHARS])
+                for r in outcome.failed
+            )
+            # A failing account is the signal this job exists to surface — an
+            # expired token here once went unnoticed for weeks because the run
+            # still reported success. Log every failure individually.
+            for failure in failures:
+                print(
+                    f"event=daily_sync_account_failed platform={failure.platform} "
+                    f"account_id={_redacted_identifier(failure.account_id)} "
+                    f"error={failure.error}",
+                    flush=True,
+                )
             results.append(
                 WorkspaceSyncResult(
                     workspace.id,
@@ -122,6 +151,7 @@ def sync_all_workspaces(
                     len(outcome.succeeded),
                     len(outcome.failed),
                     "synced",
+                    failures=failures,
                 )
             )
         except Exception as exc:
@@ -191,12 +221,20 @@ def main() -> None:
     skipped = sum(1 for r in results if r.status == "skipped")
     errored = sum(1 for r in results if r.status == "error")
     accounts = sum(r.succeeded for r in results)
+    accounts_failed = sum(r.failed for r in results)
     print(
         "daily_sync_done=true "
         f"workspaces={len(results)} synced={synced} skipped={skipped} "
         f"errored={errored} accounts_synced={accounts} "
+        f"accounts_failed={accounts_failed} "
         f"window={start_date}..{end_date} marts_refresh={refresh_status}"
     )
+
+    # Exit non-zero so Cloud Run marks the execution failed and the problem is
+    # visible. Without this a run where every ad account failed still looked
+    # green, which is how an expired Meta token stayed unnoticed for weeks.
+    if accounts_failed or errored:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

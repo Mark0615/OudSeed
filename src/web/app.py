@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 import secrets
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -368,6 +369,13 @@ def create_app() -> FastAPI:
             logger.warning("Connect rejected (%s): %s", client.platform, exc)
             return HTMLResponse(views.render_connect_error(label, str(exc)), status_code=400)
         workspace = get_or_create_default_workspace(db, user)
+        # Record when the token dies so the renewal job can act before it does.
+        # Without this the column stays NULL and nothing knows a token is aging.
+        expires_at = (
+            datetime.now(UTC) + timedelta(seconds=result.expires_in)
+            if result.expires_in
+            else None
+        )
         for account in result.accounts:
             upsert_platform_connection(
                 db,
@@ -377,6 +385,7 @@ def create_app() -> FastAPI:
                 account_name=account.account_name,
                 token=result.secret,
                 scopes=result.scopes,
+                expires_at=expires_at,
                 # Newly connected accounts start unselected; the user opts in
                 # which accounts to sync on the next step.
                 mark_active=False,

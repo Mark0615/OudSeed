@@ -133,3 +133,71 @@ def test_isolates_per_workspace_failures(monkeypatch):
     assert by_ws["w_bad"].detail == "RuntimeError"
     assert by_ws["w_ok"].status == "synced"
     assert by_ws["w_ok"].succeeded == 1
+
+
+def test_records_and_logs_account_level_failures(monkeypatch, capsys):
+    """A failing account must be recorded and logged, not silently dropped.
+
+    Regression guard: an expired Meta token once failed every account for weeks
+    while the run still summarized as a success.
+    """
+    workspaces = [FakeWorkspace("w1")]
+    connections_by_ws = {
+        "w1": [FakeConnection("meta_ads", "act_1234567890"), FakeConnection("google_ads", "111")],
+    }
+    _patch_repo(monkeypatch, workspaces=workspaces, connections_by_ws=connections_by_ws)
+
+    def fake_run(**kwargs):
+        return FirstSyncResult(
+            results=(
+                AccountSyncResult(
+                    "meta_ads", "act_1234567890", "failed", error="Session has expired"
+                ),
+                AccountSyncResult("google_ads", "111", "success", rows=10),
+            )
+        )
+
+    results = sync_all_workspaces(
+        session=object(),
+        destination=object(),
+        meta_connector_factory=lambda t: None,
+        google_connector_factory=lambda t: None,
+        start_date="2026-06-07",
+        end_date="2026-06-09",
+        run_sync=fake_run,
+    )
+
+    result = results[0]
+    assert (result.succeeded, result.failed) == (1, 1)
+    assert [(f.platform, f.error) for f in result.failures] == [
+        ("meta_ads", "Session has expired")
+    ]
+
+    out = capsys.readouterr().out
+    assert "event=daily_sync_account_failed" in out
+    assert "Session has expired" in out
+    # The real account id must never reach the log.
+    assert "act_1234567890" not in out
+
+
+def test_truncates_long_account_error(monkeypatch, capsys):
+    workspaces = [FakeWorkspace("w1")]
+    connections_by_ws = {"w1": [FakeConnection("meta_ads", "act_1")]}
+    _patch_repo(monkeypatch, workspaces=workspaces, connections_by_ws=connections_by_ws)
+
+    def fake_run(**kwargs):
+        return FirstSyncResult(
+            results=(AccountSyncResult("meta_ads", "act_1", "failed", error="x" * 500),)
+        )
+
+    results = sync_all_workspaces(
+        session=object(),
+        destination=object(),
+        meta_connector_factory=lambda t: None,
+        google_connector_factory=lambda t: None,
+        start_date="2026-06-07",
+        end_date="2026-06-09",
+        run_sync=fake_run,
+    )
+
+    assert len(results[0].failures[0].error) == daily_sync.MAX_LOGGED_ERROR_CHARS

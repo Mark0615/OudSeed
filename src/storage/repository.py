@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from src.storage.crypto import decrypt_secret, encrypt_secret
@@ -191,6 +191,46 @@ def list_connections(
     if platform is not None:
         stmt = stmt.where(PlatformConnection.platform == platform)
     stmt = stmt.order_by(PlatformConnection.created_at, PlatformConnection.id)
+    return list(session.scalars(stmt))
+
+
+def get_workspace_owner_email(session: Session, workspace_id: str) -> str | None:
+    """Return the email of the workspace's owner, or None when it can't be found.
+
+    Used to tell the right person their ad-platform connection needs attention.
+    """
+    stmt = (
+        select(User.email)
+        .join(Workspace, Workspace.owner_user_id == User.id)
+        .where(Workspace.id == workspace_id)
+    )
+    return session.scalar(stmt)
+
+
+def list_connections_due_for_renewal(
+    session: Session, *, platform: str, cutoff: datetime
+) -> list[PlatformConnection]:
+    """Return connections whose token should be renewed now, across all tenants.
+
+    A connection is due when it still holds a token, is in a connected state
+    (``active`` or ``paused`` — a paused account is still connected, just not
+    selected for sync), and either expires before ``cutoff`` or has an unknown
+    expiry. NULL counts as due because connections authorized before expiries
+    were recorded have no deadline stored; renewing once fills it in.
+    """
+    stmt = (
+        select(PlatformConnection)
+        .where(
+            PlatformConnection.platform == platform,
+            PlatformConnection.encrypted_token.is_not(None),
+            PlatformConnection.status.in_(("active", "paused")),
+            or_(
+                PlatformConnection.token_expires_at.is_(None),
+                PlatformConnection.token_expires_at < cutoff,
+            ),
+        )
+        .order_by(PlatformConnection.created_at, PlatformConnection.id)
+    )
     return list(session.scalars(stmt))
 
 
