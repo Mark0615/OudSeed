@@ -100,6 +100,10 @@ class AdConnectionResult:
     secret: str  # long-lived token to encrypt and store
     accounts: list[AdAccount] = field(default_factory=list)
     scopes: str | None = None
+    # Seconds until the stored secret expires, when the provider reports one.
+    # Meta long-lived user tokens last ~60 days and must be renewed before then;
+    # Google Ads refresh tokens have no fixed expiry, so this stays None.
+    expires_in: int | None = None
 
 
 class MetaAdsOAuthClient:
@@ -134,11 +138,26 @@ class MetaAdsOAuthClient:
 
     def fetch_connection(self, code: str) -> AdConnectionResult:
         short_token = self._exchange_code(code)
-        long_token = self._exchange_for_long_lived(short_token)
+        long_token, expires_in = self._exchange_for_long_lived(short_token)
         accounts = self._list_ad_accounts(long_token)
         return AdConnectionResult(
-            secret=long_token, accounts=accounts, scopes=",".join(self.scopes)
+            secret=long_token,
+            accounts=accounts,
+            scopes=",".join(self.scopes),
+            expires_in=expires_in,
         )
+
+    def renew_long_lived(self, long_token: str) -> tuple[str, int | None]:
+        """Exchange a still-valid long-lived token for a fresh one.
+
+        Meta issues no refresh token for user access tokens: the only way to keep
+        a connection alive is to re-exchange the current long-lived token before
+        it expires, which resets the ~60-day clock. Raises
+        ``httpx.HTTPStatusError`` when the token is already dead (expired,
+        revoked, or invalidated by a password change) — only a new authorization
+        recovers from that.
+        """
+        return self._exchange_for_long_lived(long_token)
 
     def _exchange_code(self, code: str) -> str:
         resp = httpx.get(
@@ -154,7 +173,8 @@ class MetaAdsOAuthClient:
         resp.raise_for_status()
         return resp.json()["access_token"]
 
-    def _exchange_for_long_lived(self, short_token: str) -> str:
+    def _exchange_for_long_lived(self, short_token: str) -> tuple[str, int | None]:
+        """Exchange a token for a long-lived one; returns (token, expires_in)."""
         resp = httpx.get(
             META_TOKEN_ENDPOINT,
             params={
@@ -166,7 +186,15 @@ class MetaAdsOAuthClient:
             timeout=self.timeout,
         )
         resp.raise_for_status()
-        return resp.json().get("access_token", short_token)
+        payload = resp.json()
+        expires_in = payload.get("expires_in")
+        # Meta occasionally omits expires_in (documented as "never" for some
+        # token types). Keep None rather than inventing a deadline.
+        try:
+            expires_in = int(expires_in) if expires_in is not None else None
+        except (TypeError, ValueError):
+            expires_in = None
+        return payload.get("access_token", short_token), expires_in
 
     def _list_ad_accounts(self, token: str) -> list[AdAccount]:
         resp = httpx.get(

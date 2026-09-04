@@ -51,6 +51,7 @@ class FakeMetaOAuth:
             secret="meta-long-token",
             scopes="ads_read",
             accounts=[AdAccount("act_111", "Acct One"), AdAccount("act_222", "Acct Two")],
+            expires_in=60 * 24 * 3600,  # Meta long-lived token: ~60 days
         )
 
 
@@ -152,6 +153,9 @@ def test_meta_connect_creates_encrypted_connections(ctx):
         assert c.status == "paused"
         assert "meta-long-token" not in (c.encrypted_token or "")  # encrypted at rest
         assert read_connection_token(c) == "meta-long-token"
+        # The expiry must be recorded, otherwise the renewal job has no deadline
+        # to act on and the token silently dies after ~60 days.
+        assert c.token_expires_at is not None
 
     home = ctx.client.get("/")
     assert "Acct One" in home.text and "Acct Two" in home.text
