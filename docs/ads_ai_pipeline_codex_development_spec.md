@@ -629,6 +629,71 @@ action_values
 
 ---
 
+### 10.1 Token 續期機制（Meta）
+
+背景：
+
+- Meta 的 user-level long-lived access token 存活期固定約 60 天，Meta 沒有提供真正的 `refresh_token`（不像 Google Ads OAuth，Google 的 `refresh_token` 不會按固定天數過期）。
+- 唯一延長方式：在到期前，用目前手上的 long-lived token 呼叫同一支 `fb_exchange_token` API，換回一組新的 60 天 token。這個動作完全可以在伺服器端排程執行，不需要使用者互動。
+- 這是 Windsor.ai / Supermetrics 等標準化廣告資料整合產品的做法：使用者連接一次之後，平台背景排程持續幫他續期，使用者平常感覺不到；只有續期本身失敗（使用者在 Facebook 端撤銷授權、改了密碼、或平台的續期作業故障）時，才會要求使用者重新連接。
+- 這跟 Meta Business Manager 的 System User（Never-expire token）是不同機制，System User 只適用於「平台方自己管理／被指派存取的 Business 資產」（本專案內部帳號用這個，見 2026-09 運維紀錄），不適用於一般自助使用者連接自己帳號的情境——不能要求自助使用者自己去建 System User，摩擦太高。**本節與 System User 無關，只描述一般使用者 OAuth 連接的續期。**
+
+Storage（`platform_connections`）— 實作於 2026-09-04，欄位沿用既有 schema，**不新增欄位**（Postgres 目前沒有 migration 工具，`create_all` 不會 ALTER 既有表）：
+
+| 欄位 | 說明 |
+|---|---|
+| encrypted_token | Fernet 加密後的 long-lived token |
+| token_expires_at | 目前 token 到期時間（由 `fb_exchange_token` 回傳的 `expires_in` 換算）。**連接當下就要寫入**，否則續期 job 沒有判斷依據 |
+| status | 既有值加上 `needs_reconnect`（token 已無法續期，只能重新授權） |
+| updated_at | 取代原規劃的 `last_refreshed_at`，本來就會 `onupdate` 自動更新，不必加欄位 |
+
+排程 job：`src/sync/refresh_tokens.py`（放 `src/sync/` 與 `daily_sync.py`、`backfill.py` 同層，符合既有慣例）
+
+```text
+1. 找出所有 platform=meta_ads、有 token、status in (active, paused)、
+   且 token_expires_at 為 NULL 或 < now + 14 days 的 connections
+   （NULL 也要算 due：舊連接沒存過到期日，續期一次就補上了）
+2. 依「解密後的 token」分組 —— 見下方「一次授權 = 一顆 token」
+3. 每組呼叫一次 fb_exchange_token 換新 token
+4. 成功 → 該組所有 connection 寫入新 token 與新 token_expires_at
+5. 失敗（OAuthException code 190 等）→ 該組全部標記 status=needs_reconnect，
+   保留原 token 不動；下一輪不會再撈到它（狀態已不在 active/paused），
+   不會每天重打
+6. 有任何一組失敗 → exit 1，讓 Cloud Run 標紅
+```
+
+**兩個實作時才發現、規劃階段沒想到的重點：**
+
+1. **一次授權 = 一顆 token，被複製到 N 個帳號列。** `_finish_connect` 是 `for account in result.accounts` 迴圈，把**同一顆** `result.secret` 寫到每個帳號。所以若逐列續期，25 個帳號會對 Meta 打 25 次同樣的交換、拿回 25 顆可能不同的 token。必須先依 token 分組，每顆只換一次，再寫回同組所有列。
+2. **續期時絕對不能動 `status`。** `store_connection_token` 預設 `mark_active=True`，若照預設呼叫，會把使用者沒有勾選的 `paused` 帳號變成 `active`，等於偷偷把它加進每日同步。續期一律傳 `mark_active=False`。
+
+另外，`daily_sync` 只撈 `status == "active"`，所以被標記 `needs_reconnect` 的連接會自動退出每日同步——紅燈會出現在續期 job（正確的位置），而不是讓每日同步天天因為一顆死 token 而失敗。
+
+排程頻率：每天跑一次，續期寬限期 14 天（可用環境變數 `TOKEN_RENEW_WITHIN_DAYS` 覆寫），避免單次失敗就直接斷線。
+
+失敗通知（**已實作 2026-09-04**）：
+
+- `status` 轉為 `needs_reconnect` 時，寄信給該 workspace 的 **owner**（`Workspace.owner_user_id` → `User.email`），信中列出受影響的廣告帳號名稱、說明常見原因（撤銷授權／改密碼），並附 `APP_BASE_URL` 連結讓對方回去重新連接
+- 沿用既有的 `src/notifications/email_delivery.py`（`SMTPEmailSender`），不另外建一套寄信機制
+- 寄信是 best-effort：SMTP 失敗只記 `event=token_renewal_notify_failed`，**不會 raise**，也不會回滾剛寫入的 `needs_reconnect` 狀態（job 的 exit code 已經反映失敗）
+- 未設定 SMTP 環境變數的部署會退化成 no-op 並記 `event=token_renewal_notify_unconfigured`，續期本身照常運作
+
+因為被標記 `needs_reconnect` 的連接下一輪就不會再被撈到，同一次失效只會寄出一封信，不會每天重複騷擾。
+
+**仍未實作**：前端在連接狀態列顯示「需要重新連接」的視覺提示。目前使用者只會收到信，回到 dashboard 看不出哪個帳號有問題。
+
+監控：
+
+- 續期 job 本身若整批失敗（例如程式錯誤，而非個別帳號的 OAuth 失效），要觸發告警——這正是本次內部 Miniware 帳號斷線 3.5 週沒人發現的成因（見 memory: oudseed-backfill-silent-gaps 的同類教訓：作業「跑了」不等於「成功」，需要主動監控，不能只看 job exit code）
+- 應可查詢「目前 `status=needs_reconnect` 的帳號數」，避免累積不管
+
+範圍界定：
+
+- Google Ads 用真正的 `refresh_token`，不受 60 天限制，不需要這支續期 job，每次呼叫 API 前用 `refresh_token` 換 `access_token` 即可（標準 Google OAuth 流程，通常函式庫已內建）。
+- 本節僅涵蓋 MVP/v0.x 自助連接情境（使用者自己登入授權單一或少數 ad account）。若未來要支援代理商一次串接整個 Business Manager 名下所有帳號，才需要另外評估 System User / Business Partner Access 的進階選項，屬於本節之外的獨立功能，不要混在自助流程裡預設要求使用者做。
+
+---
+
 ## 11. Normalize 規格
 
 檔案：

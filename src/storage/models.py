@@ -83,8 +83,17 @@ class WorkspaceMember(Base):
 SUPPORTED_PLATFORMS = ("meta_ads", "google_ads")
 
 # Connection lifecycle states.
-# "active" = selected for sync; "paused" = connected but not selected for sync.
-CONNECTION_STATUSES = ("pending", "active", "paused", "error", "revoked")
+# "active" = selected for sync; "paused" = connected but not selected for sync;
+# "needs_reconnect" = the stored token can no longer be renewed (revoked, or the
+# user changed their password), so only a fresh authorization can fix it.
+CONNECTION_STATUSES = (
+    "pending",
+    "active",
+    "paused",
+    "error",
+    "revoked",
+    "needs_reconnect",
+)
 
 
 class PlatformConnection(Base):
